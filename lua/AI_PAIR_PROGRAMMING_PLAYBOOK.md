@@ -568,6 +568,77 @@ local MYAPL_ENABLE = bind_add_param('ENABLE', 1, 0)
 --]]
 local MYAPL_SPEED = bind_add_param('SPEED', 2, 10)
 ```
+### **Rule 5.7.2: Parameter Definition and Binding Pattern**
+
+<MANDATORY\_RULE\>
+CRITICAL DIRECTIVE: The param:add\_param() function only registers a parameter's existence. It does not return a usable parameter object. Accessing the parameter object must be done in a separate step using Parameter("FULL\_NAME").
+Due to the script parsing lifecycle, attempting to assert(Parameter(...)) at the global scope, immediately after param:add\_param(), will fail.
+
+The **only** correct and robust pattern for defining and binding parameters is as follows:
+
+1. Define a unique PARAM\_TABLE\_KEY (integer) and a PARAM\_TABLE\_PREFIX (string, e.g., "MYAPP\_").
+2. Call assert(param:add\_table(PARAM\_TABLE\_KEY, PARAM\_TABLE\_PREFIX, NUM\_PARAMS), ...) at the global scope.
+3. Define two helper functions, bind\_param and bind\_add\_param, at the global scope.
+4. Call bind\_add\_param for each parameter, immediately preceded by its documentation block. This function handles both registration and binding.
+5. Use the returned local variable (e.g., MYAPP\_ENABLE:get()) directly in the script.
+
+This pattern avoids the need for a separate init() function just for parameter binding.
+
+**Correct Parameter Implementation Example:**
+
+```lua:
+local PARAM_TABLE_KEY = 101 -- Chosen unique key
+local PARAM_TABLE_PREFIX = "MYAPP_" -- 6-char prefix, 16-char total max
+assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, 2), "Could not add param table")
+
+-- This helper function binds the parameter definition to its documentation
+-- and handles the two-step process of defining and then getting the object.
+local function bind_param(name)
+   local p = Parameter()
+   assert(p:init(name), string.format('could not find %s parameter', name))
+   return p
+end
+
+-- add a parameter and bind it to a variable
+local function bind_add_param(name, idx, default_value)
+   assert(param:add_param(PARAM_TABLE_KEY, idx, name, default_value), string.format('could not add param %s', name))
+   return bind_param(PARAM_TABLE_PREFIX .. name)
+end
+
+--[[
+  // @Param: MYAPP_ENABLE
+  // @DisplayName: My App Enable
+  // @Description: Enables or disables my app.
+  // @Values: 0:Disabled,1:Enabled
+  // @User: Standard
+--]]
+local MYAPP_ENABLE = bind_add_param("ENABLE", 1, 0)
+
+--[[
+  // @Param: MYAPP_SPEED
+  // @DisplayName: My App Speed
+  // @Description: The target speed for the app's maneuver.
+  // @Units: m/s
+  // @Range: 1 50
+  // @User: Standard
+--]]
+local MYAPP_SPEED = bind_add_param("SPEED", 2, 10)
+
+-- ... script main logic ...
+
+local function update()
+    if MYAPP_ENABLE:get() == 0 then
+        return update, 1000
+    end
+
+    local speed = MYAPP_SPEED:get()
+    -- ...
+    return update, 100
+end
+
+return update, 1000
+```
+</MANDATORY_RULE\>
 
 ### 5.8. Surgical Modification
 
@@ -594,6 +665,43 @@ When asked to modify an existing file, you must strictly limit your changes to t
 ### 5.9. Data Type Coercion
 
 The millis() and micros() functions return special uint32_t and uint64_t userdata types, not standard Lua numbers. These types must be converted to a number before being used in any arithmetic operation or passed to a function expecting a number. The only acceptable methods are my_uint:tofloat() or my_uint:toint(). Using generic Lua tonumber() is incorrect and will fail.
+
+### **Rule 5.10: Custom Flight Mode Pattern**
+
+<MANDATORY_RULE\>
+CRITICAL DIRECTIVE: Scripts implementing a new flight mode must use the vehicle:register\_custom\_mode() function. This function returns a custom\_mode\_state object which is the only correct way to manage the mode's lifecycle.
+The script **must not** attempt to manage its own state (e.g., "active", "inactive") based on vehicle:get\_mode(). It must follow this pattern:
+
+1. **Global State:**
+   * A g\_cruise\_mode\_state (or similar) global variable, initialized to nil, must be used to store the object returned by register\_custom\_mode().
+   * A g\_last\_mode\_number global variable must be used to track the mode from the previous update() call.
+   * A g\_state table should hold all *internal* state for the mode (e.g., target\_altitude, is\_calibrating).
+2. **script\_init() Function:**
+   * A one-time initialization function must be called when the script loads.
+   * This function registers the mode: g\_cruise\_mode\_state \= assert(vehicle:register\_custom\_mode(MODE\_NUM, "NAME", "SHORT"), "Failed to register").
+   * It also stores the numeric mode ID: g\_state.mode\_id \= MODE\_NUM.
+3. update() Function (Mode State Manager):
+   The main update() function's only job is to act as a state manager. It must perform these three tasks in order:
+   * **1\. allow\_entry():** It must call g\_cruise\_mode\_state:allow\_entry(allow\_enter\_function()) on *every* loop. The allow\_enter\_function() must contain all safety checks (e.g., arming:is\_armed(), ahrs:healthy()). This tells ArduPilot if it is safe to switch *into* this mode.
+   * **2\. Mode Detection:** It must get the current mode: local mode \= vehicle:get\_mode().
+   * **3\. State Hooks:** It must check for mode transitions and call the appropriate handler:
+     * if mode \== g\_state.mode\_id and g\_last\_mode\_number \~= g\_state.mode\_id then \-\> Call mode\_init().
+     * elseif mode \== g\_state.mode\_id and g\_last\_mode\_number \== g\_state.mode\_id then \-\> Call mode\_run().
+     * elseif mode \~= g\_state.mode\_id and g\_last\_mode\_number \== g\_state.mode\_id then \-\> Call mode\_exit().
+   * Finally, it must save the current mode: g\_last\_mode\_number \= mode.
+4. **mode\_init() Function:**
+   * Called *once* when the mode is entered.
+   * Used to capture initial state (e.g., g\_state.target\_alt\_cm \= ahrs:get\_location():alt()).
+   * Sends a GCS message: gcs:send\_text(MAV\_SEVERITY.INFO, "Cruise Mode: ACTIVATED").
+5. **mode\_run() Function:**
+   * Called on *every* loop while the mode is active.
+   * Contains the core control logic (e.g., reading RC inputs, calling vehicle:set\_target\_angle\_and\_climbrate()).
+6. **mode\_exit() Function:**
+   * Called *once* when the mode is exited.
+   * Used for cleanup and sending a GCS message: gcs:send\_text(MAV\_SEVERITY.INFO, "Cruise Mode: Deactivated").
+
+This pattern properly separates the script's internal logic from the autopilot's core mode-switching responsibilities, which is safer and more robust.
+</MANDATORY_RULE\>
 
 ## 6\. Operational Constraints and Safety
 
