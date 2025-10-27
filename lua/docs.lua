@@ -881,9 +881,11 @@ function Vector2f_ud:normalize() end
 ---@return number -- length of this vector
 function Vector2f_ud:length() end
 
--- Calculate the angle of this vector in radians
--- 2PI + atan2(-x, y)
----@return number -- angle in radians
+-- Calculate the angle of this vector in radians using atan2(y, x).
+-- The result is the angle in radians between the positive X-axis
+-- (representing North or 'x') and the vector.
+-- Note: This is equivalent to math.atan2(vector:y(), vector:x()).
+---@return number -- angle in radians (range -Pi to +Pi)
 function Vector2f_ud:angle() end
 
 -- Vector3f is a userdata object that holds a 3D vector with x, y and z components.
