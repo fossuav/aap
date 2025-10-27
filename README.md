@@ -1,2 +1,1 @@
-# aap
-ArduPilot AI Playbooks
+# ArduPilot AI Playbooks
