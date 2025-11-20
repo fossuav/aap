@@ -48,7 +48,8 @@ Adherence to the official style guide is mandatory. The following is a summary o
 
 ### **3.1. Formatting**
 
-* **Braces:** Braces for if, for, while, etc., go on their own lines.  
+* **Braces:** Braces for if, for, while, etc., go on their own lines:
+```cpp
   // Right:  
   if (condition)   
   {  
@@ -56,7 +57,7 @@ Adherence to the official style guide is mandatory. The following is a summary o
   }  
   // Wrong:  
   if (condition) { foo(); }
-
+```
 * **Spacing:**  
   * No spaces around unary operators (e.g., i++;, \*p;).  
   * Spaces between control statements and their parentheses (e.g., if (condition)).  
@@ -66,12 +67,14 @@ Adherence to the official style guide is mandatory. The following is a summary o
 
 ### **3.2. Naming Conventions**
 
-* **Enums:** Use enum class instead of raw enums. They should be PascalCase and singular.  
+* **Enums:** Use enum class instead of raw enums. They should be PascalCase and singular.
+```cpp
   // Right:  
   enum class CompassType {  
       FOO,  
       BAR,  
   };
+```
 
 * **Functions and Variables with Units:** Suffix the name with the physical unit.  
   * \_mss for meters/second/second  
@@ -81,10 +84,10 @@ Adherence to the official style guide is mandatory. The following is a summary o
   * \_degs for degrees/second  
   * \_rads for radians/second  
     Example:
-
-uint16\_t get\_angle\_rad();  
-float distance\_m;
-
+```cpp
+  uint16_t get_angle_rad();  
+  float distance_m;
+```
 * **Parameters:**  
   * Order words from most to least important (e.g., RTL\_ALT\_MIN is better than RTL\_MIN\_ALT).  
   * Reuse existing words like MIN and MAX.  
@@ -92,48 +95,50 @@ float distance\_m;
 
 ### **3.3. Comments**
 
-* **Parameter Documentation:** All user-facing parameters (AP\_Param) must have a documentation block for display in Ground Control Stations.  
-  // @Param: RTL\_ALT  
+* **Parameter Documentation:** All user-facing parameters (AP\_Param) must have a documentation block for display in Ground Control Stations.
+```cpp
+  // @Param: RTL_ALT  
   // @DisplayName: RTL Altitude  
   // @Description: The altitude the vehicle will return at.  
   // @User: Standard  
   // @Units: cm  
   // @Range: 200 8000  
-  AP\_Int16 rtl\_alt;
-
+  AP_Int16 rtl_alt;
+```
 * **Function Comments:** Every function declaration should be preceded by a comment explaining its purpose. For non-trivial functions, this comment should also describe each parameter and the function's return value.  
 * **General Comments:** Use // for single-line comments and /\* ... \*/ for multi-line comments.  
-* **Header Comments:** Every new .h and .cpp file should begin with a comment block that briefly describes its purpose and functionality. This helps other developers understand the scope of the file at a glance.  
+* **Header Comments:** Every new .h and .cpp file should begin with a comment block that briefly describes its purpose and functionality. This helps other developers understand the scope of the file at a glance. Also new .h and .cpp files should start with the GPLv3 licenses statement.
 * **Descriptive Logic Comments:** It is mandatory to add comments that explain the purpose of new or modified code blocks, especially for complex logic like state machines, algorithms, or non-obvious calculations. Comments should explain the "why" behind the code, not just re-state what the code does.
 
 ### **3.4. C++ Best Practices**
 
 * **Literals:** Use 1.0f for single-precision float literals, not 1.0.  
-* **Multiplication vs. Division:** Use multiplication where possible as it is generally faster.  
+* **Multiplication vs. Division:** Use multiplication where possible as it is generally faster.
+```cpp
   // Right:  
-  const float foo\_m \= foo\_cm \* 0.01f;  
+  const float foo_m = foo_cm * 0.01f;  
   // Wrong:  
-  const float foo\_m \= foo\_cm / 100.0f;
-
+  const float foo_m = foo_cm / 100.0f;
+```
 * **Memory:** new and malloc zero their memory. Stack-stored variables must be explicitly initialized.
 
 ## **4\. Development Constraints**
 
 ### **4.1. General Constraints**
 
-* **No printf:** Do not use printf. For debugging, use the gcs().send\_text() method to send messages to the Ground Control Station.  
+* **No printf:** Do not use printf. For debugging, use the `gcs().send_text()` method to send messages to the Ground Control Station. For complex code `hal.console->printf()` maybe used as long as the statements are compiled out by default.
 * **No Dynamic Memory in Flight Code:** Avoid using malloc, new, free, or any other form of dynamic memory allocation in performance-critical paths like the main flight loop. Memory should be pre-allocated.  
 * **Stack Size:** Be mindful of stack usage. Avoid deep recursion and large local variables.  
 * **Header Inclusion:** Include headers in the following order: The corresponding .h file, C system headers, C++ standard library headers, other libraries' headers, your project's headers.
 
-### **4.2. Mandatory API Verification Protocol (REVISED)**
+### **4.2. Mandatory API Verification Protocol**
 
 * **Rule of First Reference:** The first time code is written that references a method, class, or variable from another part of the ArduPilot codebase, it is **mandatory** to first consult that component's header file. Never invent or "hallucinate" function calls, classes, or methods. The ArduPilot C++ API is extensive but specific. If you are uncertain about the existence or exact signature of a function, you **must** request the user to provide the relevant C++ header file(s) for verification. This ensures that the generated code is compilable and correct. 
 * **Verification Checklist:** Before writing a call, verify the following in the header:  
-  1. **Exact Method/Variable Name:** Confirm spelling and capitalization (e.g., SERIALMANAGER\_MAX\_PORTS, not num\_ports()).  
+  1. **Exact Method/Variable Name:** Confirm spelling and capitalization (e.g., `SERIALMANAGER_MAX_PORTS`, not `num_ports()`).  
   2. **Full Signature:** Confirm parameter types and return type.  
   3. **const Correctness:** If calling a method from within a const method, verify the target method is also const.  
-  4. **Namespace and Singleton Access:** Confirm the correct namespace (AP::) and the specific static accessor function (e.g., AP::rc\_protocol(), not rc\_protocol()).  
+  4. **Namespace and Singleton Access:** Confirm the correct namespace (AP::) and the specific static accessor function (e.g., `AP::rc_protocol()`, not `rc_protocol()`).  
 * **Example Interaction:** "To correctly call the serial manager, I need to see its API. Please provide the contents of libraries/AP\_SerialManager/AP\_SerialManager.h."
 * **Red Flag Rule:** If a required method seems plausible but cannot be found in the provided header files (e.g., a `get_backend()` accessor), **do not invent it**. You must stop and explicitly state that the required functionality does not appear to exist in the known API and ask the user for guidance or the correct header file.
 
@@ -141,8 +146,14 @@ float distance\_m;
 
 * **Proactive const-Correctness:** When a method is declared const, all methods it calls on class members must also be const. It is mandatory to trace the call chain to verify this. If a called method needs to be changed to const, its own call chain must also be verified.  
 * **Strict Typing for Operations:** In all arithmetic or bitwise operations involving different integer sizes or types (e.g., uint8\_t, int), it is mandatory to use static\_cast to promote operands to the target type *before* the operation. This prevents compiler warnings and errors related to implicit narrowing conversions.  
-  * **Right:** uint32\_t val \= (static\_cast\<uint32\_t\>(payload\[1\]) \<\< 8\) | payload\[0\];  
-  * **Wrong:** uint32\_t val \= (payload\[1\] \<\< 8\) | payload\[0\];
+  * **Right:**
+```cpp
+  uint32_t val = (static_cast<uint32_t>(payload[1]) << 8) | payload[0];
+``` 
+  * **Wrong:**
+```cpp
+  uint32_t val = (payload[1] << 8) | payload[0];
+```
 
 ## **5. System Design and Integration**
 
