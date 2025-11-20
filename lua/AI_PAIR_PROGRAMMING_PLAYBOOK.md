@@ -47,43 +47,44 @@ For a task-oriented guide on how to use these functions to accomplish common dro
 
 ### 3.1. Vehicle Control
 
-* **vehicle:get\_location()**: Returns a Location object with the current position of the drone.  
-* **vehicle:set\_target\_location(Location)**: Commands the drone to fly to a specific Location.  
-* **vehicle:set\_target\_velocity\_NED(Vector3f)**: Sets the drone's target velocity in a North-East-Down (NED) frame.  
-* **vehicle:arm()**: Arms the drone.  
-* **vehicle:disarm()**: Disarms the drone.  
-* **vehicle:get\_mode()**: Returns the current flight mode of the drone.  
-* **vehicle:set\_mode(mode)**: Sets the drone's flight mode (e.g., GUIDED, LOITER, RTL).  
-* **vehicle:start\_takeoff(altitude)**: Initiates an auto-takeoff to the specified altitude.
+* **`vehicle:get_location()`**: Returns a Location object with the current position of the drone.  
+* **`vehicle:set_target_location(Location)`**: Commands the drone to fly to a specific Location.  
+* **`vehicle:set_target_velocity_NED(Vector3f)`**: Sets the drone's target velocity in a North-East-Down (NED) frame.  
+* **`vehicle:arm()`**: Arms the drone.  
+* **`vehicle:disarm()`**: Disarms the drone.  
+* **`vehicle:get_mode()`**: Returns the current flight mode of the drone.  
+* **`vehicle:set_mode(mode)`**: Sets the drone's flight mode (e.g., GUIDED, LOITER, RTL).  
+* **`vehicle:start_takeoff(altitude)`**: Initiates an auto-takeoff to the specified altitude.
 
 **Example:**
-
-\-- Fly to a GPS coordinate  
-local target\_location \= Location()  
-target\_location:lat(47.397742)  
-target\_location:lng(8.545594)  
-target\_location:alt(10) \-- 10 meters altitude  
-vehicle:set\_target\_location(target\_location)
+```lua
+-- Fly to a GPS coordinate  
+local target_location = Location()  
+target_location:lat(47.397742)  
+target_location:lng(8.545594)  
+target_location:alt(10) -- 10 meters altitude  
+vehicle:set_target_location(target_location)
+```
 
 ### 3.2. GPS
 
-* **gps:num\_sensors()**: Returns the number of connected GPS sensors.  
-* **gps:status(instance)**: Returns the fix status of a specific GPS sensor.  
-* **gps:location(instance)**: Returns a Location object with the position from a specific GPS sensor.  
-* **gps:primary\_sensor()**: Returns the index of the primary GPS sensor.
+* **`gps:num_sensors()`**: Returns the number of connected GPS sensors.  
+* **`gps:status(instance)`**: Returns the fix status of a specific GPS sensor.  
+* **`gps:location(instance)`**: Returns a Location object with the position from a specific GPS sensor.  
+* **`gps:primary_sensor()`**: Returns the index of the primary GPS sensor.
 
 ### 3.3. Sensors
 
-* **rangefinder:num\_sensors()**: Returns the number of connected rangefinders.  
-* **rangefinder:distance(instance)**: Returns the distance measured by a specific rangefinder.  
-* **battery:num\_instances()**: Returns the number of connected batteries.  
-* **battery:voltage(instance)**: Returns the voltage of a specific battery.  
-* **battery:remaining\_capacity(instance)**: Returns the remaining capacity of a specific battery.
+* **`rangefinder:num_sensors()`**: Returns the number of connected rangefinders.  
+* **`rangefinder:distance(instance)`**: Returns the distance measured by a specific rangefinder.  
+* **`battery:num_instances()`**: Returns the number of connected batteries.  
+* **`battery:voltage(instance)`**: Returns the voltage of a specific battery.  
+* **`battery:remaining_capacity(instance)`**: Returns the remaining capacity of a specific battery.
 
 ### 3.4. RC Channels
 
-* **rc:get\_channel(channel\_num)**: Returns the current PWM value of a specific RC channel.  
-* **rc:get\_aux\_cached(aux\_channel)**: Returns the cached value of an auxiliary channel.
+* **`rc:get_channel(channel_num)`**: Returns the current PWM value of a specific RC channel.  
+* **`rc:get_aux_cached(aux_channel)`**: Returns the cached value of an auxiliary channel.
 
 ## 4\. Available Scripts
 
@@ -322,12 +323,12 @@ The following constraints apply to all Lua code generation:
 
 * **Lua Version:** All generated code must be compatible with Lua 5.3.  
 * **API Source of Truth:** The docs.lua file is the **definitive source of truth** for all ArduPilot-specific function signatures. In cases of discrepancy between examples and this documentation, the docs.lua file takes precedence.  
-* **Do not assume functions exist** If a required mathematical helper function (like dot() or cross()) is missing from an API object, the required logic must be implemented manually in Lua. For vector manipulation prefer Vector3f to Vector2f since it has a much richer API.
+* **Do not assume functions exist** If a required mathematical helper function (like `dot()` or `cross()`) is missing from an API object, the required logic must be implemented manually in Lua. For vector manipulation prefer Vector3f to Vector2f since it has a much richer API.
 * **Allowed Functions:** Functions are limited to:  
   * Standard Lua 5.3 language features.  
   * Functions documented in the provided docs.lua file.  
   * The standard io library for file operations.  
-  * The require() function, for loading modules from the script's local APM/scripts directory.
+  * The `require()` function, for loading modules from the script's local APM/scripts directory.
 * **API Interaction Subtleties:** The order of operations when calling C++ API functions can be critical, especially when functions have side effects related to internal state (e.g., needing to pop a shared event *before* sending a response related to that event to ensure the necessary context is prepared in the C++ backend).
 
 ### 5.2. Script Structure and Execution
@@ -349,7 +350,7 @@ The following constraints apply to all Lua code generation:
   function protected_wrapper()
     local success, err = pcall(update)
     if not success then
-       gcs:send_text(MAV\_SEVERITY.ERROR, "Internal Error: " .. err)
+       gcs:send_text(MAV_SEVERITY.ERROR, "Internal Error: " .. err)
        -- Reschedule with a longer delay after an error
        return protected_wrapper, 1000
     end
@@ -360,7 +361,7 @@ The following constraints apply to all Lua code generation:
 
 ### 5.3. Initial Condition Checks
 
-* **Use assert():** Scripts should use the assert() function at the beginning to validate essential preconditions. This ensures the script fails early and clearly if the environment is not correctly configured.  
+* **Use assert():** Scripts should use the `assert()` function at the beginning to validate essential preconditions. This ensures the script fails early and clearly if the environment is not correctly configured.  
   **Example assert() check:**  
 ```lua
   -- Check that a required parameter is set
@@ -374,8 +375,8 @@ The following constraints apply to all Lua code generation:
 
   1. **Activation:** By default, all applets **must** be activatable via an RC switch.
   2. **RC Function Constant:** The Auxiliary Function number for the switch **must** be defined as a local constant in the script (e.g., `local SCRIPTING_AUX_FUNC = 300`). It **must not** be a user-configurable script parameter (e.g., `FIG8_LAND_SWITCH`). This simplifies user setup.
-  3. Use rc:get\_aux\_cached(SCRIPTING\_AUX\_FUNC) to read the switch position (0=low, 1=middle, 2=high).  
-  4. The documentation (.md file) must instruct the user to set their desired RCx\_OPTION to this number (e.g., "Set RC9\_OPTION to 300"). This removes a parameter from the script and simplifies user setup.
+  3. Use `rc:get_aux_cached(SCRIPTING_AUX_FUNC)` to read the switch position (0=low, 1=middle, 2=high).  
+  4. The documentation (.md file) must instruct the user to set their desired RCx_OPTION to this number (e.g., "Set RC9_OPTION to 300"). This removes a parameter from the script and simplifies user setup.
   5. **User Prompt Precedence:** If the user's prompt explicitly requests an activation method that differs from this default (e.g., "take off automatically on arm"), the user's request shall take precedence. However, the generated `.md` documentation **must** include a section explicitly noting this deviation from the standard applet pattern and explaining the custom activation logic.
 
 **Example 3-Position Switch Logic (for `.lua` file):**
@@ -387,7 +388,7 @@ local SCRIPTING_AUX_FUNC = 300 -- Corresponds to "Scripting1"
 -- In the script's main logic
 function update()
     -- Directly use the hardcoded aux function number
-    local switch\_pos = rc:get_aux_cached(SCRIPTING_AUX_FUNC)
+    local switch_pos = rc:get_aux_cached(SCRIPTING_AUX_FUNC)
     if switch_pos == 0 then
         -- Handle LOW position
     elseif switch_pos == 1 then
@@ -443,49 +444,51 @@ This ensures that all generated applets are immediately usable and configurable 
      * Verify the outcome. The primary method for this is self.wait\_statustext("Expected message text", check\_context=True). You can also check for mode changes (self.wait\_mode("BRAKE")) or other vehicle state changes.  
   5. **Cleanup**: Disarm the vehicle (self.disarm\_vehicle()).
 
-**Annotated Autotest Example (to be inserted into arducopter.py):**\# NOTE: This is an example of a method to be added to an existing class  
-\# like 'class AutoTestCopter(vehicle\_test\_suite.TestSuite):'  
-def do\_lua\_mynewapplet\_test(self):  
-    '''Tests the my\_new\_applet.lua script'''  
-    self.start\_subtest("Test MyNewApplet functionality")
+**Annotated Autotest Example (to be inserted into arducopter.py):**\# NOTE: This is an example of a method to be added to an existing class
+```python
+# like 'class AutoTestCopter(vehicle_test_suite.TestSuite):'  
+def do_lua_mynewapplet_test(self):  
+    '''Tests the my_new_applet.lua script'''  
+    self.start_subtest("Test MyNewApplet functionality")
 
-    \# 2\. Install Script  
-    with self.install\_applet\_script\_context("my\_new\_applet.lua"):
+    # 2. Install Script  
+    with self.install_applet_script_context("my_new_applet.lua"):
 
-        \# 3\. Two-Stage Parameter Setup  
-        self.set\_parameters({  
-            "SCR\_ENABLE": 1,  
-            "RNGFND1\_TYPE": 10, \# Enable SITL rangefinder for testing  
+        # 3. Two-Stage Parameter Setup  
+        self.set_parameters({  
+            "SCR_ENABLE": 1,  
+            "RNGFND1_TYPE": 10, # Enable SITL rangefinder for testing  
         })  
-        self.reboot\_sitl()
+        self.reboot_sitl()
 
-        self.set\_parameters({  
-            "MYAPL\_ENABLE": 1,  
-            "RC9\_OPTION": 300, \# Corresponds to Scripting1 aux function  
-            "MYAPL\_ALT": 15,  
+        self.set_parameters({  
+            "MYAPL_ENABLE": 1,  
+            "RC9_OPTION": 300, # Corresponds to Scripting1 aux function  
+            "MYAPL_ALT": 15,  
         })  
-        self.reboot\_sitl()
+        self.reboot_sitl()
 
-        \# 4\. Test Logic  
-        self.wait\_ready\_to\_arm()  
-        self.arm\_vehicle()  
-        self.change\_mode("LOITER")  
-        self.user\_takeoff(alt\_min=20)
+        # 4. Test Logic  
+        self.wait_ready_to_arm()  
+        self.arm_vehicle()  
+        self.change_mode("LOITER")  
+        self.user_takeoff(alt_min=20)
 
-        self.context\_collect('STATUSTEXT')  
-        self.set\_rc(9, 2000\) \# Set RC9 high to trigger script  
-        self.wait\_statustext("MyNewApplet: State changed to HIGH", check\_context=True, timeout=10)
+        self.context_collect('STATUSTEXT')  
+        self.set_rc(9, 2000) # Set RC9 high to trigger script  
+        self.wait_statustext("MyNewApplet: State changed to HIGH", check_context=True, timeout=10)
 
-        \# 5\. Cleanup  
-        self.set\_rc(9, 1000\) \# Return RC switch to low  
-        self.disarm\_vehicle()
+        # 5. Cleanup  
+        self.set_rc(9, 1000) # Return RC switch to low  
+        self.disarm_vehicle()
+```
 
 ### 5.6. Code Quality
 
 * **Header Comments (Applets Only):** Every applet script must start with a comment block that briefly describes its purpose and functionality. The style should be concise and consistent with other applets in the ArduPilot repository. This is not required for examples or tests.  
-* **State Change Feedback:** Applets must provide brief, clear feedback via gcs:send\_text(severity, text) when significant state changes occur (e.g., activation, mode change, action completed). These messages are the primary mechanism for verification in autotests.  
+* **State Change Feedback:** Applets must provide brief, clear feedback via gcs:send_text(severity, text) when significant state changes occur (e.g., activation, mode change, action completed). These messages are the primary mechanism for verification in autotests.  
 * **Use Enums for Constants:** Avoid using hardcoded integers ("magic numbers") for values like modes, states, or options. Instead, define a local table at the start of the script to act as an enumeration.  
-  **Example Enum for gcs:send\_text:**
+  **Example Enum for gcs:send_text:**
 ```lua
   -- Enum for MAV_SEVERITY levels. Using this is mandatory
   -- for gcs:send_text() instead of hardcoded numbers.
@@ -505,20 +508,25 @@ def do\_lua\_mynewapplet\_test(self):
 ```
 
 * **luacheck Compliance:** All generated Lua code must be free of errors and warnings when analyzed with the luacheck tool, using the standard ArduPilot configuration.
-* No Trailing Whitespace: All generated lines of code **must not** contain any trailing whitespace characters (spaces or tabs at the end of a line).
+* No Trailing Whitespace: All generated lines of code **must not** contain any trailing whitespace characters (spaces or tabs at the end of a line). This includes blank lines.
+
+### **5.6.1 Comments**
+
+* **Function Comments:** Every function declaration should be preceded by a comment explaining its purpose. For non-trivial functions, this comment should also describe each parameter and the function's return value.  
+* **Descriptive Logic Comments:** It is mandatory to add comments that explain the purpose of new or modified code blocks, especially for complex logic like state machines, algorithms, or non-obvious calculations. Comments should explain the "why" behind the code, not just re-state what the code does. Do not add ChangeLog-style comments denoting changes - simply state what the code does.
 
 ### 5.7. Parameter Creation
 
 * **Strict Syntax:** Parameter creation is a strict two-step process that must be followed exactly as documented in docs.lua.  
-  1. **Declare Table:** Use param:add\_table(table\_key, prefix, num\_params) to declare the parameter group. The prefix must **NOT** have a trailing underscore.  
-  2. **Add Parameters:** Iterate through a local table of parameter definitions and add each one using param:add\_param(table\_key, param\_num, name, default\_value).  
+  1. **Declare Table:** Use param:add_table(table_key, prefix, num_params) to declare the parameter group. The prefix must **NOT** have a trailing underscore.  
+  2. **Add Parameters:** Iterate through a local table of parameter definitions and add each one using param:add_param(table_key, param_num, name, default_value).  
 * **Naming Convention:**  
   * The prefix should be a short, uppercase string (e.g., MYAPL).  
   * The name in the parameter definition should be the suffix (e.g., ENABLE).  
-  * The final parameter name seen by the user is PREFIX\_NAME (e.g., MYAPL\_ENABLE).  
+  * The final parameter name seen by the user is `PREFIX_NAME` (e.g., `MYAPL_ENABLE`).  
   * The total length of this full name **must not exceed 16 characters**.  
   * The full name must be used when getting/setting the parameter in Lua and in autotests.  
-* **Unique Table Key:** The table\_key must be an integer between 1 and 200 and must be unique across all existing scripts in the ArduPilot repository. Do not reuse any of the following keys: 7, 8, 9, 10, 11, 12, 14, 15, 16, 31, 36, 37, 39, 40, 41, 42, 43, 44, 45, 48, 49, 70, 71, 72, 73, 75, 76, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 102, 104, 106, 109, 110, 111, 117, 136, 138, 139, 193\.  
+* **Unique Table Key:** The table_key must be an integer between 1 and 200 and must be unique across all existing scripts in the ArduPilot repository. Do not reuse any of the following keys: 7, 8, 9, 10, 11, 12, 14, 15, 16, 31, 36, 37, 39, 40, 41, 42, 43, 44, 45, 48, 49, 70, 71, 72, 73, 75, 76, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 102, 104, 106, 109, 110, 111, 117, 136, 138, 139, 193\.  
   **Correct Parameter Creation Example:**
 ```lua
   -- This local table is for script organization only.  
@@ -530,7 +538,7 @@ def do\_lua\_mynewapplet\_test(self):
   local PARAM_TABLE_PREFIX = "MYAPL" -- Note: NO trailing underscore
 
   -- Step 1: Declare the table with its key, prefix, and the number of parameters.  
-  assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, \#parameter_definitions), "Could not add param table")
+  assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, #parameter_definitions), "Could not add param table")
 
   -- Step 2: Add each parameter individually using the correct signature.  
   for i, p_def in ipairs(parameter_definitions) do  
@@ -538,7 +546,7 @@ def do\_lua\_mynewapplet\_test(self):
   end
 
   -- Usage in code: use the full, concatenated name.  
-  local my_val \= param:get('MYAPL_VALUE')
+  local my_val = param:get('MYAPL_VALUE')
 ```
 
 ### 5.7.1. Parameter Documentation
@@ -571,22 +579,22 @@ local MYAPL_SPEED = bind_add_param('SPEED', 2, 10)
 ### **Rule 5.7.2: Parameter Definition and Binding Pattern**
 
 <MANDATORY\_RULE\>
-CRITICAL DIRECTIVE: The param:add\_param() function only registers a parameter's existence. It does not return a usable parameter object. Accessing the parameter object must be done in a separate step using Parameter("FULL\_NAME").
-Due to the script parsing lifecycle, attempting to assert(Parameter(...)) at the global scope, immediately after param:add\_param(), will fail.
+CRITICAL DIRECTIVE: The param:add_param() function only registers a parameter's existence. It does not return a usable parameter object. Accessing the parameter object must be done in a separate step using Parameter("FULL_NAME").
+Due to the script parsing lifecycle, attempting to assert(Parameter(...)) at the global scope, immediately after param:add_param(), will fail.
 
 The **only** correct and robust pattern for defining and binding parameters is as follows:
 
 1. Define a unique PARAM\_TABLE\_KEY (integer) and a PARAM\_TABLE\_PREFIX (string, e.g., "MYAPP\_").
-2. Call assert(param:add\_table(PARAM\_TABLE\_KEY, PARAM\_TABLE\_PREFIX, NUM\_PARAMS), ...) at the global scope.
-3. Define two helper functions, bind\_param and bind\_add\_param, at the global scope.
-4. Call bind\_add\_param for each parameter, immediately preceded by its documentation block. This function handles both registration and binding.
-5. Use the returned local variable (e.g., MYAPP\_ENABLE:get()) directly in the script.
+2. Call assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, NUM_PARAMS), ...) at the global scope.
+3. Define two helper functions, `bind_param` and `bind_add_param`, at the global scope.
+4. Call `bind_add_param` for each parameter, immediately preceded by its documentation block. This function handles both registration and binding.
+5. Use the returned local variable (e.g., `MYAPP_ENABLE:get()`) directly in the script.
 
-This pattern avoids the need for a separate init() function just for parameter binding.
+This pattern avoids the need for a separate `init()` function just for parameter binding.
 
 **Correct Parameter Implementation Example:**
 
-```lua:
+```lua
 local PARAM_TABLE_KEY = 101 -- Chosen unique key
 local PARAM_TABLE_PREFIX = "MYAPP_" -- 6-char prefix, 16-char total max
 assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, 2), "Could not add param table")
@@ -655,50 +663,56 @@ When asked to modify an existing file, you must strictly limit your changes to t
 **Permitted Additions (Encouraged during development):**
 
  * **Adding Comments:** It is highly encouraged to add comments that explain the purpose of new or modified code blocks, especially for complex logic like state machines.
- * **Adding Debug Messages:** When debugging, it is good practice to add gcs:send_text(MAV_SEVERITY.DEBUG, ...) messages to provide insight into the script's state. These should be preserved across edits unless the user explicitly asks for them to be removed. By adhering to this, you ensure that the user can easily review the changes and trust that no unintended side effects have been introduced.
+ * **Adding Debug Messages:** When debugging, it is good practice to add `gcs:send_text(MAV_SEVERITY.DEBUG, ...)` messages to provide insight into the script's state. These should be preserved across edits unless the user explicitly asks for them to be removed. By adhering to this, you ensure that the user can easily review the changes and trust that no unintended side effects have been introduced.
 
 * **Commenting Guidelines:**
   * **Explain "Why", Not "What":** Good comments explain the *purpose* or complex *behavior* of a code block. They should provide context that isn't obvious from reading the code itself.
-  * **Prohibit Change-Log Comments:** You **must not** add comments that merely describe a change you made (e.g., \-- BUGFIX: Corrected loop index, \-- CHANGED: Renamed variable, \-- ADDED: New function). This information belongs in version control history, not in the code, and quickly becomes outdated.
+  * **Prohibit Change-Log Comments:** You **must not** add comments that merely describe a change you made (e.g., -- BUGFIX: Corrected loop index, -- CHANGED: Renamed variable, -- ADDED: New function). This information belongs in version control history, not in the code, and quickly becomes outdated.
   * **Preserve Existing Comments:** Do not remove or alter existing comments unless they are clearly obsolete or factually incorrect due to the requested changes.
 
 ### 5.9. Data Type Coercion
 
-The millis() and micros() functions return special uint32_t and uint64_t userdata types, not standard Lua numbers. These types must be converted to a number before being used in any arithmetic operation or passed to a function expecting a number. The only acceptable methods are my_uint:tofloat() or my_uint:toint(). Using generic Lua tonumber() is incorrect and will fail.
+The `millis()` and `micros()` functions return special uint32_t and uint64_t userdata types, not standard Lua numbers. These types must be converted to a number before being used in any arithmetic operation or passed to a function expecting a number. The only acceptable methods are `my_uint:tofloat()` or `my_uint:toint()`. Using generic Lua `tonumber()` is incorrect and will fail.
 
 ### **Rule 5.10: Custom Flight Mode Pattern**
 
 <MANDATORY_RULE\>
-CRITICAL DIRECTIVE: Scripts implementing a new flight mode must use the vehicle:register\_custom\_mode() function. This function returns a custom\_mode\_state object which is the only correct way to manage the mode's lifecycle.
-The script **must not** attempt to manage its own state (e.g., "active", "inactive") based on vehicle:get\_mode(). It must follow this pattern:
+CRITICAL DIRECTIVE: Scripts implementing a new flight mode must use the `vehicle:register_custom_mode()` function. This function returns a `custom_mode_state` object which is the only correct way to manage the mode's lifecycle.
+The script **must not** attempt to manage its own state (e.g., "active", "inactive") based on `vehicle:get_mode()`. It must follow this pattern:
 
 1. **Global State:**
-   * A g\_cruise\_mode\_state (or similar) global variable, initialized to nil, must be used to store the object returned by register\_custom\_mode().
-   * A g\_last\_mode\_number global variable must be used to track the mode from the previous update() call.
-   * A g\_state table should hold all *internal* state for the mode (e.g., target\_altitude, is\_calibrating).
-2. **script\_init() Function:**
+   * A `g_cruise_mode_state` (or similar) global variable, initialized to nil, must be used to store the object returned by `register_custom_mode()`.
+   * A `g_last_mode_number` global variable must be used to track the mode from the previous `update()` call.
+   * A `g_state` table should hold all *internal* state for the mode (e.g., target_altitude, is_calibrating).
+2. **`script_init()` Function:**
    * A one-time initialization function must be called when the script loads.
-   * This function registers the mode: g\_cruise\_mode\_state \= assert(vehicle:register\_custom\_mode(MODE\_NUM, "NAME", "SHORT"), "Failed to register").
-   * It also stores the numeric mode ID: g\_state.mode\_id \= MODE\_NUM.
-3. update() Function (Mode State Manager):
-   The main update() function's only job is to act as a state manager. It must perform these three tasks in order:
-   * **1\. allow\_entry():** It must call g\_cruise\_mode\_state:allow\_entry(allow\_enter\_function()) on *every* loop. The allow\_enter\_function() must contain all safety checks (e.g., arming:is\_armed(), ahrs:healthy()). This tells ArduPilot if it is safe to switch *into* this mode.
-   * **2\. Mode Detection:** It must get the current mode: local mode \= vehicle:get\_mode().
+   * This function registers the mode: `g_cruise_mode_state = assert(vehicle:register_custom_mode(MODE_NUM, "NAME", "SHORT"), "Failed to register")`.
+   * It also stores the numeric mode ID: `g_state.mode_id = MODE_NUM`.
+3. `update()` Function (Mode State Manager):
+   The main `update()` function's only job is to act as a state manager. It must perform these three tasks in order:
+   * **1\. `allow_entry()`:** It must call `g_cruise_mode_state:allow_entry(allow_enter_function())` on *every* loop. The `allow_enter_function()` must contain all safety checks (e.g., `arming:is_armed()`, `ahrs:healthy()`). This tells ArduPilot if it is safe to switch *into* this mode.
+   * **2\. Mode Detection:** It must get the current mode: `local mode = vehicle:get_mode()`.
    * **3\. State Hooks:** It must check for mode transitions and call the appropriate handler:
-     * if mode \== g\_state.mode\_id and g\_last\_mode\_number \~= g\_state.mode\_id then \-\> Call mode\_init().
-     * elseif mode \== g\_state.mode\_id and g\_last\_mode\_number \== g\_state.mode\_id then \-\> Call mode\_run().
-     * elseif mode \~= g\_state.mode\_id and g\_last\_mode\_number \== g\_state.mode\_id then \-\> Call mode\_exit().
-   * Finally, it must save the current mode: g\_last\_mode\_number \= mode.
-4. **mode\_init() Function:**
+```lua
+    if mode == g_state.mode_id and g_last_mode_number ~= g_state.mode_id then 
+      -- Call mode_init()
+    elseif mode == g_state.mode_id and g_last_mode_number == g_state.mode_id then
+      -- Call mode_run()
+    elseif mode ~= g_state.mode_id and g_last_mode_number == g_state.mode_id then
+      -- Call mode_exit().
+    end
+```
+   *Finally, it must save the current mode: g_last_mode_number = mode.
+4. **`mode_init()` Function:**
    * Called *once* when the mode is entered.
-   * Used to capture initial state (e.g., g\_state.target\_alt\_cm \= ahrs:get\_location():alt()).
-   * Sends a GCS message: gcs:send\_text(MAV\_SEVERITY.INFO, "Cruise Mode: ACTIVATED").
-5. **mode\_run() Function:**
+   * Used to capture initial state (e.g., `g_state.target_alt_cm = ahrs:get_location():alt()`).
+   * Sends a GCS message: `gcs:send_text(MAV_SEVERITY.INFO, "Cruise Mode: ACTIVATED")`.
+5. **`mode_run()` Function:**
    * Called on *every* loop while the mode is active.
-   * Contains the core control logic (e.g., reading RC inputs, calling vehicle:set\_target\_angle\_and\_climbrate()).
-6. **mode\_exit() Function:**
+   * Contains the core control logic (e.g., reading RC inputs, calling `vehicle:set_target_angle_and_climbrate()`).
+6. **`mode_exit()` Function:**
    * Called *once* when the mode is exited.
-   * Used for cleanup and sending a GCS message: gcs:send\_text(MAV\_SEVERITY.INFO, "Cruise Mode: Deactivated").
+   * Used for cleanup and sending a GCS message: `gcs:send_text(MAV_SEVERITY.INFO, "Cruise Mode: Deactivated")`.
 
 This pattern properly separates the script's internal logic from the autopilot's core mode-switching responsibilities, which is safer and more robust.
 </MANDATORY_RULE\>
