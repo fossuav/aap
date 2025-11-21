@@ -109,6 +109,13 @@ Adherence to the official style guide is mandatory. The following is a summary o
 * **General Comments:** Use // for single-line comments and /\* ... \*/ for multi-line comments.  
 * **Header Comments:** Every new .h and .cpp file should begin with a comment block that briefly describes its purpose and functionality. This helps other developers understand the scope of the file at a glance. Also new .h and .cpp files should start with the GPLv3 licenses statement.
 * **Descriptive Logic Comments:** It is mandatory to add comments that explain the purpose of new or modified code blocks, especially for complex logic like state machines, algorithms, or non-obvious calculations. Comments should explain the "why" behind the code, not just re-state what the code does.
+* **CRITICAL COMMENT RULE: NON-CONVERSATIONAL STYLE (MANDATORY)**  
+  * **Rule:** All generated comments (excluding parameter documentation) **must** be written as descriptive statements about the code's operation, intent, or limitations.  
+  * **Forbidden Content:** Comments **must not** contain information about the **development process, conversation history, debugging steps, build errors, or reasoning for a specific commit/change** (e.g., "Fixing layering violation," "As requested by the user," "Renamed variable to fix shadowing error").  
+  * **Focus:** The focus must be on the code's function as if a new developer is reading it for the first time.  
+  * **Example:**  
+    * **Right:** `// Filter IMU data to ensure sender index matches configured source.`
+    * **Wrong:** `// Updated this filter after user noted a bug in step 3.`
 
 ### **3.4. C++ Best Practices**
 
