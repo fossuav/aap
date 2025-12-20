@@ -19,20 +19,14 @@ The playbooks contain rules and constraints that ensure generated code is safe, 
 
 ### Quick Start
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/fossuav/aap.git
-   ```
-
-2. Install the playbooks into your ArduPilot repository:
+1. Install the playbooks into your ArduPilot repository:
    ```bash
    cd /path/to/ardupilot
-   /path/to/aap/install-claude.sh
+   curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/install-claude.sh | bash
    ```
 
-3. Start Claude Code in your ArduPilot directory:
+2. Start Claude Code:
    ```bash
-   cd /path/to/ardupilot
    claude
    ```
 
@@ -54,7 +48,7 @@ The install script places the following files:
 To remove the playbook files from ArduPilot:
 ```bash
 cd /path/to/ardupilot
-/path/to/aap/uninstall-claude.sh
+curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.sh | bash
 ```
 
 ### Example Workflow with Claude Code
