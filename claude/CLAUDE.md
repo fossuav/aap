@@ -269,10 +269,25 @@ When modifying existing files:
 ## Commit Conventions
 
 - **Atomic Commits:** Each commit represents a single logical change
+- **Each Commit Must Compile:** Every commit must leave the codebase in a buildable state. Order changes so dependencies are added before code that uses them.
+- **Squash per subsystem:** When squashing commits, group by subsystem prefix (AP_GyroFFT, RC_Channel, Tools, etc.)
+- **DO NOT list Claude as author or co-author** - commits should only show the human author
 - **Message Prefix:** Subject line prefixed with module name:
   - `AP_Nav: Refactor loiter controller`
   - `Tools: Add autotest for new NAV_CMD`
   - `ArduCopter: Fix altitude hold in mode_althold.cpp`
+
+## Git Safety
+
+- **NEVER run `git clean` without explicit permission** - this removes untracked files which may include important local configuration or notes
+- If git clean is absolutely necessary, first backup untracked files to a safe location
+- Prefer `git checkout` or `git restore` to discard changes to tracked files
+- **Verify rebased commits before force pushing:** After rebasing or squashing, verify the final tree content matches the original by comparing relevant files:
+  ```bash
+  # Compare specific files between original and rebased commits
+  git diff <original-commit> <rebased-commit> -- path/to/file1 path/to/file2
+  # Empty output means files are identical
+  ```
 
 ## Testing
 

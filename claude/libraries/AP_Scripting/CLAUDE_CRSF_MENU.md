@@ -390,6 +390,123 @@ end
 return helper
 ```
 
+## Advanced Patterns
+
+### Wrapping the Event Loop
+
+If your script needs custom logic that runs alongside CRSF event handling (e.g., scheduled actions, periodic updates), wrap the event loop instead of returning it directly:
+
+```lua
+local crsf_event_handler, crsf_delay = crsf_helper.register_menu(menu_definition)
+if not crsf_event_handler then
+    gcs:send_text(MAV_SEVERITY.ERROR, "Menu init failed")
+    return
+end
+
+local function main_loop()
+    -- Custom logic runs BEFORE crsf event handling
+    if scheduled_action_time and millis():tofloat() >= scheduled_action_time then
+        perform_scheduled_action()
+        scheduled_action_time = nil
+    end
+
+    -- Delegate to CRSF event handler
+    local next_fn, next_delay = crsf_event_handler()
+    if next_fn then
+        crsf_event_handler = next_fn
+    end
+
+    return main_loop, next_delay or 100
+end
+
+return main_loop, crsf_delay
+```
+
+### Delayed Reboot from CRSF Command
+
+When a CRSF command triggers `vehicle:reboot()`, the reboot executes immediately and the CRSF response never gets sent. The TX gets stuck waiting. **Solution:** Schedule the reboot with a short delay:
+
+```lua
+local reboot_time_ms = nil
+local REBOOT_DELAY_MS = 300
+
+local function on_reboot_command(action)
+    if action == CRSF_COMMAND_STATUS.START then
+        gcs:send_text(MAV_SEVERITY.WARNING, "Rebooting...")
+        reboot_time_ms = millis():tofloat() + REBOOT_DELAY_MS
+        return CRSF_COMMAND_STATUS.READY, "Rebooting"  -- TX closes dialog
+    end
+    return CRSF_COMMAND_STATUS.READY, "Reboot"
+end
+
+-- In wrapped main_loop (see above):
+if reboot_time_ms and millis():tofloat() >= reboot_time_ms then
+    reboot_time_ms = nil
+    vehicle:reboot(false)
+    return
+end
+```
+
+### Dynamic Menu Options
+
+Build SELECTION options at startup by scanning current parameter state. Example: only show unassigned RC channels:
+
+```lua
+local function build_available_channels(target_option)
+    local options = {"None"}
+    local values = {0}
+    local default_idx = 1
+    local current_ch = find_channel_with_option(target_option)
+
+    for ch = 5, 16 do
+        local param = Parameter(string.format("RC%d_OPTION", ch))
+        if param then
+            local val = param:get()
+            -- Include if unassigned OR currently has our option
+            if val == 0 or ch == current_ch then
+                table.insert(options, string.format("CH%d", ch))
+                table.insert(values, ch)
+                if ch == current_ch then default_idx = #options end
+            end
+        end
+    end
+    return options, values, default_idx
+end
+
+local pan_options, _, pan_default = build_available_channels(186)  -- FFT_VIS_PAN
+
+pan_channel_item = {
+    type = 'SELECTION',
+    name = "Pan Channel",
+    options = pan_options,
+    default = pan_default,
+    callback = on_pan_channel_change
+}
+```
+
+### Updating INFO Items Dynamically
+
+INFO items can be updated by modifying the `info` field from other callbacks. Store a reference to the item:
+
+```lua
+local status_item  -- forward declaration
+
+local function on_some_change(value)
+    -- ... do something ...
+    if status_item then
+        status_item.info = "New status text"
+    end
+end
+
+status_item = {
+    type = 'INFO',
+    name = "Status",
+    info = "Initial text"
+}
+```
+
+The updated text appears when the TX next reads the parameter (typically when navigating to the item).
+
 ## Common Pitfalls
 
 ### Garbage Collection Crashes

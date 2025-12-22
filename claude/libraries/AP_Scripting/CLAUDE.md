@@ -149,6 +149,34 @@ local time_ms = tonumber(millis())
 
 ### Parameter System
 
+**Binding Existing Parameters:** To read/write existing ArduPilot parameters:
+```lua
+-- Bind to an existing parameter (will fail if param doesn't exist)
+local fft_enable = assert(Parameter('FFT_ENABLE'), "FFT_ENABLE not found")
+local value = fft_enable:get()
+fft_enable:set(1)           -- Immediate effect, not saved to EEPROM
+fft_enable:set_and_save(1)  -- Saved to EEPROM (survives reboot)
+```
+
+Use `set_and_save()` for parameters that require reboot - this ensures the value persists. Use `set()` for parameters that take effect immediately and don't need persistence.
+
+**Scanning Parameter Ranges:** To dynamically access numbered parameters:
+```lua
+-- Find which RC channel has a specific option assigned
+local function find_channel_with_option(target_option)
+    for ch = 5, 16 do
+        local param = Parameter(string.format("RC%d_OPTION", ch))
+        if param then
+            local val = param:get()
+            if val and val == target_option then
+                return ch
+            end
+        end
+    end
+    return 0  -- Not found
+end
+```
+
 **Unique Table Keys:** Do not reuse these reserved keys:
 - 7-16, 31, 36-49, 52, 70-76, 78-93, 102, 104, 106, 108-111, 117, 123, 136, 138-139, 142, 170-176, 193
 - Check `applets/` and `drivers/` for current usage before choosing a key.
