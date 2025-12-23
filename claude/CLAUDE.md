@@ -270,6 +270,13 @@ When modifying existing files:
 
 - **Atomic Commits:** Each commit represents a single logical change
 - **Each Commit Must Compile:** Every commit must leave the codebase in a buildable state. Order changes so dependencies are added before code that uses them.
+- **Checkpoint Commits:** During development, create checkpoint commits when reaching milestones to avoid losing work. These can be squashed or cleaned up later before final PR submission. Good checkpoint opportunities:
+  - After completing a logical unit of work (e.g., adding a new struct, implementing a function)
+  - Before attempting risky refactoring or experimentation
+  - When all tests pass after a significant change
+  - Before running tools that modify files (like formatters)
+
+  Always verify the build succeeds before creating a checkpoint: `./waf copter` (or appropriate target)
 - **Squash per subsystem:** When squashing commits, group by subsystem prefix (AP_GyroFFT, RC_Channel, Tools, etc.)
 - **DO NOT list Claude as author or co-author** - commits should only show the human author
 - **Message Prefix:** Subject line prefixed with module name:
