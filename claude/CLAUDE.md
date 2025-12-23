@@ -214,6 +214,19 @@ if (condition) { foo(); }
 - Use `1.0f` for float literals, not `1.0`
 - Prefer multiplication over division: `foo_cm * 0.01f` not `foo_cm / 100.0f`
 
+**Style Verification:**
+- Check for trailing whitespace before finalizing changes: `git diff --check HEAD`
+- Use astyle to verify formatting of modified code only (never entire files):
+```bash
+# Check what would change (dry run)
+astyle --options=Tools/CodeStyle/astylerc --dry-run path/to/modified_file.cpp
+
+# Apply formatting to specific file
+astyle --options=Tools/CodeStyle/astylerc path/to/modified_file.cpp
+```
+- IMPORTANT: Only format code you have actually modified. Running astyle on entire files that contain unrelated code will create noise in the diff and is not acceptable.
+- After running astyle, review the changes to ensure only your modifications were affected.
+
 ### Development Constraints
 
 **Memory:**
