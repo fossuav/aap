@@ -4,10 +4,11 @@
 
 This project provides guidance documents for using Large Language Models (LLMs) to generate and modify code for the ArduPilot autopilot platform.
 
-Two usage modes are supported:
+Three usage modes are supported:
 
 1. **Claude Code** - Anthropic's CLI tool for interactive development with Claude
-2. **Chat-based LLMs** - Traditional prompt-based code generation with any LLM
+2. **Gemini CLI** - Google's CLI tool for interactive development with Gemini
+3. **Chat-based LLMs** - Traditional prompt-based code generation with any LLM
 
 The playbooks contain rules and constraints that ensure generated code is safe, testable, and consistent with ArduPilot development standards.
 
@@ -51,26 +52,51 @@ cd /path/to/ardupilot
 curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.sh | bash
 ```
 
-### Example Workflow with Claude Code
+---
 
+## **Gemini CLI Integration**
+
+The [Gemini CLI](https://github.com/google-gemini/gemini-cli) provides a similar interactive development experience using Google's Gemini models.
+
+### Quick Start
+
+1. Install the playbooks into your ArduPilot repository:
+   ```bash
+   cd /path/to/ardupilot
+   curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/install-gemini.sh | bash
+   ```
+
+2. Start Gemini:
+   ```bash
+   gemini
+   ```
+
+Gemini will automatically read the `GEMINI.md` files and use them to guide its responses.
+
+### Installed Files
+
+The install script places the following files:
+
+| File | Purpose |
+|------|---------|
+| `GEMINI.md` | Build system, architecture overview, C++ development guidelines |
+| `libraries/AP_Scripting/GEMINI.md` | Lua scripting patterns, applet structure, parameter system |
+| `libraries/AP_Scripting/GEMINI_CRSF_MENU.md` | CRSF (Crossfire) menu implementation |
+| `libraries/AP_Scripting/GEMINI_VEHICLE_CONTROL.md` | Vehicle control APIs, movement commands, RC input |
+
+### Uninstalling
+
+To remove the playbook files from ArduPilot:
+```bash
+cd /path/to/ardupilot
+curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-gemini.sh | bash
 ```
-$ cd ~/ardupilot
-$ claude
-
-> Build ArduCopter for SITL and run the basic tests
-
-> Create a Lua applet that flashes the LEDs when battery is low
-
-> Add an autotest for the LED applet we just created
-```
-
-Claude Code will use the playbook rules to generate code that follows ArduPilot conventions.
 
 ---
 
 ## **Chat-Based LLM Usage**
 
-For traditional chat-based LLMs (ChatGPT, Claude web, etc.), you can manually provide playbook context.
+For traditional chat-based LLMs (ChatGPT, Claude web, Gemini web, etc.), you can manually provide playbook context.
 
 ### Key Components
 
@@ -93,21 +119,12 @@ To generate code, the LLM requires the following context:
 The process for generating code is as follows:
 
 1. **Write a Prompt:** Clearly describe the required functionality. Focus on what the code should do, not the implementation details.  
-   * *Example Prompt:* \"Create a script to control the brightness of my drone's NeoPixel LEDs using an RC switch. It should support three levels: off, medium, and high.\"
+   * *Example Prompt:* "Create a script to control the brightness of my drone's NeoPixel LEDs using an RC switch. It should support three levels: off, medium, and high."
 2. **Provide Context:** Give the LLM your prompt, AI playbook, API documentation and, optionally, the digest-lua.txt file.
 3. **Generate Artifacts:** The LLM will generate a complete ArduPilot Applet (in the case of lua), which includes:
    * A .lua script file.  
    * A .md documentation file explaining how to set up and use the script.  
 4. **Generate Autotest:** For every applet, the LLM should offer to generate a corresponding SITL autotest file. This allows you to verify the script's functionality in a safe, simulated environment.
-
-### The leds\_on\_a\_switch Example
-
-The development of the leds\_on\_a\_switch applet demonstrates the intended workflow. A simple prompt was used to generate an initial script. Through an iterative process of critiquing the output against the playbook's rules, the final script was refined to be:
-
-* **Correct:** Adheres strictly to the documented APIs.
-* **Safe:** Includes error handling and fails gracefully if misconfigured.
-* **Testable:** Provides GCS feedback for verification in an autotest.
-* **User-Friendly:** Follows standard ArduPilot conventions and is accompanied by clear documentation.
 
 ---
 
@@ -121,6 +138,12 @@ aap/
 │       ├── CLAUDE.md
 │       ├── CLAUDE_CRSF_MENU.md
 │       └── CLAUDE_VEHICLE_CONTROL.md
+├── gemini/                          # Gemini CLI playbooks (GEMINI.md files)
+│   ├── GEMINI.md                    # Root playbook (build, architecture, C++)
+│   └── libraries/AP_Scripting/      # Lua scripting playbooks
+│       ├── GEMINI.md
+│       ├── GEMINI_CRSF_MENU.md
+│       └── GEMINI_VEHICLE_CONTROL.md
 ├── cpp/                             # C++ playbooks for chat-based LLMs
 │   └── AI_PAIR_PROGRAMMING_PLAYBOOK_CPP.md
 ├── lua/                             # Lua playbooks for chat-based LLMs
@@ -131,6 +154,8 @@ aap/
 │   └── docs.lua                     # Lua API documentation
 ├── install-claude.sh                # Install Claude playbooks to ArduPilot
 ├── uninstall-claude.sh              # Remove Claude playbooks from ArduPilot
+├── install-gemini.sh                # Install Gemini playbooks to ArduPilot
+├── uninstall-gemini.sh              # Remove Gemini playbooks from ArduPilot
 └── README.md
 ```
 
