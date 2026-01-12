@@ -412,5 +412,73 @@ Before concluding a C++ development task, the following checklist **must** be co
    * If a new high-level feature, driver, or class was created, have its init() and update() (or equivalent) methods been called from an appropriate manager, scheduler, or main vehicle loop?  
    * Has a mental walk-through been performed to ensure the new code is actually executed in the program flow?
 4. **[ ] SITL Autotest Offer:**
-   * Have you explicitly offered to generate a SITL autotest to verify the new functionality?  
+   * Have you explicitly offered to generate a SITL autotest to verify the new functionality?
    * Are you prepared to add the test as a new method to the appropriate vehicle test suite?
+
+## **10. Linux HAL Development Patterns**
+
+When developing drivers for AP_HAL_Linux, the following patterns and pitfalls are critical.
+
+### **10.1. Driver Selection in HAL_Linux_Class.cpp**
+
+Driver selection uses `#elif` chains based on `CONFIG_HAL_BOARD_SUBTYPE`. Order matters critically:
+
+* **Pitfall:** If a board subtype appears in an earlier `#elif` block, it will never reach a later block intended for it.
+* **Verification:** When adding a new driver for an existing board subtype, search HAL_Linux_Class.cpp for ALL occurrences of that subtype and ensure the correct block is selected.
+* **Example:** `HAL_BOARD_SUBTYPE_LINUX_RPI` must NOT appear in the `RCInput_RPI` block if you want it to use `RCInput_Pigpio` instead.
+
+### **10.2. Early Initialization Pattern**
+
+Some external libraries (like pigpio) create internal threads during initialization. These threads inherit the CPU affinity of the calling thread. On real-time systems with isolated CPUs, this can cause failures.
+
+* **Pattern:** Add an `early_init()` virtual method to the base class that runs BEFORE `scheduler->init()` sets CPU affinity.
+* **Implementation:**
+```cpp
+// In RCInput.h base class:
+virtual void early_init() {}
+
+// In HAL_Linux_Class.cpp run():
+RCInput::from(rcin)->early_init();  // Before CPU affinity is set
+scheduler->init();                   // Sets CPU affinity here
+```
+* **Use Case:** Any driver that uses libraries with internal thread pools (pigpio, etc.) must initialize those libraries in `early_init()`, not `init()`.
+
+### **10.3. Signal Handler Conflicts with systemd**
+
+Libraries that install their own signal handlers (SIGCHLD, SIGCONT, etc.) conflict with systemd service management.
+
+* **Symptom:** Service hangs on stop/restart, or fails to start on boot but works when started manually after login.
+* **Solution:** Disable library signal handlers before initialization:
+```cpp
+gpioCfgSetInternals(PI_CFG_NOSIGHANDLER);  // For pigpio
+int ret = gpioInitialise();
+```
+* **Rule:** Always check if external libraries have options to disable signal handling.
+
+### **10.4. Real-Time Linux and systemd Configuration**
+
+ArduPilot's internal scheduler handles `SCHED_FIFO` for its own threads. Setting scheduling policy in systemd can break external library threads.
+
+* **Wrong:** `CPUSchedulingPolicy=fifo` in systemd service file
+* **Right:** Let ArduPilot handle scheduling internally; only set `CPUAffinity` and `Nice` in systemd
+* **Verification:** After boot, check thread scheduling with:
+```bash
+ps -L -p $(pgrep arducopter) -o tid,psr,cls,rtprio,comm
+```
+  ArduPilot threads should show `FF` (FIFO) with priorities 10-15. Library threads may show `TS` (normal) - this is correct.
+
+### **10.5. UART Latency Considerations**
+
+The default Linux UART driver uses a 100Hz timer thread for I/O, introducing up to 10ms latency.
+
+* **Low-latency reads:** `_available()` can pull data directly from device when not in timer context
+* **Low-latency writes:** `_flush()` can bypass the timer thread using a semaphore for coordination
+* **Coordination:** Use a semaphore (`_device_sem`) to prevent timer thread and direct access from conflicting
+
+### **10.6. Serial RC Protocol Data Flow**
+
+When implementing RC input drivers that feed serial protocols (SBUS, CRSF, etc.):
+
+* **Feed bytes to AP_RCProtocol:** Use `AP::RC().add_uart_byte(AP_RCProtocol::RCPROTOCOL_PARSE_ONLY, byte, baudrate)` to let the protocol layer handle detection and parsing.
+* **Don't double-invert:** SBUS is an inverted protocol. If your hardware or driver inverts the signal, don't apply software inversion - the SBUS backend handles inversion internally.
+* **Framing considerations:** SBUS uses 8E2 (8 data bits, even parity, 2 stop bits). Edge-detection drivers must account for this non-standard framing.
