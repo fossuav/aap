@@ -233,6 +233,28 @@ astyle --options=Tools/CodeStyle/astylerc path/to/modified_file.cpp
 - No dynamic memory allocation (`malloc`, `new`) in performance-critical flight code paths
 - `new` and `malloc` zero their memory; stack variables must be explicitly initialized
 - Be mindful of stack size; avoid deep recursion and large local variables
+- Prefer `calloc`/`free` over `new[]`/`delete[]` for arrays - less allocation overhead:
+```cpp
+// Preferred for arrays:
+auto *leds = (SerialLed *)calloc(num_leds, sizeof(SerialLed));
+free(leds);
+
+// Avoid for arrays (more overhead):
+auto *leds = new SerialLed[num_leds];
+delete[] leds;
+```
+- Prefer embedding objects over dynamic allocation when the object lifetime matches the parent:
+```cpp
+// Preferred - embedded object:
+class Parent {
+    Child _child;  // embedded, no heap allocation
+};
+
+// Avoid when not necessary:
+class Parent {
+    Child *_child;  // requires new/delete
+};
+```
 
 **Debugging:**
 - No `printf`; use `gcs().send_text()` for GCS messages
@@ -328,3 +350,77 @@ When designing C++ APIs for Lua interaction:
 - Lua scripts are sandboxed and cannot share state directly
 - For shared event queues, use peek/pop pattern allowing scripts to check ownership before consuming
 - Protect shared C++ state with mutexes when accessible from Lua
+
+## Lua Applet Autotest Lessons Learned
+
+### Autotest Structure for Lua Scripts
+
+When writing autotests for Lua applets in `Tools/autotest/arducopter.py`:
+
+1. **Script Installation Sequence:**
+   ```python
+   # 1. Enable scripting first
+   self.set_parameters({"SCR_ENABLE": 1})
+   self.reboot_sitl()
+
+   # 2. Install script (creates parameters on next boot)
+   self.install_applet_script_context('my_script.lua')
+   self.reboot_sitl()
+
+   # 3. Wait for script initialization message BEFORE setting script params
+   self.wait_statustext("Script loaded message", check_context=True, timeout=30)
+
+   # 4. NOW set script-specific parameters (they exist after script runs)
+   self.set_parameters({"SCRIPT_PARAM": value})
+   ```
+
+2. **Context Collection Timing:**
+   - Call `self.context_collect('STATUSTEXT')` immediately after `context_push()`
+   - Do this BEFORE any reboots or actions that might generate messages you want to catch
+
+3. **SITL Speedup Considerations:**
+   - Tests run at high speedup (~100x), so time-based logic completes very fast
+   - Data collection that expects "real flight time" may get insufficient samples
+   - Relax data requirements or use sample counts rather than time durations
+   - Example: Accept `total_samples >= 50` instead of requiring specific bin fill levels
+
+4. **Multiple Test Phases:**
+   - When running multiple test phases, `check_context=True` matches ALL messages ever collected
+   - For subsequent phases needing fresh messages, either:
+     - Use `check_context=False` (waits for new messages only)
+     - Clear context between phases
+     - Use unique message strings per phase
+   - Timing can be tricky - message may arrive before `wait_statustext` starts listening
+
+5. **Protected Wrapper Pattern:**
+   - When using `pcall(update)` in Lua, capture ALL return values:
+     ```lua
+     local success, result, interval = pcall(update)
+     return protected_wrapper, interval or 100  -- Don't lose the interval!
+     ```
+
+6. **Mode Transitions:**
+   - Scripts that change flight modes (e.g., to LOITER on completion) affect subsequent test phases
+   - Explicitly set required mode before each test phase:
+     ```python
+     self.change_mode('GUIDED')  # Ensure correct mode before next test
+     ```
+
+### Test Method Registration
+
+Add new test methods to the appropriate test list in the test class:
+```python
+# In tests_scripting list (for scripting-related tests)
+self.ScriptMyNewTest,
+```
+
+### Checkpoint Commits
+
+**Always checkpoint after major milestones:**
+- After all tests pass
+- Before major refactoring
+- When switching between implementation phases
+
+Use atomic commits with proper prefixes:
+- `AP_Scripting: Add feature X` - for Lua scripts
+- `Tools: Add autotest for feature X` - for test code
