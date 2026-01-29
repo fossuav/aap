@@ -75,8 +75,15 @@ If a vendor provides a draft `hwdef.dat`, use it as a base but treat it as poten
     *   **BIDIR Constraints:**
         *   Only supported on **TIM1 through TIM8**.
         *   **NEVER** apply `BIDIR` to `TIM4_CH4` (DMA conflict).
-    *   **BIDIR Tag:** Apply `BIDIR` to at least one channel in a timer pair (CH1/CH2 or CH3/CH4).
-        *   *Example:* `PA0 TIM5_CH1 TIM5 PWM(1) GPIO(50) BIDIR`
+    *   **BIDIR Tag:** Bi-directional DShot works with timer channel **pairs**: CH1/CH2 and CH3/CH4. Apply `BIDIR` to one channel in **each pair** that uses bi-directional DShot.
+        *   If using CH1-CH4 on a timer (4 motors), you need BIDIR on **both** pairs: one on CH1 or CH2, AND one on CH3 or CH4.
+        *   *Example (4 motors on TIM1):*
+            ```
+            PE9  TIM1_CH1 TIM1 PWM(1) GPIO(50) BIDIR  # Enables BIDIR for CH1/CH2 pair
+            PE11 TIM1_CH2 TIM1 PWM(2) GPIO(51)
+            PE13 TIM1_CH3 TIM1 PWM(3) GPIO(52) BIDIR  # Enables BIDIR for CH3/CH4 pair
+            PE14 TIM1_CH4 TIM1 PWM(4) GPIO(53)
+            ```
         *   *Note:* On F4/F7, the channel with the `BIDIR` tag determines which DMA channel is used for input capture. On H7, it is less critical but still good practice.
 *   **Alternative Mappings:** If the default assignment is a complimentary channel (e.g., `TIM1_CH1N`), check the MCU definition script (e.g., `libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H743xx.py`) for alternative functions (e.g., `TIM3_CH2`) on the same pin that support DShot.
 
@@ -287,9 +294,38 @@ Ensure consistency between `hwdef.dat` and `README.md`:
 *   PWM count matches number of `PWM(n)` entries
 *   IMU names match `IMU` lines exactly
 *   Battery scale values match `HAL_BATT_VOLT_SCALE` and `HAL_BATT_CURR_SCALE`
+*   **Serial protocol defaults:** If README says a port is for RC Input, GPS, etc., the corresponding `DEFAULT_SERIALn_PROTOCOL` must be set in hwdef (e.g., `SerialProtocol_RCIN`, `SerialProtocol_GPS`)
 
 ### 6.5. Bootloader Build (MANDATORY for new boards)
 **Every new board MUST have bootloader binaries built and committed.**
+
+**hwdef-bl.dat Required Elements:**
+The bootloader hwdef must include these mandatory defines (often inherited from main hwdef via `include`):
+*   `FLASH_SIZE_KB` - Total flash size (e.g., 2048 for H7)
+*   `STM32_ST_USE_TIMER` - Must match main hwdef, must be 32-bit timer
+*   Crystal/oscillator defines if not using defaults
+
+**SD Card Flash Support (recommended for boards with SD card):**
+If the board has an SD card, add support for flashing firmware from SD card in the bootloader:
+```
+# ChibiOS config for FATFS
+define CH_CFG_USE_MEMCORE 1
+define CH_CFG_USE_HEAP 1
+define CH_CFG_USE_SEMAPHORES 0
+define CH_CFG_USE_MUTEXES 1
+define CH_CFG_USE_DYNAMIC 1
+define CH_CFG_USE_WAITEXIT 1
+define CH_CFG_USE_REGISTRY 1
+
+# SDMMC pins (copy from main hwdef)
+PB14 SDMMC2_D0 SDMMC2
+# ... other SDMMC pins ...
+
+define FATFS_HAL_DEVICE SDCD2  # or SDCD1 for SDMMC1
+define HAL_OS_FATFS_IO 1
+define AP_BOOTLOADER_FLASH_FROM_SD_ENABLED 1
+```
+See `hwdef/Aeromind6X/hwdef-bl.dat` for a complete example.
 
 ```bash
 # Build the bootloader
@@ -376,9 +412,17 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **Board ID:** Use `APJ_BOARD_ID AP_HW_<BoardName>`.
 
 ### 7.2. MCU & System
-*   **H7:** `MCU STM32H7xx STM32H743xx`, `FLASH_RESERVE_START_KB 128`, `STM32_ST_USE_TIMER 12`.
+*   **H7:** `MCU STM32H7xx STM32H743xx`, `FLASH_RESERVE_START_KB 128`, `STM32_ST_USE_TIMER 2`.
 *   **F7:** `MCU STM32F7xx STM32F745xx`, `FLASH_RESERVE_START_KB 96`, `STM32_ST_USE_TIMER 5`.
 *   **F4:** `MCU STM32F4xx STM32F405xx`, `FLASH_RESERVE_START_KB 48`, `STM32_ST_USE_TIMER 5`.
+
+**CRITICAL - System Timer Selection:**
+*   The system timer (`STM32_ST_USE_TIMER`) **MUST** be a 32-bit timer. Using a 16-bit timer causes build failure.
+*   **32-bit timers:** TIM2, TIM5 (on all families)
+*   **16-bit timers (DO NOT USE):** TIM3, TIM4, TIM12, TIM13, TIM14, etc.
+*   **H7 recommendation:** Use TIM2. TIM5 is often used for PWM outputs. TIM12 is 16-bit and will fail.
+*   **F4/F7 recommendation:** Use TIM5 unless it's needed for PWM outputs.
+*   **Both hwdef.dat AND hwdef-bl.dat** must use the same 32-bit timer setting.
 *   **Clock:** Explicitly set `MCU_CLOCKRATE_MHZ` (e.g., 480 for H7).
 *   **LEDs:** If using standard notifications + external/onboard LEDs, ensure `define DEFAULT_NTF_LED_TYPES 455` is set if needed (sets bits 0,1,2,6,7,8).
 
@@ -392,6 +436,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   Use `NODMA` for low-bandwidth ports (e.g., GPS, generic UARTs) if DMA channels are scarce.
     *   **RC Input:** Typically `SerialProtocol_RCIN`.
     *   **ESC Telemetry:** `SerialProtocol_ESCTelemetry`.
+    *   **Flow Control Verification:** When CTS/RTS pins are assigned, verify they belong to the same UART peripheral as the TX/RX pins. Each UART has specific CTS/RTS pins - check the MCU datasheet alternate function table. Mismatched CTS/RTS pins will not function.
 *   **SPI:**
     *   Define `SPIDEV` for all devices.
     *   Use `CS` keyword for Chip Select pins.
@@ -399,10 +444,18 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **I2C:**
     *   Order matters: `I2C_ORDER I2C2 I2C1`.
     *   Internal barometers often on a specific bus.
+    *   **HAL_I2C_INTERNAL_MASK:** This bitmask identifies which I2C buses are internal (not user-accessible). The bit position corresponds to the bus **index in I2C_ORDER** (not the I2C peripheral number).
+        *   *Example:* If `I2C_ORDER I2C1 I2C2 I2C4` and I2C1 has internal sensors only:
+            *   I2C1 = bus index 0 → bit 0 = 1
+            *   I2C2 = bus index 1 → bit 1 = 0 (external)
+            *   I2C4 = bus index 2 → bit 2 = 0 (external)
+            *   `define HAL_I2C_INTERNAL_MASK 1` (0b001)
+        *   If both I2C1 and I2C4 are internal: `define HAL_I2C_INTERNAL_MASK 5` (0b101)
 *   **ADC:**
     *   Use `ADC1` for battery.
     *   Standard scaling: `SCALE(1)`.
     *   Define `HAL_BATT_VOLT_PIN`, `HAL_BATT_CURR_PIN`, `HAL_BATT_VOLT_SCALE` (e.g., 11.0), `HAL_BATT_CURR_SCALE`.
+    *   **CRITICAL - Package Limitations:** ADC3 channels (e.g., PC2, PC3) are NOT available on 100-pin LQFP packages. Verify ADC pin availability against the specific MCU package datasheet before assigning battery/analog inputs. Prefer ADC1 channels which are available on all packages.
 *   **PWM/Motors:**
     *   Use `BIDIR` for DShot capability.
     *   Group timers carefully (comments like `# Motors` vs `# LEDs` help).
@@ -411,8 +464,9 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 ### 7.4. Sensors
 *   **Baro:** `BARO DPS310 I2C:0:0x76` (Driver Bus:Instance:Addr).
 *   **Compass:**
-    *   If none internal: `define ALLOW_ARM_NO_COMPASS`, `define HAL_PROBE_EXTERNAL_I2C_COMPASSES`.
+    *   If none internal: `define ALLOW_ARM_NO_COMPASS`, `define AP_COMPASS_PROBING_ENABLED 1`.
     *   `define HAL_I2C_INTERNAL_MASK 0`.
+    *   **Note:** `HAL_PROBE_EXTERNAL_I2C_COMPASSES` is deprecated - use `AP_COMPASS_PROBING_ENABLED 1` instead.
 *   **IMU:**
     *   `IMU <Driver> SPI:<name> <Rotation>`
     *   Example: `IMU Invensensev3 SPI:imu1 ROTATION_YAW_270`.
@@ -433,6 +487,21 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   `BATT_MONITOR` - Use `HAL_BATT_MONITOR_DEFAULT` in hwdef.dat instead
     *   `SERIALn_PROTOCOL` - Use `define DEFAULT_SERIALn_PROTOCOL` in hwdef.dat instead
     *   Any RC, flight mode, or behavior parameters
+
+### 7.7. Avoiding Redundant Defines
+**Do NOT add defines that just set the default value.** Only add defines when changing from the default behavior.
+
+**Commonly mistaken redundant defines:**
+*   `HAL_HAVE_SAFETY_SWITCH 0` - Already the default for ChibiOS when no `HAL_GPIO_PIN_SAFETY_IN` is defined
+*   `HAL_WATCHDOG_ENABLED_DEFAULT true/false` - Users can enable/disable via `BRD_OPTIONS` parameter (BOARD_OPTION_WATCHDOG). Only set if board requires non-default behavior.
+*   `HAL_WITH_RAMTRON 1` - Only define if board has a RAMTRON/FRAM device with corresponding `SPIDEV` entry
+*   `HAL_WITH_RTC_SRAM 1` - Not used in codebase, do not add
+*   `HAL_WITH_DSP TRUE` - Defaults to enabled on boards with >1MB flash (H7, F7). Only set to FALSE to disable on small boards.
+
+**General rule:** Before adding a `define`, check if it's already the default in:
+*   `libraries/AP_HAL/board/chibios.h`
+*   `libraries/AP_HAL_ChibiOS/hwdef/scripts/defaults.h`
+*   The relevant library's config header (e.g., `AP_BoardConfig_config.h`)
 
 ## 8. Documentation Standards (Reviewer Preferences)
 
@@ -731,9 +800,50 @@ Use distinct separator comments to divide the file into logical blocks.
     *   *Cause:* The main firmware build requires the bootloader binary to be present for embedding (if enabled).
     *   *Fix:* Build the bootloader explicitly: `Tools/scripts/build_bootloaders.py <BoardName>`.
 
-## 12. DMA Verification & Optimization
+## 12. Hardware Design Review (for REVIEW.md)
 
-### 12.1. General DMA Requirements (All MCUs)
+When reviewing hardware designs or creating a `REVIEW.md` file, check these critical elements:
+
+### 12.1. MCU Power Supply (CRITICAL)
+*   **H7 VCAP Capacitors:** STM32H7 MCUs require 2.2µF ceramic capacitors on VCAP pins for the internal LDO regulator. Using 100nF (common in F4/F7 designs) causes instability. Reference: ST AN5096, datasheet section "Power supply scheme".
+*   **Decoupling:** Each VDD pin needs a 100nF ceramic capacitor close to the pin.
+*   **Bulk Capacitance:** 4.7µF-10µF on main 3.3V rail.
+
+### 12.2. IMU Power and Decoupling
+*   **Separate AVDD/VDD:** High-performance IMUs like ICM-45686 require separate analog and digital power pins with individual decoupling.
+*   **AVDD Filtering:** Analog VDD requires a ferrite bead + 100nF capacitor for noise rejection.
+*   **Placement:** Decoupling capacitors must be within 2mm of the IMU pins.
+*   **Reference:** Check IMU datasheet "Application Circuit" or "Power Supply" sections.
+*   **DRDY Interrupts (Low Priority):** ArduPilot uses FIFO-based IMU access, not interrupt-driven sampling. DRDY pins are optional and their absence does not impact flight performance. Do not emphasize DRDY as a hardware issue.
+
+### 12.3. Crystal Oscillator
+*   **Load Capacitors:** Calculate using formula: `CL = (C1 × C2)/(C1 + C2) + Cstray`. Typical Cstray is 2-5pF. Verify against crystal datasheet load capacitance spec.
+*   **H7 HSE:** Typically 8MHz, 10-20pF load capacitance.
+*   **LSE (32.768kHz):** Low ESR crystals require smaller caps (typically 6.8pF-15pF).
+*   **Reference:** ST AN2867 "Oscillator design guide".
+
+### 12.4. CAN Bus
+*   **Termination:** 120Ω termination at each end of the bus. Flight controller should have termination if it's a bus endpoint.
+    *   **Best practice:** Make termination software-configurable via GPIO controlling a MOSFET switch. This allows users to enable/disable termination via parameters without hardware modification.
+    *   **Alternative:** Solder jumpers to allow manual termination enable/disable.
+    *   **Avoid:** Fixed always-on termination that cannot be disabled.
+*   **Common-Mode Filtering:** 47nF capacitors from CAN_H and CAN_L to ground for EMI immunity.
+*   **Transceiver Selection:** TJA1462 or similar automotive-grade transceivers recommended.
+
+### 12.5. Package-Specific Limitations
+*   **100-pin LQFP:** Some peripherals not available (e.g., ADC3 on STM32H743VIT6).
+*   **HAL_WITH_MCU_MONITORING:** Requires ADC3 internal channels for MCU temperature/VREF monitoring. Not available on 100-pin packages - do not enable on these boards.
+*   **Pin Alternates:** Verify alternate functions are available on the specific package.
+*   **Reference:** MCU datasheet "Pinouts and pin descriptions" chapter.
+
+### 12.6. REVIEW.md Best Practices
+*   **Verify all external links:** Before finalizing a REVIEW.md, verify that all datasheet URLs are accessible. Manufacturer websites frequently reorganize and break links.
+*   **Use official sources:** Prefer manufacturer direct links over distributor mirrors when possible.
+*   **Include document references:** When citing datasheet sections, include section numbers (e.g., "Section 8.4") so readers can find the information even if page numbers change.
+
+## 13. DMA Verification & Optimization
+
+### 13.1. General DMA Requirements (All MCUs)
 Certain peripherals have strict or high-priority DMA requirements for reliable operation:
 *   **RC Input (CRITICAL):** `USARTn_RX` **MUST** have DMA for high-rate protocols (CRSF/ELRS) or those requiring precision (inverted SBUS).
 *   **GPS (HIGH):** Should have DMA for high baud rates. If `NODMA` is unavoidable, set `GPS_DRV_OPTIONS` to 1 (lower baudrate).
@@ -741,14 +851,14 @@ Certain peripherals have strict or high-priority DMA requirements for reliable o
 *   **DShot (HIGH):** Motor timers must have DMA for bi-directional communication.
 *   **ESC Telemetry (LOW):** Does **not** require DMA if the board supports bi-directional DShot (as DShot provides the primary telemetry path).
 
-### 12.2. Verification Process
+### 13.2. Verification Process
 DMA channel allocation is dynamic. To verify all critical peripherals got a DMA channel:
 1.  Run `./waf configure --board <BoardName>`.
 2.  Open the generated header: `build/<BoardName>/hwdef.h`.
 3.  Search for the string `//` (comments) next to line definitions or `HAL_..._DMA_STREAM`.
 4.  Look for warnings like `// No DMA stream found` or `// SHARED`.
 
-### 12.3. F4/F7 MCU Specifics
+### 13.3. F4/F7 MCU Specifics
 F4 and F7 MCUs have rigid DMA maps compared to the flexible DMAMUX on H7. Conflicts are common.
 
 1.  **Prioritize Fast/Time-Critical:** Ensure Timers, SPI (IMU), and SDIO/SDMMC have DMA.
@@ -756,7 +866,7 @@ F4 and F7 MCUs have rigid DMA maps compared to the flexible DMAMUX on H7. Confli
     *   **I2C:** Often safe to use `NODMA I2C*` or `define STM32_I2C_USE_DMA FALSE`.
     *   **Low-Priority UARTs:** Telemetry (standard MAVLink), Spare ports, and **ESC Telemetry** (if using bi-directional DShot) can run without DMA. Add `NODMA` (e.g., `PA9 USART1_TX USART1 NODMA`).
 
-### 12.4. Resolution
+### 13.4. Resolution
 If a critical peripheral is missing DMA:
 *   **Conflict Resolution:** Add `NODMA` to *less* critical peripherals in `hwdef.dat` to free up streams.
 *   **Prioritization:** Use `DMA_PRIORITY <Peripheral>*` to force allocation.
