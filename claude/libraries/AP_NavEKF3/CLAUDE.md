@@ -149,6 +149,24 @@ Set **below** your typical hover altitude to avoid unnecessary compensation duri
 
 Ground effect causes **positive pressure (negative altitude)** — propwash pushes air down, baro reads lower than actual. Having compensation ON unnecessarily is safer than having it OFF when needed.
 
+### TKOFF_GNDEFF_TMO Parameter
+
+**New parameter** that requires BOTH a time delay AND altitude threshold before ground effect compensation is disabled.
+
+**Problem it solves:** On vehicles with severe baro ground effect (motor-induced pressure noise), the EKF altitude can falsely cross the TKOFF_GNDEFF_ALT threshold due to baro noise, prematurely disabling ground effect protection. This causes the EKF to trust garbage baro data, leading to altitude estimate runaway and inability to take off in AltHold.
+
+**Logic:**
+- `TKOFF_GNDEFF_TMO = 0` (default): Original behavior — clear when (altitude > threshold) OR (5s elapsed)
+- `TKOFF_GNDEFF_TMO > 0`: Clear when (timeout AND altitude > threshold) OR (5s max elapsed)
+
+**Recommended settings for vehicles with severe baro ground effect:**
+```
+TKOFF_GNDEFF_TMO = 2    # or 3 for more protection (seconds)
+TKOFF_GNDEFF_ALT = 0.8  # adjust based on hover altitude (meters)
+```
+
+This ensures the vehicle must be above the altitude threshold AND have been flying for the specified time before ground effect protection is removed. The 5s maximum timeout is always preserved.
+
 ## Z-Axis Accel Bias Learning Inhibition
 
 ### Problem
@@ -306,35 +324,37 @@ Without Z velocity measurements, the EKF has fundamental limitations:
 
 ## Known Issues
 
-### Ground Effect + Frozen Correction Conflict (BUG)
+### Motor-Induced Baro Noise
 
-**Status:** Identified, fix not yet implemented.
+On small drones, motor operation can cause severe baro pressure noise (3-10x worse than motors-off). This is NOT a broken sensor — it's motor-induced pressure effects at the baro static port (prop wash, acoustic resonance, airframe vibration).
 
-**Problem:** On small drones with significant baro ground effect, the frozen correction prevents takeoff in AltHold. The correction assumes hover-level vibrations, but during ground effect the EKF's Z-bias learning is inhibited, so it cannot compensate for the incorrect correction.
+**Diagnosis:** Compare baro std dev with motors on vs off. If motors-on noise is significantly higher, this is the issue.
 
-**Failure sequence:**
-1. Vehicle arms → frozen correction applies +0.199 m/s² (example value)
-2. `takeoff_expected=true` → Z-bias learning inhibited
-3. EKF sees phantom downward acceleration, VD drifts ~0.2 m/s in first second
-4. Combined with severe baro ground effect (±3m swings on small drones), altitude diverges
-5. EKF reports 2.5m altitude while vehicle is at 0.5m (per rangefinder)
-6. Altitude controller cuts throttle → vehicle falls back
+**Mitigations:**
+1. **Hardware:** Relocate baro away from prop wash, add foam isolation
+2. **BARO_FLTR_RNG:** Enable baro filtering
+3. **TKOFF_GNDEFF_ALT:** Increase threshold to keep ground effect protection longer
+4. **TKOFF_GNDEFF_TMO:** Require time delay before ground effect clears
 
-**Root cause:** The frozen correction and Z-bias inhibition have contradictory requirements:
-- Frozen correction assumes vibrations match hover level
-- Z-bias inhibition assumes ground conditions differ from flight
-- Conflict: correction is wrong AND EKF can't compensate
+### Baro Thrust Compensation (BARO1_THST_SCALE)
 
-**Proposed fix:** Gate the frozen correction on ground effect state:
-```cpp
-// In correctDeltaVelocity():
-const bool gndEffectActive = dal.get_takeoff_expected() || dal.get_touchdown_expected();
-if (motorsArmed && !gndEffectActive) {
-    delVel.z -= frontend->_accelBiasHoverZ_correction[accel_index] * delVelDT;
-}
-```
+`BARO1_THST_SCALE` subtracts a thrust-proportional pressure offset. Key insight: **correlation between thrust and baro error is strong during stable hover but weak during takeoff/landing** due to chaotic airflow near ground.
 
-**Key code:** `AP_NavEKF3_core.cpp:750` (current gate), `AP_NavEKF3_PosVelFusion.cpp:1136-1144` (ground effect gating reference)
+- Helps ~50% during stable flight
+- Does NOT help during takeoff/landing ground effect
+- Vehicle-specific tuning required
+
+### Ground Effect Flags Clearing Prematurely
+
+The ground effect threshold check uses EKF altitude. If baro noise corrupts EKF altitude, it can falsely cross the threshold, disabling protection too early. This creates a feedback loop: bad baro → wrong altitude → ground effect clears → EKF trusts bad baro.
+
+**Solution:** Use `TKOFF_GNDEFF_TMO` to require BOTH time delay AND altitude threshold.
+
+### Frozen Correction + Ground Effect Conflict
+
+The hover Z-bias frozen correction applies at arm, but ground effect inhibits Z-bias learning. If correction is wrong for ground conditions, the EKF cannot compensate.
+
+**Proposed fix:** Gate frozen correction on ground effect state in `correctDeltaVelocity()`.
 
 ### Post-Landing EKF Divergence
 
