@@ -63,6 +63,47 @@ From `AP_NavEKF3_core.h`:
 - XKF1 angles are centidegrees. GX/GY/GZ (gyro bias) are milliradians.
 - XKV1/XKV2 are diagonal elements of covariance matrix P. Smaller = more confident. Watch for variance growth (filter divergence).
 
+## EKF Analysis Methodology
+
+**Rule 1: No theories without data.** Do not speculate about EKF behavior based on code reading alone. The EKF is a complex dynamic system where multiple states interact. Theories MUST be validated against actual log data before being presented as explanations.
+
+**Rule 2: Always cross-check with multiple sensors.** When analyzing altitude/position issues, compare ALL available sources:
+- EKF estimate (XKF1 PD/VD)
+- Barometer (BARO.Alt)
+- Rangefinder (RFND.Dist)
+- GPS altitude (GPS.Alt)
+- Raw IMU (IMU.AccZ)
+
+If your theory predicts the vehicle is at 2.5m but the rangefinder shows 17cm, your theory is wrong. The rangefinder is measuring physical reality.
+
+**Rule 3: Extract data first, theorize second.** Before forming hypotheses:
+1. Extract the relevant log messages (XKF1, XKF2, XKF4, CTUN, BARO, RFND, IMU, etc.)
+2. Align timestamps and create comparison tables
+3. Identify anomalies in the DATA, not in your mental model
+4. Only then form hypotheses that explain ALL the observations
+
+**Rule 4: Use Replay for controlled experiments.** To test whether a specific parameter or code change affects EKF behavior:
+1. Run the original log through Replay to establish baseline
+2. Modify the parameter/code
+3. Run Replay again and compare XKF outputs
+4. The difference (or lack thereof) is objective evidence
+
+**Rule 5: Check ground truth.** When something looks wrong in the EKF:
+- What does the rangefinder say? (direct distance measurement)
+- What does the pilot report? (actual vehicle behavior)
+- What does video show? (if available)
+- Does the CTUN throttle output make sense for the claimed altitude?
+
+**Sensor trust hierarchy for altitude (in ground effect):** Rangefinder > GPS > Baro. The rangefinder measures physical distance; baro is severely affected by prop wash on small drones.
+
+**Log analysis checklist:**
+- [ ] Extract PARM values for relevant parameters
+- [ ] Extract ARM/DISARM events and flight mode changes
+- [ ] Extract multiple altitude sources (BARO, RFND, XKF1.PD, GPS if available)
+- [ ] Extract XKF4 status flags (takeoff_expected, touchdown_expected)
+- [ ] Cross-check all sources before forming theories
+- [ ] Identify which sensor is likely correct based on trust hierarchy
+
 ## Ground Effect Compensation
 
 ### How It Works
@@ -264,6 +305,36 @@ Without Z velocity measurements, the EKF has fundamental limitations:
 3. Keep hovers short to minimize drift accumulation
 
 ## Known Issues
+
+### Ground Effect + Frozen Correction Conflict (BUG)
+
+**Status:** Identified, fix not yet implemented.
+
+**Problem:** On small drones with significant baro ground effect, the frozen correction prevents takeoff in AltHold. The correction assumes hover-level vibrations, but during ground effect the EKF's Z-bias learning is inhibited, so it cannot compensate for the incorrect correction.
+
+**Failure sequence:**
+1. Vehicle arms → frozen correction applies +0.199 m/s² (example value)
+2. `takeoff_expected=true` → Z-bias learning inhibited
+3. EKF sees phantom downward acceleration, VD drifts ~0.2 m/s in first second
+4. Combined with severe baro ground effect (±3m swings on small drones), altitude diverges
+5. EKF reports 2.5m altitude while vehicle is at 0.5m (per rangefinder)
+6. Altitude controller cuts throttle → vehicle falls back
+
+**Root cause:** The frozen correction and Z-bias inhibition have contradictory requirements:
+- Frozen correction assumes vibrations match hover level
+- Z-bias inhibition assumes ground conditions differ from flight
+- Conflict: correction is wrong AND EKF can't compensate
+
+**Proposed fix:** Gate the frozen correction on ground effect state:
+```cpp
+// In correctDeltaVelocity():
+const bool gndEffectActive = dal.get_takeoff_expected() || dal.get_touchdown_expected();
+if (motorsArmed && !gndEffectActive) {
+    delVel.z -= frontend->_accelBiasHoverZ_correction[accel_index] * delVelDT;
+}
+```
+
+**Key code:** `AP_NavEKF3_core.cpp:750` (current gate), `AP_NavEKF3_PosVelFusion.cpp:1136-1144` (ground effect gating reference)
 
 ### Post-Landing EKF Divergence
 
