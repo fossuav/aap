@@ -37,8 +37,25 @@ for file in CLAUDE.md CLAUDE_CRSF_MENU.md CLAUDE_VEHICLE_CONTROL.md; do
     fi
 done
 
+# Remove AP_NavEKF3 CLAUDE file
+if [[ -f "libraries/AP_NavEKF3/CLAUDE.md" ]]; then
+    rm "libraries/AP_NavEKF3/CLAUDE.md"
+    echo "  Removed: libraries/AP_NavEKF3/CLAUDE.md"
+fi
+
+# Remove AP_HAL_ChibiOS hwdef CLAUDE file
+if [[ -f "libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md" ]]; then
+    rm "libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md"
+    echo "  Removed: libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md"
+fi
+
 # Clean up backup files
-for bak in CLAUDE.md.bak libraries/AP_Scripting/CLAUDE.md.bak libraries/AP_Scripting/CLAUDE_CRSF_MENU.md.bak libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md.bak; do
+for bak in CLAUDE.md.bak \
+           libraries/AP_Scripting/CLAUDE.md.bak \
+           libraries/AP_Scripting/CLAUDE_CRSF_MENU.md.bak \
+           libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md.bak \
+           libraries/AP_NavEKF3/CLAUDE.md.bak \
+           libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md.bak; do
     if [[ -f "$bak" ]]; then
         rm "$bak"
         echo "  Removed: $bak"

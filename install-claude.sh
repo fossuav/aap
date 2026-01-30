@@ -60,6 +60,28 @@ for file in CLAUDE.md CLAUDE_CRSF_MENU.md CLAUDE_VEHICLE_CONTROL.md; do
     echo "  Installed: $dst"
 done
 
+# Install AP_NavEKF3 CLAUDE file
+mkdir -p libraries/AP_NavEKF3
+
+dst="libraries/AP_NavEKF3/CLAUDE.md"
+if [[ -f "$dst" ]]; then
+    echo "  Backing up existing $dst to ${dst}.bak"
+    cp "$dst" "${dst}.bak"
+fi
+download_file "$REPO_URL/libraries/AP_NavEKF3/CLAUDE.md" "$dst"
+echo "  Installed: $dst"
+
+# Install AP_HAL_ChibiOS hwdef CLAUDE file
+mkdir -p libraries/AP_HAL_ChibiOS/hwdef
+
+dst="libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md"
+if [[ -f "$dst" ]]; then
+    echo "  Backing up existing $dst to ${dst}.bak"
+    cp "$dst" "${dst}.bak"
+fi
+download_file "$REPO_URL/libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md" "$dst"
+echo "  Installed: $dst"
+
 echo ""
 echo "Installation complete!"
 echo ""
@@ -68,6 +90,8 @@ echo "  - CLAUDE.md (root - build system, architecture, C++ guidelines)"
 echo "  - libraries/AP_Scripting/CLAUDE.md (Lua scripting patterns)"
 echo "  - libraries/AP_Scripting/CLAUDE_CRSF_MENU.md (CRSF menu implementation)"
 echo "  - libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md (vehicle control APIs)"
+echo "  - libraries/AP_NavEKF3/CLAUDE.md (EKF3 navigation filter reference)"
+echo "  - libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md (ChibiOS board porting)"
 echo ""
 echo "To uninstall, run:"
 echo "  curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.sh | bash"

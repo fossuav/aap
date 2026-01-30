@@ -43,6 +43,8 @@ The install script places the following files:
 | `libraries/AP_Scripting/CLAUDE.md` | Lua scripting patterns, applet structure, parameter system |
 | `libraries/AP_Scripting/CLAUDE_CRSF_MENU.md` | CRSF (Crossfire) menu implementation |
 | `libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md` | Vehicle control APIs, movement commands, RC input |
+| `libraries/AP_NavEKF3/CLAUDE.md` | EKF3 navigation filter reference and analysis methodology |
+| `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 
 ### Uninstalling
 
@@ -134,10 +136,15 @@ The process for generating code is as follows:
 aap/
 ├── claude/                          # Claude Code playbooks (CLAUDE.md files)
 │   ├── CLAUDE.md                    # Root playbook (build, architecture, C++)
-│   └── libraries/AP_Scripting/      # Lua scripting playbooks
-│       ├── CLAUDE.md
-│       ├── CLAUDE_CRSF_MENU.md
-│       └── CLAUDE_VEHICLE_CONTROL.md
+│   └── libraries/
+│       ├── AP_Scripting/            # Lua scripting playbooks
+│       │   ├── CLAUDE.md
+│       │   ├── CLAUDE_CRSF_MENU.md
+│       │   └── CLAUDE_VEHICLE_CONTROL.md
+│       ├── AP_NavEKF3/              # EKF3 navigation filter
+│       │   └── CLAUDE.md
+│       └── AP_HAL_ChibiOS/hwdef/    # ChibiOS board porting
+│           └── CLAUDE.md
 ├── gemini/                          # Gemini CLI playbooks (GEMINI.md files)
 │   ├── GEMINI.md                    # Root playbook (build, architecture, C++)
 │   └── libraries/AP_Scripting/      # Lua scripting playbooks

@@ -460,6 +460,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   Use `BIDIR` for DShot capability.
     *   Group timers carefully (comments like `# Motors` vs `# LEDs` help).
     *   Disable DMA (`NODMA`) on LED strips or aux outputs if needed.
+    *   **PWM-only outputs:** If a timer is used as the system timer (e.g., TIM2 or TIM5 via `STM32_ST_USE_TIMER`), its PWM outputs cannot use DShot and should be marked `NODMA` to free DMA channels for other peripherals.
 
 ### 7.4. Sensors
 *   **Baro:** `BARO DPS310 I2C:0:0x76` (Driver Bus:Instance:Addr).
@@ -813,7 +814,7 @@ When reviewing hardware designs or creating a `REVIEW.md` file, check these crit
 *   **Separate AVDD/VDD:** High-performance IMUs like ICM-45686 require separate analog and digital power pins with individual decoupling.
 *   **AVDD Filtering:** Analog VDD requires a ferrite bead + 100nF capacitor for noise rejection.
 *   **Placement:** Decoupling capacitors must be within 2mm of the IMU pins.
-*   **Reference:** Check IMU datasheet "Application Circuit" or "Power Supply" sections.
+*   **Reference:** Check IMU datasheet "Application Circuit" or "Power Supply" sections. Also see [TDK InvenSense IMU PCB Design and MEMS Assembly Guidelines (AN-000393)](https://invensense.tdk.com/wp-content/uploads/2024/03/AN-000393_TDK-InvenSense-IMU-PCB-Design-and-MEMS-Assembly-Guidelines.pdf) for comprehensive layout recommendations.
 *   **DRDY Interrupts (Low Priority):** ArduPilot uses FIFO-based IMU access, not interrupt-driven sampling. DRDY pins are optional and their absence does not impact flight performance. Do not emphasize DRDY as a hardware issue.
 
 ### 12.3. Crystal Oscillator
