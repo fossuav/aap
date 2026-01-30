@@ -338,11 +338,32 @@ On small drones, motor operation can cause severe baro pressure noise (3-10x wor
 
 ### Baro Thrust Compensation (BARO1_THST_SCALE)
 
-`BARO1_THST_SCALE` subtracts a thrust-proportional pressure offset. Key insight: **correlation between thrust and baro error is strong during stable hover but weak during takeoff/landing** due to chaotic airflow near ground.
+`BARO1_THST_SCALE` subtracts a thrust-proportional pressure offset: `correction = mot_scale * throttle`
 
-- Helps ~50% during stable flight
-- Does NOT help during takeoff/landing ground effect
-- Vehicle-specific tuning required
+**Key insight:** Ground effect protection ignores baro during takeoff transient, so BARO_THST_SCALE only needs to work during stable flight where the thrust-pressure relationship is linear.
+
+**How to calculate:**
+1. Fly to stable hover with rangefinder (or known altitude reference)
+2. Record: hover throttle, baro altitude, true altitude (RFND or known)
+3. Calculate error: `error_m = baro_alt - true_alt`
+4. Calculate scale: `BARO1_THST_SCALE = -(error_m × 12) / throttle` (Pa)
+
+**Example:** Baro shows +7m, rangefinder shows +2m, throttle=0.39
+```
+error = 7 - 2 = +5m
+BARO1_THST_SCALE = -(5 × 12) / 0.39 = -154 Pa
+```
+
+**Properties:**
+- Works well during stable flight (thrust-pressure is approximately linear)
+- Does NOT help during takeoff/landing (chaotic airflow, protected by ground effect anyway)
+- Vehicle-specific — depends on prop size, baro location, airframe geometry
+- Negative values correct for propwash-induced low pressure (most common)
+
+**Alternative approach:** Use rangefinder for height fusion instead:
+- `EK3_RNG_USE_HGT = 70` (use rangefinder below 70% of max range)
+- `TKOFF_GNDEFF_TMO = 3` (keep ground effect active during takeoff transient)
+- EKF will trust rangefinder over corrupted baro, converging to correct altitude
 
 ### Ground Effect Flags Clearing Prematurely
 
