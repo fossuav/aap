@@ -409,18 +409,42 @@ bool belowLowerSwHgt = ((terrainState - stateStruct.position.z) < 0.7f * rangeMa
 - 7m > 4.9m → rangefinder disabled
 - Rangefinder that could provide correct altitude is locked out!
 
-**Proposed fix:** Use raw rangefinder reading for threshold comparison:
-```cpp
-// Current (feedback loop):
-bool aboveUpperSwHgt = (terrainState - stateStruct.position.z) > rangeMaxUse;
+**Implemented fix (AP_NavEKF3_PosVelFusion.cpp:~1285 and ~1321):**
 
-// Fixed (no feedback loop):
-bool aboveUpperSwHgt = rangeDataDelayed.rng > rangeMaxUse;
+The fix has two parts:
+
+**Part 1 (~line 1285):** Force rangefinder as height source during ground effect when:
+1. Ground effect is active (`takeoff_expected` or `touchdown_expected`)
+2. Current height source is BARO (not already rangefinder or GPS)
+3. Raw rangefinder reading is within usable range
+
+```cpp
+// During ground effect with baro as height source, use raw rangefinder reading for threshold check
+// to prevent bad baro from corrupting EKF altitude and locking out the rangefinder
+const bool gndEffectActive = dal.get_takeoff_expected() || dal.get_touchdown_expected();
+if (gndEffectActive &&
+    activeHgtSource == AP_NavEKF_Source::SourceZ::BARO &&
+    rangeDataDelayed.rng < rangeMaxUse)
+{
+    activeHgtSource = AP_NavEKF_Source::SourceZ::RANGEFINDER;
+}
 ```
 
-`rangeDataDelayed.rng` is already available in this function (line 1249). Using the actual rangefinder measurement breaks the feedback loop — even if baro corrupts EKF altitude, the rangefinder can still enable itself based on what it actually measures.
+**Part 2 (~line 1321):** Prevent switch-back during ground effect:
 
-**Workaround until fixed:** Set `EK3_SRC1_POSZ = 2` (Rangefinder as primary) instead of using EK3_RNG_USE_HGT. This forces rangefinder as the height source without the threshold check. Requires reliable rangefinder and staying within its range.
+The existing code at line 1321 switches from rangefinder back to baro when `aboveUpperSwHgt || dontTrustTerrain`. But `aboveUpperSwHgt` uses the corrupted EKF altitude, which would immediately undo Part 1. Fix: add `&& !gndEffectActive` to prevent switching back during ground effect:
+
+```cpp
+if ((aboveUpperSwHgt || dontTrustTerrain) && (activeHgtSource == AP_NavEKF_Source::SourceZ::RANGEFINDER) && !gndEffectActive) {
+    // cannot trust terrain or range finder so stop using range finder height
+    // Note: don't switch back during ground effect - the aboveUpperSwHgt check uses EKF altitude which may be corrupted
+```
+
+**Why conditional on BARO source:** If already using rangefinder, no need to force. If using GPS, don't override user's configuration choice. Only when baro is the current source do we need this protection.
+
+**Why use raw rangefinder reading:** `rangeDataDelayed.rng` is the actual sensor measurement, immune to EKF altitude corruption. This breaks the feedback loop — even if baro corrupts EKF altitude during ground effect, the rangefinder enables itself based on what it actually measures.
+
+**When ground effect ends:** Once `gndEffectActive` becomes false, the normal switching logic resumes. The EKF altitude should have recovered by then (thanks to rangefinder fusion during ground effect), so the threshold checks work correctly again.
 
 ### Post-Landing EKF Divergence
 
