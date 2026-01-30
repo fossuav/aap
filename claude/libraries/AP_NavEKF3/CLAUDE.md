@@ -377,6 +377,51 @@ The hover Z-bias frozen correction applies at arm, but ground effect inhibits Z-
 
 **Proposed fix:** Gate frozen correction on ground effect state in `correctDeltaVelocity()`.
 
+### EK3_RNG_USE_HGT Feedback Loop (BUG)
+
+**Problem:** The rangefinder height switch threshold uses EKF-estimated altitude, creating a feedback loop where bad baro can lock out the rangefinder.
+
+**Code location:** `AP_NavEKF3_PosVelFusion.cpp:1283-1320`, function `selectHeightForFusion()`
+
+**The threshold check (lines 1285-1287):**
+```cpp
+ftype rangeMaxUse = 1e-4 * _rng->max_distance_cm_orient(...) * frontend->_useRngSwHgt;
+bool aboveUpperSwHgt = (terrainState - stateStruct.position.z) > rangeMaxUse;
+bool belowLowerSwHgt = ((terrainState - stateStruct.position.z) < 0.7f * rangeMaxUse)
+                       && (imuSampleTime_ms - gndHgtValidTime_ms < 1000);
+```
+
+**The feedback loop:**
+1. Bad baro → EKF altitude corrupted (e.g., thinks 7m when actually 2m)
+2. `(terrainState - stateStruct.position.z)` = EKF-estimated height = 7m
+3. If `rangeMaxUse = 4.9m` (70% of 7m max range): `aboveUpperSwHgt = true`
+4. Rangefinder gets disabled (line 1310)
+5. Without rangefinder, EKF only has bad baro → can't correct
+6. **Stuck in wrong state permanently!**
+
+**Additional gate makes it worse:** The `belowLowerSwHgt` check requires `(imuSampleTime_ms - gndHgtValidTime_ms < 1000)`. `gndHgtValidTime_ms` is only updated when rangefinder fusion succeeds (line 157 in OptFlowFusion.cpp). Once rangefinder is disabled for >1 second, this gate fails, making re-enabling even harder.
+
+**Real-world scenario (from logtd1.bin analysis):**
+- Vehicle at 2m actual altitude (per rangefinder)
+- Bad baro shows 7m due to propwash
+- EKF trusts baro, thinks it's at 7m
+- EK3_RNG_USE_HGT=70 with 7m max range → threshold is 4.9m
+- 7m > 4.9m → rangefinder disabled
+- Rangefinder that could provide correct altitude is locked out!
+
+**Proposed fix:** Use raw rangefinder reading for threshold comparison:
+```cpp
+// Current (feedback loop):
+bool aboveUpperSwHgt = (terrainState - stateStruct.position.z) > rangeMaxUse;
+
+// Fixed (no feedback loop):
+bool aboveUpperSwHgt = rangeDataDelayed.rng > rangeMaxUse;
+```
+
+`rangeDataDelayed.rng` is already available in this function (line 1249). Using the actual rangefinder measurement breaks the feedback loop — even if baro corrupts EKF altitude, the rangefinder can still enable itself based on what it actually measures.
+
+**Workaround until fixed:** Set `EK3_SRC1_POSZ = 2` (Rangefinder as primary) instead of using EK3_RNG_USE_HGT. This forces rangefinder as the height source without the threshold check. Requires reliable rangefinder and staying within its range.
+
 ### Post-Landing EKF Divergence
 
 After landing with ground effect, the EKF accumulates position/velocity errors that cause drift after disarm:
