@@ -371,12 +371,6 @@ BARO1_THST_SCALE = -(5 × 12) / 0.39 = -154 Pa
 
 **Problem it solves:** During rapid throttle changes (takeoff, aggressive maneuvers), the instantaneous thrust compensation can cause step changes in corrected baro altitude. This creates altitude transients that can cause controller instability, especially indoors near surfaces.
 
-**Example from logtd3.bin ceiling hit:**
-- Throttle ramped 0% → 33% in 0.6 seconds
-- BARO1_THST_SCALE = -147 Pa
-- Without filter: Instant 4m altitude correction
-- With 1Hz filter: Correction smoothed over ~0.5s, reducing peak transient by ~40%
-
 **Parameters:**
 ```
 BARO1_THST_FILT = 1.0   # Default: 1Hz cutoff
@@ -467,57 +461,18 @@ if ((aboveUpperSwHgt || dontTrustTerrain) && (activeHgtSource == AP_NavEKF_Sourc
 
 **When ground effect ends:** Once `gndEffectActive` becomes false, the normal switching logic resumes. The EKF altitude should have recovered by then (thanks to rangefinder fusion during ground effect), so the threshold checks work correctly again.
 
-### Indoor Flight Without Working Rangefinder (logtd3.bin Analysis)
+### Indoor Flight Considerations
 
-**Scenario:** Indoor flight with BARO1_THST_SCALE=-147, EK3_RNG_USE_HGT=-1, but rangefinder returning NoData.
+**Rangefinder is critical for indoor flight** — baro alone is unreliable due to propwash and surface reflections.
 
-**What happened:**
-1. Rangefinder was returning `Stat=1 (NoData)` throughout takeoff - no valid height reference
-2. Baro spiked to -10m during motor spinup (t=13.4s)
-3. Baro overcorrected to +3.5m as motors sustained power (t=15.8s)
-4. EKF tracked the false baro readings, estimated altitude drifted to -1.2m
-5. Altitude controller saw 1.3m error, commanded full throttle
-6. Quad hit ceiling at t=16s
-
-**Key data points:**
-| Time | Baro | EKF Alt | Innovation | Throttle | Event |
-|------|------|---------|------------|----------|-------|
-| 13.38s | -4.7m | -0.71m | -4.5m | 5% | Baro spike down |
-| 13.78s | -10.5m | -0.73m | -10.2m | 37% | Baro minimum |
-| 15.88s | +3.5m | -1.21m | +4.1m | **100%** | Full throttle |
-| 16.08s | -0.5m | -1.56m | | 100% | Ceiling impact |
-
-**Root cause:** Without a working rangefinder, the only height reference was baro. The thrust compensation (BARO1_THST_SCALE) works for steady-state hover but cannot handle the non-linear pressure dynamics during throttle transients near surfaces.
-
-**Lessons:**
-1. **Rangefinder is critical for indoor flight** - baro alone is unreliable
-2. Verify rangefinder is returning valid data before flight (Stat=4, not 1 or 2)
-3. BARO1_THST_FILT can reduce transient issues but doesn't solve fundamental baro unreliability
-4. Consider EK3_SRC1_POSZ=2 (rangefinder primary) for indoor flights
-
-### EK3_RNG_USE_HGT=-1 Effectiveness (logjk6/logjk7 Comparison)
-
-**Problem:** With EK3_RNG_USE_HGT > 0, the rangefinder height threshold uses EKF altitude. If baro corrupts EKF altitude above the threshold, the rangefinder gets locked out (see "EK3_RNG_USE_HGT Feedback Loop" above).
-
-**Solution tested:** Set EK3_RNG_USE_HGT=-1 to disable rangefinder height source switching entirely.
-
-**Results from user logs:**
-
-| Metric | logjk6 (RNG_USE=2) | logjk7 (RNG_USE=-1) | logtd2 (RNG_USE=-1) |
-|--------|-------------------|---------------------|---------------------|
-| Flight duration | 22s | 74s | 188s |
-| Alt std dev | **67.4cm** | **10.4cm** | **6.2cm** |
-| Alt error mean | 39.4cm | 14.0cm | 4.7cm |
-| Alt error max | 129.4cm | 34.5cm | 26.7cm |
-| Flyable? | No | Yes | Yes |
-
-**Key finding:** Setting EK3_RNG_USE_HGT=-1 dramatically improved altitude hold, reducing altitude variance from 67cm to 10cm.
-
-**Remaining difference between logjk7 and logtd2:** INS_ACC_VRFB_Z was -0.4 in logjk7 (too large, exceeds ±0.3 clamp) vs 0.044 in logtd2. The bad value was learned during problematic flights and should be reset.
+**Pre-flight checks:**
+- Verify rangefinder returns valid data (`Stat=4`), not `Stat=1` (NoData) or `Stat=2` (OutOfRangeLow)
+- BARO1_THST_FILT can reduce transient issues but doesn't solve fundamental baro unreliability
+- Consider `EK3_SRC1_POSZ=2` (rangefinder primary) for indoor flights
 
 **Recommended indoor settings:**
 ```
-EK3_RNG_USE_HGT = -1          # Disable rangefinder height switching
+EK3_RNG_USE_HGT = -1          # Disable rangefinder height switching (avoids feedback loop)
 BARO1_THST_SCALE = -147       # Calibrated thrust compensation (vehicle-specific)
 BARO1_THST_FILT = 1.0         # Filter throttle transients
 INS_ACC_VRFB_Z = 0            # Reset if previously corrupted
