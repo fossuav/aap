@@ -58,6 +58,7 @@ When a vendor schematic (PDF or Image) is provided, the AI must perform a struct
     *   **Actuators:** Trace `M1`, `M2`... to their Timer/Channel pins.
 3.  **Peripheral Identification:** Note specific part numbers for IMUs, Barometers, and Regulators to populate `hwdef.dat` comments and README features.
 4.  **Connector Mapping:** Correlate physical connectors (e.g., "J1 - GPS") with the traced MCU pins to generate the README "UART Mapping" table.
+5.  **DNP/Not Install Components:** Watch for components marked "Not Install", "DNP" (Do Not Populate), or "NC" on the schematic. These have PCB footprints but are not soldered. It is safe to include `COMPASS`, `BARO`, or `IMU` probe lines for these in the hwdef (the probe fails silently), which allows future board revisions to populate them without hwdef changes. Note DNP status in hwdef comments.
 
 ### 3.4. Vendor-Provided hwdef Refinement
 If a vendor provides a draft `hwdef.dat`, use it as a base but treat it as potentially inaccurate.
@@ -440,7 +441,11 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **SPI:**
     *   Define `SPIDEV` for all devices.
     *   Use `CS` keyword for Chip Select pins.
+    *   **CS/DRDY Pin Naming:** Do NOT use `SPIx_` or `I2Cx_` prefixes for CS or DRDY pin labels (e.g., avoid `SPI1_CS1`, `SPI2_DRDY1`). The hwdef parser interprets these as peripheral alternate function lookups and will fail. Use descriptive names instead: `IMU1_CS`, `IMU2_DRDY`, `BARO_CS`, `OSD1_CS`, `FRAM_CS`, etc.
+    *   **SPI Clock Speeds for IMUs:** On H7 MCUs, ICM4xxxx series IMUs (ICM42688, ICM45686, etc.) should use `16*MHZ` as the high clock speed. The actual SPI clock will round to 24 MHz due to H7 clock dividers, which is within the ICM4xxxx rated maximum. Use `2*MHZ` for the low (probe) clock.
+        *   Example: `SPIDEV icm45686 SPI1 DEVID1 IMU1_CS MODE3 2*MHZ 16*MHZ`
     *   Example: `SPIDEV osd SPI2 DEVID1 OSD1_CS MODE0 10*MHZ 10*MHZ`.
+    *   **SPI6 on STM32H7:** SPI6 uses BDMA (not regular DMA), so it does not consume regular DMA channels. It is safe to enable SPI6 even when DMA channels are scarce. Do not disable SPI6 to "save DMA channels" - that reasoning only applies to SPI1-SPI5.
 *   **I2C:**
     *   Order matters: `I2C_ORDER I2C2 I2C1`.
     *   Internal barometers often on a specific bus.
@@ -467,7 +472,10 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **Compass:**
     *   If none internal: `define ALLOW_ARM_NO_COMPASS`, `define AP_COMPASS_PROBING_ENABLED 1`.
     *   `define HAL_I2C_INTERNAL_MASK 0`.
-    *   **Note:** `HAL_PROBE_EXTERNAL_I2C_COMPASSES` is deprecated - use `AP_COMPASS_PROBING_ENABLED 1` instead.
+    *   **Deprecated defines (do NOT use):**
+        *   `HAL_PROBE_EXTERNAL_I2C_COMPASSES` → use `AP_COMPASS_PROBING_ENABLED 1` instead.
+        *   `HAL_COMPASS_DISABLE_IST8310_INTERNAL_PROBE` → use `AP_COMPASS_IST8310_INTERNAL_BUS_PROBING_ENABLED 0` instead (but note: this disables ALL IST8310 probing on internal buses, including explicit `COMPASS` lines. If you have an explicit `COMPASS IST8310 ...` line with the correct rotation, you may not need to disable internal probing at all).
+        *   `HAL_COMPASS_DISABLE_RM3100_INTERNAL_PROBE` → use `AP_COMPASS_RM3100_INTERNAL_BUS_PROBING_ENABLED 0` instead (same caveat as above).
 *   **IMU:**
     *   `IMU <Driver> SPI:<name> <Rotation>`
     *   Example: `IMU Invensensev3 SPI:imu1 ROTATION_YAW_270`.
