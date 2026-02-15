@@ -312,22 +312,28 @@ When modifying existing files:
   - Before running tools that modify files (like formatters)
 
   Always verify the build succeeds before creating a checkpoint: `./waf copter` (or appropriate target)
+- **One module per commit:** Each commit must only touch files from a single subsystem/module. Never mix changes to different libraries or directories in one commit. If a feature requires changes to multiple modules, split into separate commits per module.
 - **Squash per subsystem:** When squashing commits, group by subsystem prefix (AP_GyroFFT, RC_Channel, Tools, etc.)
 - **DO NOT list Claude as author or co-author** - commits should only show the human author
 - **Message Prefix:** Subject line prefixed with the specific subsystem or directory name, not a generic parent directory. Use the most specific prefix that matches the changed files:
   - `libraries/` changes use the library name: `AP_AHRS:`, `AC_PosControl:`, `AP_Scripting:`
   - `ArduCopter/`, `ArduPlane/`, `Rover/` etc. use the short vehicle name: `Copter:`, `Plane:`, `Rover:`
-  - `Tools/AP_Bootloader/` uses `AP_Bootloader:` (e.g., board ID additions to `board_types.txt`)
-  - `Tools/bootloaders/` uses `bootloaders:` (e.g., bootloader binary additions)
-  - `Tools/autotest/` uses `Tools:` for autotest changes
+  - `Tools/` subdirectories use the subdirectory name as the prefix:
+    - `Tools/scripts/` uses `scripts:` (e.g., build option changes)
+    - `Tools/ardupilotwaf/` uses `ardupilotwaf:` (e.g., library list changes)
+    - `Tools/AP_Bootloader/` uses `AP_Bootloader:` (e.g., board ID additions to `board_types.txt`)
+    - `Tools/bootloaders/` uses `bootloaders:` (e.g., bootloader binary additions)
+    - `Tools/autotest/` uses `autotest:` for autotest changes
   - `libraries/AP_HAL_ChibiOS/hwdef/` uses `AP_HAL_ChibiOS:` for hwdef additions
   - Examples:
     - `AP_AHRS: Refactor loiter controller`
-    - `Tools: Add autotest for new NAV_CMD`
+    - `autotest: Add test for new NAV_CMD`
     - `Copter: Fix altitude hold in mode_althold.cpp`
     - `AP_Bootloader: add board ID for NewBoard`
     - `bootloaders: add NewBoard bootloader binaries`
     - `AP_HAL_ChibiOS: add NewBoard hwdef`
+    - `scripts: add build option for new feature`
+    - `ardupilotwaf: add library to vehicle dependent list`
 
 ## Git Safety
 
