@@ -45,6 +45,7 @@ The install script places the following files:
 | `libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md` | Vehicle control APIs, movement commands, RC input |
 | `libraries/AP_NavEKF3/CLAUDE.md` | EKF3 navigation filter reference and analysis methodology |
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
+| `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
 
 ### Uninstalling
 
@@ -136,6 +137,8 @@ The process for generating code is as follows:
 aap/
 ├── claude/                          # Claude Code playbooks (CLAUDE.md files)
 │   ├── CLAUDE.md                    # Root playbook (build, architecture, C++)
+│   ├── ArduPlane/
+│   │   └── CLAUDE.md                # Plane log analysis, flight modes, QuadPlane
 │   └── libraries/
 │       ├── AP_Scripting/            # Lua scripting playbooks
 │       │   ├── CLAUDE.md

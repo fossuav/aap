@@ -49,13 +49,20 @@ if [[ -f "libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md" ]]; then
     echo "  Removed: libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md"
 fi
 
+# Remove ArduPlane CLAUDE file
+if [[ -f "ArduPlane/CLAUDE.md" ]]; then
+    rm "ArduPlane/CLAUDE.md"
+    echo "  Removed: ArduPlane/CLAUDE.md"
+fi
+
 # Clean up backup files
 for bak in CLAUDE.md.bak \
            libraries/AP_Scripting/CLAUDE.md.bak \
            libraries/AP_Scripting/CLAUDE_CRSF_MENU.md.bak \
            libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md.bak \
            libraries/AP_NavEKF3/CLAUDE.md.bak \
-           libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md.bak; do
+           libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md.bak \
+           ArduPlane/CLAUDE.md.bak; do
     if [[ -f "$bak" ]]; then
         rm "$bak"
         echo "  Removed: $bak"

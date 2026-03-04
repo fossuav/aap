@@ -82,6 +82,17 @@ fi
 download_file "$REPO_URL/libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md" "$dst"
 echo "  Installed: $dst"
 
+# Install ArduPlane CLAUDE file
+mkdir -p ArduPlane
+
+dst="ArduPlane/CLAUDE.md"
+if [[ -f "$dst" ]]; then
+    echo "  Backing up existing $dst to ${dst}.bak"
+    cp "$dst" "${dst}.bak"
+fi
+download_file "$REPO_URL/ArduPlane/CLAUDE.md" "$dst"
+echo "  Installed: $dst"
+
 echo ""
 echo "Installation complete!"
 echo ""
@@ -92,6 +103,7 @@ echo "  - libraries/AP_Scripting/CLAUDE_CRSF_MENU.md (CRSF menu implementation)"
 echo "  - libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md (vehicle control APIs)"
 echo "  - libraries/AP_NavEKF3/CLAUDE.md (EKF3 navigation filter reference)"
 echo "  - libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md (ChibiOS board porting)"
+echo "  - ArduPlane/CLAUDE.md (Plane log analysis, flight modes, QuadPlane)"
 echo ""
 echo "To uninstall, run:"
 echo "  curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.sh | bash"
