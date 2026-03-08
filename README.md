@@ -46,6 +46,33 @@ The install script places the following files:
 | `libraries/AP_NavEKF3/CLAUDE.md` | EKF3 navigation filter reference and analysis methodology |
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 | `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
+| `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
+| `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
+
+### Skills (Slash Commands)
+
+Skills are invoked as `/command` in Claude Code. They pre-authorize necessary tools so common operations run without repeated permission prompts.
+
+**Read-only skills** (safe, no side effects):
+
+| Command | Description |
+|---------|-------------|
+| `/boards [search]` | List and search available board targets |
+| `/find-param <NAME>` | Find parameter definitions, ranges, units in source code |
+| `/build-options [search]` | Search compile-time feature flags (`AP_*_ENABLED` defines) |
+| `/style-check [files]` | Check code style with astyle dry-run and whitespace checks |
+| `/hwdef-info <board>` | Show board hardware definition (MCU, UARTs, pins, sensors) |
+| `/explain <topic>` | Explain ArduPilot code, architecture, or subsystems |
+| `/log-analyze <logfile>` | Analyze DataFlash .bin logs (messages, params, events, plots) |
+
+**Write skills** (local only — compile, run tests, launch simulator):
+
+| Command | Description |
+|---------|-------------|
+| `/build <vehicle> [--board board]` | Configure and build firmware |
+| `/check [test_name]` | Build and run unit tests (Google Test) |
+| `/autotest <vehicle> [test]` | Run SITL integration/behavior tests |
+| `/sitl <vehicle> [options]` | Launch interactive SITL simulator |
 
 ### Uninstalling
 
@@ -139,15 +166,29 @@ aap/
 │   ├── CLAUDE.md                    # Root playbook (build, architecture, C++)
 │   ├── ArduPlane/
 │   │   └── CLAUDE.md                # Plane log analysis, flight modes, QuadPlane
-│   └── libraries/
-│       ├── AP_Scripting/            # Lua scripting playbooks
-│       │   ├── CLAUDE.md
-│       │   ├── CLAUDE_CRSF_MENU.md
-│       │   └── CLAUDE_VEHICLE_CONTROL.md
-│       ├── AP_NavEKF3/              # EKF3 navigation filter
-│       │   └── CLAUDE.md
-│       └── AP_HAL_ChibiOS/hwdef/    # ChibiOS board porting
-│           └── CLAUDE.md
+│   ├── libraries/
+│   │   ├── AP_Scripting/            # Lua scripting playbooks
+│   │   │   ├── CLAUDE.md
+│   │   │   ├── CLAUDE_CRSF_MENU.md
+│   │   │   └── CLAUDE_VEHICLE_CONTROL.md
+│   │   ├── AP_NavEKF3/              # EKF3 navigation filter
+│   │   │   └── CLAUDE.md
+│   │   └── AP_HAL_ChibiOS/hwdef/    # ChibiOS board porting
+│   │       └── CLAUDE.md
+│   └── skills/                      # Claude Code skills (slash commands)
+│       ├── boards/SKILL.md          # /boards - list/search board targets
+│       ├── find-param/SKILL.md      # /find-param - find parameter definitions
+│       ├── build-options/SKILL.md   # /build-options - search feature flags
+│       ├── style-check/SKILL.md     # /style-check - check code formatting
+│       ├── hwdef-info/SKILL.md      # /hwdef-info - board hardware definitions
+│       ├── explain/SKILL.md         # /explain - explain code/architecture
+│       ├── build/SKILL.md           # /build - configure and compile
+│       ├── check/SKILL.md           # /check - run unit tests
+│       ├── autotest/SKILL.md        # /autotest - run SITL integration tests
+│       ├── sitl/SKILL.md            # /sitl - launch SITL simulator
+│       └── log-analyze/             # /log-analyze - analyze flight logs
+│           ├── SKILL.md
+│           └── log_extract.py
 ├── gemini/                          # Gemini CLI playbooks (GEMINI.md files)
 │   ├── GEMINI.md                    # Root playbook (build, architecture, C++)
 │   └── libraries/AP_Scripting/      # Lua scripting playbooks

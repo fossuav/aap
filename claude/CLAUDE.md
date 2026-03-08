@@ -2,9 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Available Skills
+
+If skills are installed (`.claude/skills/`), prefer using them over manual commands. They pre-authorize tools and provide structured workflows:
+
+| Skill | Use for |
+|-------|---------|
+| `/build <vehicle> [--board board]` | Configuring and building firmware |
+| `/boards [search]` | Listing/searching available board targets |
+| `/sitl <vehicle>` | Launching SITL simulator |
+| `/autotest <vehicle> [test]` | Running SITL integration tests |
+| `/check [test_name]` | Running unit tests |
+| `/style-check [files]` | Checking code style before committing |
+| `/find-param <NAME>` | Finding parameter definitions in source |
+| `/build-options [search]` | Searching compile-time feature flags |
+| `/hwdef-info <board>` | Showing board hardware definitions |
+| `/explain <topic>` | Explaining code or architecture |
+| `/log-analyze <logfile>` | Analyzing DataFlash .bin flight logs |
+
 ## Build System
 
-ArduPilot uses the Waf build system. Always run `./waf` from the repository root.
+ArduPilot uses the Waf build system. Always run `./waf` from the repository root. Use `/build` for interactive builds, `/boards` to search targets.
 
 ### Common Build Commands
 
@@ -53,6 +71,8 @@ ArduPilot uses the Waf build system. Always run `./waf` from the repository root
 
 ### Running SITL Simulation
 
+Use `/sitl` for interactive launch with automatic vehicle name mapping.
+
 ```bash
 # Start SITL simulator with MAVProxy
 Tools/autotest/sim_vehicle.py -v ArduCopter           # Copter
@@ -66,6 +86,8 @@ Tools/autotest/sim_vehicle.py -v ArduCopter -I 1      # Second instance (differe
 ```
 
 ### Running Autotest Suite
+
+Use `/autotest` for guided test execution with argument parsing.
 
 ```bash
 # Run specific vehicle tests
@@ -131,7 +153,7 @@ The `libraries/AP_HAL/` defines the hardware abstraction interface. All hardware
 
 ### Board Configuration
 
-Hardware definitions are in `libraries/AP_HAL_ChibiOS/hwdef/`. Each board has a directory with:
+Hardware definitions are in `libraries/AP_HAL_ChibiOS/hwdef/`. Use `/hwdef-info <board>` to inspect a board's definition. Each board has a directory with:
 - `hwdef.dat` - Pin mappings, peripheral configuration
 - Optional `hwdef-bl.dat` for bootloader configuration
 
@@ -150,7 +172,7 @@ AP_Periph firmware runs on dedicated CAN nodes (GPS, airspeed sensors, etc.). Ke
 **Compile-Time Dependency Analysis:**
 - Before refactoring or coupling classes, analyze their compile-time dependencies. Check for guards like `#if HAL_CRSF_TELEM_ENABLED` or `#if AP_SOME_FEATURE_ENABLED`.
 - A core, non-optional component must never depend on a compile-time optional component. The base system must compile when optional features are disabled.
-- Build options are defined in `Tools/scripts/build_options.py` (150+ options available).
+- Build options are defined in `Tools/scripts/build_options.py` (400+ options). Use `/build-options` to search them.
 - Features can be enabled/disabled via `hwdef.dat` files using `define` directives.
 
 **Named Constructor Pattern:**
@@ -214,7 +236,7 @@ if (condition) { foo(); }
 - Use `1.0f` for float literals, not `1.0`
 - Prefer multiplication over division: `foo_cm * 0.01f` not `foo_cm / 100.0f`
 
-**Style Verification:**
+**Style Verification:** Use `/style-check` for automated checking of modified files.
 - Check for trailing whitespace before finalizing changes: `git diff --check HEAD`
 - Use astyle to verify formatting of modified code only (never entire files):
 ```bash
@@ -349,7 +371,7 @@ When modifying existing files:
 
 ## Testing
 
-Unit tests use Google Test framework in `libraries/*/tests/`. Tests require SITL board configuration.
+Use `/check` for unit tests, `/autotest` for integration tests. Unit tests use Google Test framework in `libraries/*/tests/`. Tests require SITL board configuration.
 
 ```bash
 ./waf configure --board sitl

@@ -69,5 +69,17 @@ for bak in CLAUDE.md.bak \
     fi
 done
 
+# Remove Claude Code skills
+for skill in boards find-param build-options style-check hwdef-info explain build check autotest sitl log-analyze; do
+    if [[ -d ".claude/skills/$skill" ]]; then
+        rm -rf ".claude/skills/$skill"
+        echo "  Removed: .claude/skills/$skill/"
+    fi
+done
+# Clean up empty skills directory
+if [[ -d ".claude/skills" ]] && [[ -z "$(ls -A .claude/skills 2>/dev/null)" ]]; then
+    rmdir .claude/skills
+fi
+
 echo ""
 echo "Uninstallation complete!"
