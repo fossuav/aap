@@ -14,6 +14,7 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/autotest <vehicle> [test]` | Running SITL integration tests |
 | `/check [test_name]` | Running unit tests |
 | `/style-check [files]` | Checking code style before committing |
+| `/find-code <feature>` | Finding where features, modes, commands are implemented |
 | `/find-param <NAME>` | Finding parameter definitions in source |
 | `/build-options [search]` | Searching compile-time feature flags |
 | `/hwdef-info <board>` | Showing board hardware definitions |

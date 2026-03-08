@@ -59,6 +59,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | Command | Description |
 |---------|-------------|
 | `/boards [search]` | List and search available board targets |
+| `/find-code <feature>` | Find where features, modes, commands, or messages are implemented |
 | `/find-param <NAME>` | Find parameter definitions, ranges, units in source code |
 | `/build-options [search]` | Search compile-time feature flags (`AP_*_ENABLED` defines) |
 | `/style-check [files]` | Check code style with astyle dry-run and whitespace checks |
@@ -178,6 +179,7 @@ aap/
 │   │       └── CLAUDE.md
 │   └── skills/                      # Claude Code skills (slash commands)
 │       ├── boards/SKILL.md          # /boards - list/search board targets
+│       ├── find-code/SKILL.md       # /find-code - find feature implementations
 │       ├── find-param/SKILL.md      # /find-param - find parameter definitions
 │       ├── build-options/SKILL.md   # /build-options - search feature flags
 │       ├── style-check/SKILL.md     # /style-check - check code formatting
