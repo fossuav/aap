@@ -3,6 +3,9 @@
     "allow": [
       "Read",
       "Edit",
+      "Write",
+      "Grep",
+      "Glob",
       "Bash(python3 *)",
       "Bash(./waf *)",
       "Bash(git add *)",
