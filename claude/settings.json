@@ -34,5 +34,29 @@
       "Bash(Tools/autotest/autotest.py *)",
       "Bash(Tools/autotest/sim_vehicle.py *)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/pre_bash_check.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/post_edit_check.py"
+          }
+        ]
+      }
+    ]
   }
 }

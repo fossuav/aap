@@ -75,6 +75,18 @@ if [[ -f ".claude/settings.json" ]]; then
     echo "  Removed: .claude/settings.json"
 fi
 
+# Remove Claude Code hooks
+for hook in pre_bash_check.py post_edit_check.py; do
+    if [[ -f ".claude/hooks/$hook" ]]; then
+        rm ".claude/hooks/$hook"
+        echo "  Removed: .claude/hooks/$hook"
+    fi
+done
+# Clean up empty hooks directory
+if [[ -d ".claude/hooks" ]] && [[ -z "$(ls -A .claude/hooks 2>/dev/null)" ]]; then
+    rmdir .claude/hooks
+fi
+
 # Remove Claude Code skills
 for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl log-analyze; do
     if [[ -d ".claude/skills/$skill" ]]; then

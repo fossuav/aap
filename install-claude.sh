@@ -127,6 +127,20 @@ for file in SKILL.md log_extract.py; do
 done
 chmod +x .claude/skills/log-analyze/log_extract.py
 
+# Install Claude Code hooks (rule enforcement)
+echo ""
+echo "Installing Claude Code hooks..."
+
+HOOKS_URL="$REPO_URL/hooks"
+mkdir -p .claude/hooks
+
+for hook in pre_bash_check.py post_edit_check.py; do
+    dst=".claude/hooks/$hook"
+    download_file "$HOOKS_URL/$hook" "$dst"
+    chmod +x "$dst"
+    echo "  Installed: $dst"
+done
+
 echo ""
 echo "Installation complete!"
 echo ""
@@ -153,6 +167,10 @@ echo "  - /check          - Build and run unit tests"
 echo "  - /autotest       - Run SITL integration tests"
 echo "  - /sitl           - Launch SITL simulator"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
+echo ""
+echo "  Hooks (rule enforcement):"
+echo "  - pre_bash_check  - Blocks git clean, force push, bad commit messages"
+echo "  - post_edit_check - Warns about printf() in C++ code"
 echo ""
 echo "To uninstall, run:"
 echo "  curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.sh | bash"

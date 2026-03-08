@@ -46,9 +46,11 @@ The install script places the following files:
 | `libraries/AP_NavEKF3/CLAUDE.md` | EKF3 navigation filter reference and analysis methodology |
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 | `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
-| `.claude/settings.json` | Project permissions — auto-allows read-only tools and safe commands |
+| `.claude/settings.json` | Project permissions and hooks — auto-allows safe commands, enforces rules |
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
+| `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules |
+| `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
 
 ### Skills (Slash Commands)
 
@@ -75,6 +77,17 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/check [test_name]` | Build and run unit tests (Google Test) |
 | `/autotest <vehicle> [test]` | Run SITL integration/behavior tests |
 | `/sitl <vehicle> [options]` | Launch interactive SITL simulator |
+
+### Hooks (Rule Enforcement)
+
+Hooks automatically enforce key CLAUDE.md rules that Claude might otherwise ignore. They run as PreToolUse/PostToolUse checks configured in `.claude/settings.json`.
+
+| Hook | Event | Enforces |
+|------|-------|----------|
+| `pre_bash_check.py` | PreToolUse (Bash) | No `git clean`, no force push to main/master, no Claude co-author in commits, commit messages must have subsystem prefix |
+| `post_edit_check.py` | PostToolUse (Edit/Write) | No `printf()` in C++ flight code (use `gcs().send_text()`) |
+
+Hooks that **block** (exit code 2) provide feedback to Claude explaining the rule violation, so it can fix the issue and retry.
 
 ### Uninstalling
 
@@ -177,6 +190,9 @@ aap/
 │   │   │   └── CLAUDE.md
 │   │   └── AP_HAL_ChibiOS/hwdef/    # ChibiOS board porting
 │   │       └── CLAUDE.md
+│   ├── hooks/                       # Claude Code hooks (rule enforcement)
+│   │   ├── pre_bash_check.py       # PreToolUse: git commit, safety checks
+│   │   └── post_edit_check.py      # PostToolUse: C++ code quality checks
 │   └── skills/                      # Claude Code skills (slash commands)
 │       ├── boards/SKILL.md          # /boards - list/search board targets
 │       ├── find-code/SKILL.md       # /find-code - find feature implementations
