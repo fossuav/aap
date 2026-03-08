@@ -69,6 +69,12 @@ for bak in CLAUDE.md.bak \
     fi
 done
 
+# Remove Claude Code settings
+if [[ -f ".claude/settings.json" ]]; then
+    rm ".claude/settings.json"
+    echo "  Removed: .claude/settings.json"
+fi
+
 # Remove Claude Code skills
 for skill in boards find-param build-options style-check hwdef-info explain build check autotest sitl log-analyze; do
     if [[ -d ".claude/skills/$skill" ]]; then

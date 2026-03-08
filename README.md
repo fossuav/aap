@@ -46,6 +46,7 @@ The install script places the following files:
 | `libraries/AP_NavEKF3/CLAUDE.md` | EKF3 navigation filter reference and analysis methodology |
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 | `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
+| `.claude/settings.json` | Project permissions — auto-allows read-only tools and safe commands |
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 

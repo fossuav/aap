@@ -93,6 +93,17 @@ fi
 download_file "$REPO_URL/ArduPlane/CLAUDE.md" "$dst"
 echo "  Installed: $dst"
 
+# Install Claude Code settings (project-level, shared permissions)
+mkdir -p .claude
+dst=".claude/settings.json"
+if [[ -f "$dst" ]]; then
+    echo "  Note: .claude/settings.json already exists, not overwriting"
+    echo "  To update, remove it first and re-run this script"
+else
+    download_file "$REPO_URL/settings.json" "$dst"
+    echo "  Installed: $dst"
+fi
+
 # Install Claude Code skills
 echo ""
 echo "Installing Claude Code skills..."
