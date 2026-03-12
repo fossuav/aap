@@ -111,7 +111,7 @@ echo "Installing Claude Code skills..."
 SKILLS_URL="$REPO_URL/skills"
 
 # Skills with only SKILL.md
-for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl; do
+for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl lua lua-crsf lua-vehicle; do
     mkdir -p ".claude/skills/$skill"
     dst=".claude/skills/$skill/SKILL.md"
     download_file "$SKILLS_URL/$skill/SKILL.md" "$dst"
@@ -166,6 +166,9 @@ echo "  - /build          - Configure and build firmware"
 echo "  - /check          - Build and run unit tests"
 echo "  - /autotest       - Run SITL integration tests"
 echo "  - /sitl           - Launch SITL simulator"
+echo "  - /lua             - Write or modify Lua applets"
+echo "  - /lua-crsf        - Write CRSF transmitter menu scripts"
+echo "  - /lua-vehicle     - Lua vehicle control and movement commands"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
 echo ""
 echo "  Hooks (rule enforcement):"

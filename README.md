@@ -67,6 +67,9 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/style-check [files]` | Check code style with astyle dry-run and whitespace checks |
 | `/hwdef-info <board>` | Show board hardware definition (MCU, UARTs, pins, sensors) |
 | `/explain <topic>` | Explain ArduPilot code, architecture, or subsystems |
+| `/lua <task>` | Write or modify Lua applets (loads playbook + API docs) |
+| `/lua-crsf <menu>` | Write CRSF transmitter menu scripts with crsf_helper |
+| `/lua-vehicle <task>` | Lua vehicle control, movement, RC input |
 | `/log-analyze <logfile>` | Analyze DataFlash .bin logs (messages, params, events, plots) |
 
 **Write skills** (local only — compile, run tests, launch simulator):
@@ -201,6 +204,9 @@ aap/
 │       ├── style-check/SKILL.md     # /style-check - check code formatting
 │       ├── hwdef-info/SKILL.md      # /hwdef-info - board hardware definitions
 │       ├── explain/SKILL.md         # /explain - explain code/architecture
+│       ├── lua/SKILL.md            # /lua - write/modify Lua applets
+│       ├── lua-crsf/SKILL.md       # /lua-crsf - CRSF menu scripts
+│       ├── lua-vehicle/SKILL.md    # /lua-vehicle - vehicle control from Lua
 │       ├── build/SKILL.md           # /build - configure and compile
 │       ├── check/SKILL.md           # /check - run unit tests
 │       ├── autotest/SKILL.md        # /autotest - run SITL integration tests

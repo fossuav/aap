@@ -19,6 +19,9 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/build-options [search]` | Searching compile-time feature flags |
 | `/hwdef-info <board>` | Showing board hardware definitions |
 | `/explain <topic>` | Explaining code or architecture |
+| `/lua <task>` | Writing or modifying Lua applets |
+| `/lua-crsf <menu>` | Writing CRSF transmitter menu scripts |
+| `/lua-vehicle <task>` | Lua vehicle control and movement commands |
 | `/log-analyze <logfile>` | Analyzing DataFlash .bin flight logs |
 
 ## Build System

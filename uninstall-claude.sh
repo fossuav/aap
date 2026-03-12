@@ -88,7 +88,7 @@ if [[ -d ".claude/hooks" ]] && [[ -z "$(ls -A .claude/hooks 2>/dev/null)" ]]; th
 fi
 
 # Remove Claude Code skills
-for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl log-analyze; do
+for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze; do
     if [[ -d ".claude/skills/$skill" ]]; then
         rm -rf ".claude/skills/$skill"
         echo "  Removed: .claude/skills/$skill/"
