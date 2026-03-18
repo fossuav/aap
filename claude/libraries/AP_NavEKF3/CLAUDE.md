@@ -496,6 +496,113 @@ After landing with ground effect, the EKF accumulates position/velocity errors t
 
 **Key code:** `AP_NavEKF3_VehicleStatus.cpp` (onGround detection), `AP_NavEKF3_PosVelFusion.cpp` (zero velocity fusion, innovation flooring), `ArduCopter/baro_ground_effect.cpp` (flag control)
 
+## Lane Switching
+
+### How It Works
+
+EKF3 runs one core per IMU (controlled by `EK3_IMU_MASK`). When armed, each core computes an `errorScore()` based on sensor innovation ratios (`AP_NavEKF3_Outputs.cpp:62`). The primary core switches to an alternative if:
+- Primary error score > 1.0, OR
+- Primary is unhealthy, OR
+- Alternative has a substantially lower accumulated relative error
+
+Decision logic is in `NavEKF3::UpdateFilter()` (`AP_NavEKF3.cpp:932-998`). There is no parameter to disable lane switching — it always runs when armed.
+
+### Key Parameters
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `EK3_IMU_MASK` | 7 (3 IMUs) | Number of lanes. Use 3 (2 lanes) or 1 (1 lane) to reduce switching |
+| `EK3_ERR_THRESH` | 0.2 | Relative error sensitivity. Higher = less sensitive to lane differences |
+| `EK3_AFFINITY` | 0 | Bitmask: bit 0=GPS, bit 1=Baro, bit 2=Compass, bit 3=Airspeed. Pins sensor instances to lanes |
+| `EK3_PRIMARY` | 0 | Preferred core when disarmed |
+
+### GPS Affinity (EK3_AFFINITY bit 0)
+
+When enabled, each core prefers the GPS instance matching its `core_index` (`AP_NavEKF3_Measurements.cpp:1153`):
+- Core 0 → GPS1, Core 1 → GPS2, etc.
+- Falls back to `gps.primary_sensor()` if preferred GPS has no 3D fix
+- Each core reads exclusively from `gps.location(selected_gps)` — full data isolation between lanes
+
+**Critical for GPS-jammed operations with external nav:** Pin the hardware GPS (jammed/spoofed) to one lane and the external nav to another. If the hardware GPS produces spoofed data, only its lane is corrupted. Lane switching moves to the clean external nav lane.
+
+Recommended config for dual-GPS with one potentially unreliable:
+```
+EK3_AFFINITY = 1       # GPS affinity
+EK3_IMU_MASK = 3       # 2 lanes (one per GPS)
+GPS_PRIMARY = 1        # Reliable GPS as default fallback
+```
+
+### When Lane Switching Hurts
+
+All lanes share the same GPS input by default (`EK3_AFFINITY=0`). If the GPS is spoofed, all lanes get corrupted simultaneously → rapid lane switching between equally bad solutions → each switch causes attitude/position discontinuities that compound flight controller instability.
+
+**Mitigations:**
+- `EK3_AFFINITY=1` with a clean GPS2 — isolates bad GPS to one lane
+- `EK3_IMU_MASK=1` — single lane, no switching possible (loses IMU redundancy)
+- `ARSPD_USE=1` — gives each lane a velocity cross-check to reject impossible GPS velocities
+
+## AHRS DCM Fallback (Plane)
+
+### How `_active_EKF_type()` Decides (AP_AHRS.cpp)
+
+For Plane (FIXED_WING), the decision flow:
+
+1. `ret = fallback_active_EKF_type()` → always returns DCM when DCM compiled in
+2. `case THREE:` — sets `ret = THREE` only if `EKF3.healthy()` (Plane doesn't set `FLAG_ALWAYS_USE_EKF`)
+3. Fixed-wing fallback section checks `can_use_ekf = attitude && vert_vel && vert_pos`:
+   - `!can_use_ekf` → returns DCM ("No choice") — **bypasses DISABLE_DCM_FALLBACK**
+   - `disable_dcm_fallback` check — only reached when `can_use_ekf` is true
+   - Further checks: GPS fix loss, const_pos_mode, no horiz_vel → return DCM (gated by disable check)
+
+### The DISABLE_DCM_FALLBACK Limitation
+
+AHRS_OPTIONS bits 0+1 (`DISABLE_DCM_FALLBACK_FW` / `_VTOL`) prevent DCM fallback for the GPS fix loss, const_pos_mode, and no horiz_vel paths. But the `!can_use_ekf` path returns DCM **unconditionally**, bypassing the disable bits.
+
+When the EKF loses attitude (e.g., from GPS spoofing corrupting the state covariance), this creates DCM↔EKF toggling that amplifies instability. Each toggle produces an attitude discontinuity for the flight controller.
+
+### `EKF3.healthy()` vs `getFilterFaults()`
+
+- `EKF3.healthy()` checks initialization, innovations, variances — returns false during GPS spoofing (high innovations)
+- `getFilterFaults()` checks sensor-specific faults (bad mag, bad airspeed, etc.) — returns 0 during GPS spoofing (GPS corruption isn't a sensor fault)
+
+This distinction matters because the `always_use_EKF()` path uses `ekf3_faults == 0` (keeps EKF), while the normal Plane path uses `EKF3.healthy()` (drops to DCM). Copter always uses the faults path; Plane only does if `FLAG_ALWAYS_USE_EKF` is set (which it isn't by default).
+
+## GPS-Denied / GPS-Jammed Operations
+
+### Airspeed as Velocity Cross-Check
+
+`ARSPD_USE=1` fuses airspeed into the EKF velocity estimate. This provides the **only** independent velocity cross-check when GPS is unreliable. Without it, the EKF has no way to reject impossible GPS velocities (e.g., 230 m/s from spoofed GPS when actual airspeed is 22 m/s).
+
+Airspeed fusion also enables dead reckoning via `readyToUseAirData()` when GPS is lost — requires `hasAirspeed` (ARSPD_USE=1) AND `assume_zero_sideslip()` (fly_forward=true).
+
+### EK3_OPTIONS bit 0 (JammingExpected)
+
+When set, the EKF requires preflight GPS quality checks to pass before resuming GPS fusion after a >2 second GPS outage. This prevents the EKF from immediately accepting a potentially spoofed GPS fix after jamming.
+
+### `_force_disable_gps` (RC_OPTION 65)
+
+`GPS_DISABLE` sets `_force_disable_gps` which makes ALL GPS instances report `NO_FIX` regardless of actual status (`AP_GPS.h`). This is a blanket disable — it affects hardware GPS AND external nav (e.g., MAVLink GPS backend) simultaneously. There is no per-instance GPS disable.
+
+**Implication:** You cannot selectively disable a jammed hardware GPS while keeping external nav active. With GPS affinity, the better approach is to leave GPS enabled and let affinity isolate the bad GPS to its own lane.
+
+### GPS Spoofing Failure Pattern
+
+When a jammed GPS produces spoofed 3D fixes with valid satellite counts:
+
+1. Spoofed position/altitude injected into EKF → position jumps hundreds of meters, velocity estimates physically impossible
+2. All EKF lanes corrupted simultaneously (without affinity) → rapid lane switching amplifies discontinuities
+3. EKF collapse → attitude flag lost → DCM fallback (bypasses DISABLE_DCM_FALLBACK bits)
+4. EKF partial recovery → back to EKF3 → next spoofed update → collapse again
+5. DCM↔EKF toggling + lane switching = compound instability
+
+**Configuration to contain GPS spoofing:**
+- `ARSPD_USE=1` — reject impossible velocity via airspeed cross-check
+- `EK3_AFFINITY=1` — isolate spoofed GPS to one lane
+- `EK3_IMU_MASK=3` — 2 lanes matching 2 GPS instances
+- `EK3_OPTIONS=1` — JammingExpected
+- `GPS_PRIMARY=1` — external nav as default
+- Do not re-enable GPS hardware in jammed areas
+
 ## Tools
 
 ### Replay Tool
