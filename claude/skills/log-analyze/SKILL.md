@@ -1,6 +1,6 @@
 ---
 name: log-analyze
-description: Analyze ArduPilot DataFlash .bin log files or MAVLink .tlog telemetry logs. Use when the user provides a .bin or .tlog log file path or asks to analyze flight log data.
+description: "Analyze ArduPilot DataFlash .bin log files or MAVLink .tlog telemetry logs: extract flight parameters, plot altitude and attitude profiles, identify error events, diagnose vibration or EKF issues, and compare sensor data. Use when the user provides a .bin or .tlog log file path or asks to analyze flight log data."
 argument-hint: "<logfile> [focus area]"
 allowed-tools: Bash(python3 *), Read, Grep, Glob
 ---
