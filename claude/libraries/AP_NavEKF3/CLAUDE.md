@@ -29,6 +29,41 @@ From `AP_NavEKF3_core.h`:
 - `AP_NavEKF3_VehicleStatus.cpp` - Vehicle state detection (onGround, etc.)
 - `LogStructure.h` - Log message definitions
 
+## Data Abstraction Layer (DAL) and EKF Replay
+
+### Why the DAL Exists
+
+The EKF does NOT read sensors directly. All sensor data and external state enters the EKF through the DAL (`libraries/AP_DAL/`). When `LOG_REPLAY=1`, the DAL logs every input to the EKF into the onboard log. The Replay tool re-feeds this logged data to reproduce the exact EKF behavior.
+
+**If the EKF reads anything that bypasses the DAL, replay will produce different results than the original flight.**
+
+### What MUST Go Through the DAL
+
+Any **runtime data** that influences EKF state estimation:
+
+- **Sensor measurements**: gyro/accel deltas, GPS, baro, mag, rangefinder, optical flow, airspeed — all via `dal.ins()`, `dal.gps()`, `dal.baro()`, etc.
+- **Per-instance sensor properties that vary at runtime**: e.g. `dal.ins().is_low_drift(instance)`, `dal.ins().get_accel_vrf_bias_z(instance)` — these are logged in the `RISI` struct per IMU
+- **Vehicle state flags**: `dal.get_armed()`, `dal.get_takeoff_expected()`, `dal.get_touchdown_expected()`, `dal.get_fly_forward()`, `dal.get_hover_z_bias_enabled()` — logged in the `RFRN` struct
+- **Any value set by vehicle code** that the EKF uses: if Copter sets a flag or value that changes EKF behavior, it must flow through the DAL (typically via AHRS → DAL RFRN bitfield)
+
+### What Does NOT Need the DAL
+
+- **Compile-time constants** (`#define`, `#if`): These are baked into the binary. Both the live flight and the Replay tool use the same binary, so `#if` branches evaluate identically. No logging needed.
+- **EKF tuning parameters** (`AP_Param`): These are replayed via `PARM` log messages, not through the DAL sensor structs. The Replay tool can also override them with `--parm NAME=VALUE`.
+- **EKF-internal state**: The state vector, covariance matrix, innovation sequences — these are computed, not inputs.
+
+### How to Add New Data to the DAL
+
+1. **Per-IMU instance data** → add to `log_RISI` struct in `AP_DAL/LogStructure.h`, populate in `AP_DAL_InertialSensor::start_frame()`, expose accessor on `AP_DAL_InertialSensor`
+2. **Global flags/state** → add to `log_RFRN` struct, populate in `AP_DAL::start_frame()` from AHRS, expose accessor on `AP_DAL`
+3. **Per-GPS instance data** → add to `log_RGPI`/`log_RGPJ` structs, similar pattern
+
+### Common Mistakes
+
+- **Calling `AP::ins()` from EKF code**: Use `dal.ins()` instead. Direct sensor access bypasses replay logging. The only exception is EKF code that runs before the DAL is initialized (rare).
+- **Adding a vehicle-to-EKF flag without DAL**: If vehicle code (Copter, Plane) sets a bool/float on the EKF frontend that changes algorithm behavior, it must be logged. Route it through AHRS → DAL RFRN.
+- **Assuming AP_Param values need DAL**: They don't — parameters are replayed via PARM log messages. But if you read a parameter value and cache it in a non-param member that the EKF reads, that cached value needs DAL treatment.
+
 ## Log Messages
 
 | Message | Description |
@@ -607,7 +642,7 @@ When a jammed GPS produces spoofed 3D fixes with valid satellite counts:
 
 ### Replay Tool
 
-Re-runs the EKF on recorded log data for comparison.
+Re-runs the EKF on recorded log data for comparison. Requires `LOG_REPLAY=1` during the original flight to capture DAL data.
 
 ```bash
 ./waf configure --board sitl && ./waf --targets tool/Replay
@@ -615,9 +650,13 @@ Re-runs the EKF on recorded log data for comparison.
 # Override params: --parm NAME=VALUE
 ```
 
-Output log in `logs/` has both original (C=0,1) and replayed (C=100,101) data.
+Output log in `logs/` has both original (C=0,1) and replayed (C=100,101) data. Use `Tools/Replay/check_replay.py` to verify outputs match.
 
-**Limitations:** Only includes EKF parameters. Copter-specific parameters (`TKOFF_GNDEFF_ALT`) and ground effect flags cannot be tested via Replay — use SITL or real flight.
+**What Replay can test:** Any EKF behavior driven by DAL-logged sensor data and EKF parameters. This includes tuning parameter changes (`--parm EK3_VELNE_M_NSE=0.5`).
+
+**What Replay cannot test:** Vehicle-specific behavior not captured in DAL logs — e.g. Copter flight mode logic, ground effect flag timing from `baro_ground_effect.cpp`, hover bias learning lifecycle. For these, use SITL autotest or real flight.
+
+**Replay and the DAL:** Replay feeds the EKF exclusively through the DAL. If EKF code reads data that bypasses the DAL (e.g. direct `AP::ins()` calls), replay will use stale or default values instead of the flight's actual data. Always access sensor data via `dal.ins()`, `dal.gps()`, etc. See the DAL section above.
 
 ### Diagnostic Commands
 
