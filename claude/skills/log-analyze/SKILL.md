@@ -171,6 +171,212 @@ After generating a plot, read the image file to view it.
 4. **Filter EKF by core.** XKF* messages have a `C` field for core index. Use `--condition "XKF1.C==0"` to isolate one core.
 5. **Mind the units.** XKF1 angles are in centidegrees. PD is positive-down (NED). BARO.Alt is meters above origin. RFND.Dist is meters.
 6. **Use stats for quantitative comparison.** When comparing axes or checking for oscillation, `stats` gives instant min/max/mean/std without custom scripts.
+7. **Verify servo/motor mapping before naming motors.** See "Vehicle Identification Reconnaissance" below. Do not assume `ESC.Instance==N` is "Motor N" — check `SERVO*_FUNCTION` values in the log and translate.
+8. **Separate physical vehicles even when the build spec is identical.** Logs from before and after a crash/rebuild are from different hardware. See "Multi-Log and Cross-Flight Analysis" below.
+9. **`BAT.Curr` is pack-level, not per-motor.** `ESC.Curr` is often zero on DShot bidir — verify before relying on it.
+10. **Aerodynamic body effects pollute in-flight calibration measurements.** On airframes with meaningful body lift, control fins, or significant drag, any in-flight attempt to characterise the thrust curve, hover throttle, or PID plant above low airspeed (~5–10 m/s) is contaminated by speed-dependent non-rotor contributions. Clean measurements for these quantities need static/bench conditions or stable-hover segments at minimal forward speed.
+
+## Vehicle Identification Reconnaissance
+
+Before analysing per-motor data, **always verify the servo-to-motor mapping from the log itself**:
+
+```bash
+python3 .claude/skills/log-analyze/log_extract.py extract <logfile> \
+    --types PARM --condition "PARM.Name=='SERVO1_FUNCTION' or PARM.Name=='SERVO2_FUNCTION' or PARM.Name=='SERVO3_FUNCTION' or PARM.Name=='SERVO4_FUNCTION'"
+```
+
+**The trap:** `ESC.Instance==N` corresponds to the `SERVO(N+1)` output channel, **not** to ArduPilot's motor number. On a vehicle with non-standard `SERVO*_FUNCTION` assignments, `ESC.Instance==3` can be Motor 2 rather than Motor 4 — or any other mapping. The motor roles are the `SERVO_*_FUNCTION` values (33-36 for quad motors 1-4, with higher values for hexa/octa), not the channel index or the ESC instance.
+
+| Log field | What it identifies |
+|---|---|
+| `ESC.Instance` | Zero-indexed ESC order (0-3 for a quad) |
+| `RCOU.CN` | PWM output channel N (1-indexed) — same as SERVO*N* |
+| `SERVO_N_FUNCTION` | The motor role assigned to that output channel |
+
+**Consequence of getting it wrong:** you blame a motor that's actually the healthiest while the actual weak channel goes uninvestigated. The symptom is often "the motor I flagged doesn't match what the pilot reports as having felt off."
+
+Hexa, octa, and coax mappings are even easier to misread. On any non-standard build or any diagnosis that names a specific physical motor, make the mapping table explicit in your analysis output.
+
+### Pack Current vs Per-Motor Current
+
+`BAT.Curr` is total pack current. It is **not** per-motor current. Three common errors from conflating them:
+
+1. **Estimating per-motor thermal load during aggressive manoeuvres.** The mixer creates asymmetry under roll/pitch correction — one motor can be at 90% throttle while another is at minimum spin. During such events a single motor may be drawing 35-40% of pack current, not 25%. Worst-case per-motor share is roughly `pack / 3`, not `pack / 4`.
+2. **Reasoning about `MOT_BAT_CURR_MAX` as a per-motor limit.** It is a pack-level limit. The mixer cannot enforce per-motor current caps.
+3. **Assuming `ESC.Curr` is populated.** On many DShot300/600 bidir setups `ESC.Curr` is zero — the telemetry frame does not include current, only RPM (and sometimes temperature). Verify the stats are non-zero before relying on it; if zero, you only have pack-level current.
+
+## Multi-Log and Cross-Flight Analysis
+
+### Vehicle Identity
+
+**Before correlating observations across multiple logs, establish that the logs are from the same physical vehicle.** Same firmware, same `FRAME_CLASS`, same param file, and even same pilot does not guarantee same hardware. A rebuilt airframe after a crash is a different vehicle regardless of how much of the spec is preserved. Motor/ESC/prop health observations do not transfer across a rebuild.
+
+Heuristics for establishing continuity:
+
+- `STAT_BOOTCNT` and `STAT_FLTTIME` should monotonically increase across logs from the same airframe
+- Large gaps in time with `STAT_FLTTIME` reset or dropping indicate a new vehicle (or a flight-time reset, which is itself a reason to double-check)
+- A crash event in one log followed by subsequent logs should be treated as a different vehicle until explicitly confirmed otherwise
+
+**Do not** carry forward "Motor X is weak" findings across a rebuild. The *failure mode* may recur (same airframe type under similar maneuvres will have similar failure modes) but the *specific weak channel* is a property of the current physical hardware.
+
+### Chronological Per-Motor Diagnostics
+
+When you have multiple logs from a single confirmed-same vehicle spanning hours or days, per-motor patterns become visible that don't show up in any individual log:
+
+**Per-ESC error-rate sweep.** `ESC.Err` (DShot bidir error rate %) per `ESC.Instance` across a day of flights reveals motor-channel degradation:
+
+```bash
+for log in log1.bin log2.bin ... ; do
+    for inst in 0 1 2 3; do
+        python3 .claude/skills/log-analyze/log_extract.py stats "$log" \
+            --sources "ESC.Err" --condition "ESC.Instance==$inst and ESC.RPM>1000"
+    done
+done
+```
+
+Patterns to look for:
+
+- **Baseline outlier:** one instance with `max` error rate 10-100× its peers during a flight where everything else is clean. This is the earliest fingerprint of a weakening channel and often appears in flights the pilot reports as "fine."
+- **Single-flight transient > 30%:** a "ground the vehicle" event. Even if nothing catastrophic happened in that flight, a DShot error rate spike that high indicates the ESC-motor link is intermittently losing frames; the next aggressive flight is where it fails. Treat log37-class events (one big spike before a crash) as preventable warnings.
+- **Across-flight climb:** per-motor error rate climbing steadily across a day is predictive of imminent desync/burnout.
+
+These patterns require same-vehicle continuity to read correctly — see "Vehicle Identity" above.
+
+**Operating-envelope thresholds.** On a specific vehicle, the pack-current level at which DShot errors begin to cross 1% is an empirical electrical-stress threshold for that combination of motor + ESC + pack + cooling. Cross-reference `BAT.Curr` with `ESC.Err` in the same time window to find it:
+
+```bash
+# Pack current trajectory and error rates during a high-stress segment
+python3 .claude/skills/log-analyze/log_extract.py compare <logfile> \
+    --sources "BAT.Curr,ESC.Err" --interval 0.25 --from-time <peak_start> --to-time <peak_end>
+```
+
+This threshold is a **hardware-specific** measurement that drifts down as batteries age and motor runtime accumulates. It is a useful per-vehicle health signal but does **not** transfer across vehicles even of the same build.
+
+## Parameter-Change Safety Rules
+
+These are general rules for when recommending parameter changes from log evidence is or is not appropriate. The underlying principle: a PID or filter value that came out of autotune, a calibration run, or bench measurement represents actual airframe dynamics; overriding it without new measurement evidence replaces data with opinion.
+
+Before recommending any tuning change, ask: *what would I measure in the log to show this specific parameter is the problem, and have I actually measured that?* If the answer is "I'm interpolating from general rules," do not recommend it.
+
+### Rate-Loop Gains Post-Autotune
+
+**Recommend a change when:**
+- Rate-tracking data shows sustained error with large I-term accumulation that doesn't decay during the manoeuvre
+- `CTRL.RMS` values show sustained oscillation on a specific axis in normal flight
+- PID component stats show a specific term saturating at its IMAX/PDMX limit
+
+**Do not recommend a change when:**
+- The apparent tracking error is at a flight condition autotune never tested (forward speed, attitude extremes, near-vertical attitude where body-frame rate axes are kinematically coupled). These are often physics, not gain.
+- The mean error is small and only the peaks are large — autotune's output already handles the mean correctly, and peaks come from transient disturbances the PID loop is actually doing the right thing about.
+- The "error" at peak speed is really the rate loop delivering less output than demanded because **motor authority is saturated**. Raising P does not create thrust headroom.
+
+### ATC_RAT_*_SMAX
+
+**Never recommend setting this on a copter rate PID.** The slew-rate modifier (`Dmod` in `libraries/AC_PID/AC_PID.cpp:263-267`) scales only the rate-loop P and D outputs:
+
+```cpp
+_pid_info.Dmod = _slew_limiter.modifier((_pid_info.P + _pid_info.D) * _slew_limit_scale, dt);
+P_out *= _pid_info.Dmod;
+D_out *= _pid_info.Dmod;
+```
+
+The upstream angle P gain (`ATC_ANG_*_P`) is not scaled. When SMAX engages, the angle loop continues commanding full-authority rate demands while the rate loop's ability to follow them has been cut. The loop mismatch can drive oscillation and outright instability, especially on airframes with above-default angle P gains.
+
+**Use `IMAX` for integrator runaway protection and `PDMX` for P-output capping.** Both act honestly in the rate loop without hiding their effect from the angle loop.
+
+### ATC_RAT_YAW_D
+
+Yaw D is a narrow parameter in ArduCopter — typical values are 0.000–0.005. Many airframes converge at `AUTOTUNE_MIN_D` (default 0.0003) during yaw tuning.
+
+**Autotune converging at `MIN_D` is a signal, not an artefact.** Autotune scans D upward looking for damping improvement and stops at the lowest value where the test metric either stops improving or starts oscillating. Landing at the floor means the airframe does not tolerate more yaw D.
+
+**Raising yaw D above autotune's output** puts D-term output into the same order of magnitude as P-term output under buffet or noise. On a quad, yaw torque comes from differential thrust — every unit of yaw D output drives repeated asymmetric motor loading. This is a documented cause of motor/ESC thermal failure on high-TWR quads.
+
+**Recommend raising yaw D only with specific evidence:**
+- `PIDY.Dmod`-limited events in hover (indicates the rate loop is actively damping something)
+- Sustained yaw-rate oscillation that P-gain changes alone can't explain
+- Bench or flight data showing a specific damping deficit
+
+Do not recommend raising it on "it's at the minimum, we have room" reasoning.
+
+### ATC_INPUT_TC
+
+**This is a pilot-feel parameter, not a log-derivable parameter.** `ATC_INPUT_TC` controls the time constant of the angle target's response to stick input in angle modes (STABILIZE, ALT_HOLD, LOITER). Its "right" value is subjective.
+
+**Recommend a change only on pilot report:**
+- Pilot reports perceived lag or sluggishness → consider lowering
+- Pilot reports overshoot or twitchy feel → consider raising
+- If the pilot hasn't complained, don't touch it.
+
+**Do not recommend a change based on:**
+- Rate-demand peak data alone (the peaks scale with any TC change, so there's no baseline to compare against)
+- Cross-vehicle comparison or "typical for this airframe class"
+
+**Cost of lowering:** halving TC roughly doubles the peak rate demand for the same stick input. On a vehicle already saturating the rate loop or motor output at peak throttle, lowering TC moves more load into the saturation regime. Verify headroom before recommending a decrease.
+
+### MOT_SPIN_MAX vs MOT_BAT_CURR_MAX (Motor Thermal Protection)
+
+When the goal is to protect motors or ESCs from thermal burnout (over-volted motors, marginal continuous current rating, cooling problems), **use `MOT_BAT_CURR_MAX` with a value from component specifications**, not `MOT_SPIN_MAX`.
+
+**Why `MOT_SPIN_MAX` is the wrong tool for thermal protection:**
+
+`MOT_SPIN_MAX` clips at the actuator stage (`libraries/AP_Motors/AP_MotorsMulticopter.cpp:468`) *after* the mixer has computed per-motor thrust contributions assuming the full [0, 1] range was available. When `spin_max < 1.0`, the mixer silently commands more than it gets. The rate loop absorbs the mismatch via attitude error. Invisible on benign flights; growing under saturation.
+
+**Why `MOT_BAT_CURR_MAX` is the right tool:**
+
+`MOT_BAT_CURR_MAX` modulates `_throttle_thrust_max` (`libraries/AP_Motors/AP_MotorsMulticopter.cpp:348-385`), which the mixer uses as its input ceiling at `libraries/AP_Motors/AP_MotorsMatrix.cpp:234-244`. The mixer sees the reduced ceiling and plans around it. No loop mismatch. `ATC_THR_MIX_MAN/MAX` still applies — when the mixer saturates against the reduced ceiling, attitude is still prioritised over throttle.
+
+The mechanism: when measured current exceeds the limit, `_throttle_limit` decreases (smoothed by `MOT_BAT_CURR_TC`, default 5 s), and max throttle is pulled down to `throttle_hover + (1 − throttle_hover) * _throttle_limit`. The floor is `throttle_hover`, so the vehicle can always hover.
+
+**Time-scale caveat:** `MOT_BAT_CURR_MAX` protects against **sustained** over-current (seconds-scale, matching motor thermal failure modes). It does **not** protect against millisecond-scale ESC desync under abrupt PWM step commands — that's ESC firmware territory, not tuning.
+
+**Picking a value:** should come from the *lower* of:
+
+1. Battery continuous C-rating × capacity
+2. ESC continuous current rating × motor count (with margin for mixer asymmetry — worst case is pack/3 on one motor, not pack/4)
+3. Motor continuous current rating (thermally derated for the actual operating voltage)
+4. Empirical operating-envelope threshold from logs, if available
+
+If component specs are unknown, the operating envelope (where DShot errors begin to cross 1% in existing logs) is a data-driven starting point. Always pick the lower of the envelope and the spec.
+
+### MOT_THST_EXPO
+
+**`MOT_THST_EXPO` should be measured on a thrust stand, not derived from flight logs.** It is ArduCopter's inverse of the empirical thrust curve `thrust = (1 − expo) * actuator + expo * actuator²`. A wrong value means every commanded thrust becomes a wrong actuator command, and the PID loop fit *depends on the assumed curve being close to the real one*.
+
+**Recommend a change in direction when:**
+- Physics of the prop suggests default doesn't apply. High-pitch props, large-diameter props, or props with notably high static torque draw (heavy drag at low RPM) typically need higher expo than default (0.65). Low-pitch racer props typically match default.
+- `ESC.RPM` vs commanded actuator in log data is notably shallower than `RPM ∝ √throttle` would predict — the signature of a drag-loaded prop-motor system where the default curve doesn't fit.
+
+**Do not recommend a specific numerical value from log data alone:**
+- In-flight thrust measurements are corrupted by aerodynamic body lift above low airspeeds (~5–10 m/s)
+- Vehicles rarely sit in clean stable hover long enough for accurate curve fitting
+- Without known mass or a direct thrust measurement, accel integration can't be converted to thrust
+- `MOT_THST_HOVER` may be frozen (`MOT_HOVER_LEARN=0`) and unreliable as a cross-check if the curve is wrong
+
+**Required follow-up after any `MOT_THST_EXPO` change:** re-run `AUTOTUNE`. The existing tune was measured against the old thrust model. Changing the model shifts the plant the PID loops see, invalidating the fit. Do not fly aggressive envelopes on pre-change gains.
+
+**Bench procedure (canonical):**
+1. Mount one motor+prop+ESC on a thrust stand at the actual operating voltage
+2. Sweep actuator from `MOT_SPIN_MIN` to `MOT_SPIN_MAX` in ~20 steps, holding each 2-3 s
+3. Record actuator, thrust, RPM, current, voltage
+4. Fit to `thrust = (1 − expo) * a + expo * a²` and read off `expo`
+5. Apply, re-run `AUTOTUNE`, validate with stable hover across three battery-voltage states before aggressive flight
+
+### EK3_GLITCH_RAD — Two Modes
+
+`EK3_GLITCH_RAD` is not a simple "how aggressive is GPS glitch rejection" knob — it selects between two different code paths in `libraries/AP_NavEKF3/AP_NavEKF3_PosVelFusion.cpp` (branches at lines `819-829`, `894-905`, `942-951`).
+
+- **`EK3_GLITCH_RAD > 0` (default 25):** innovation tests that fail trigger `ResetPosition()` to the GPS fix when position variance grows beyond `GLITCH_RAD²`. Appropriate for hover-class copters where a 25 m innovation is almost certainly a bad GPS fix.
+- **`EK3_GLITCH_RAD <= 0` (special case):** innovation variance is scaled by the failed test ratio, bounding the state update without triggering a reset. The EKF stays on its IMU prediction and corrects toward GPS gradually.
+
+**Which to use depends on the vehicle's operational envelope:**
+
+- **Hover-class / slow cruise copters (typical multirotors):** default 25 is correct. Glitch rejection protects against real bad fixes.
+- **High-speed vehicles (sustained >30-50 m/s cruise or aggressive acro):** set to **0**. GPS processing latency of ~100 ms is already 5 m of apparent position error at 50 m/s and 10 m at 100 m/s. Combined with covariance growth from high dynamics, the `> 0` path triggers `ResetPosition()` to the *lagged* GPS fix, snapping the state to where the GPS *thinks* the vehicle is. This is a flyaway mechanism at high speed. The `<= 0` path handles the same large innovations bounded-variance style.
+
+**Log diagnostic:** `"GPS Glitch or Compass error"` in `MSG`/`STATUSTEXT` during aggressive flight is the innovation test firing. With `GLITCH_RAD <= 0` the special path handles the update safely and no reset occurs. With `GLITCH_RAD > 0` the same message is followed by position snaps and often `EKF lane switch` events that may look like EKF health failures but are actually the reset mechanism misfiring.
+
+**Do not** recommend "set `GLITCH_RAD` back to 25" on a high-speed platform as a fix for EKF messages during peak-speed flight. On those vehicles, **the default value is the wrong one**, and the messages are a normal consequence of the innovation test at high dynamics — they are not evidence of a bad GPS fix.
 
 ## Before Recommending a Fix — Verification Checklist
 

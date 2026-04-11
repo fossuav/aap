@@ -372,6 +372,56 @@ Without Z velocity measurements, the EKF has fundamental limitations:
 2. Use STABILIZE mode for indoor flight (direct throttle, no altitude hold)
 3. Keep hovers short to minimize drift accumulation
 
+## GPS Innovation Handling at High Dynamics (EK3_GLITCH_RAD)
+
+`EK3_GLITCH_RAD` is not a monotonic "aggressiveness of GPS glitch rejection" setting. It selects between two fundamentally different code paths in `AP_NavEKF3_PosVelFusion.cpp`. Understanding which path fits a specific vehicle's operational envelope matters — the wrong path can create flyaways on high-speed platforms.
+
+### The Two Paths
+
+**Path 1 — `EK3_GLITCH_RAD > 0` (default 25 m)**
+
+Standard behaviour. Innovation tests compare the difference between EKF-predicted position and incoming GPS position against a variance-scaled threshold. On a failed innovation test:
+
+- If position covariance has grown beyond `sq(_gpsGlitchRadiusMax)`, the EKF triggers `ResetPosition()` to the GPS fix and resets position variances (see `AP_NavEKF3_PosVelFusion.cpp:837-850`)
+- Otherwise, the sample is rejected (`fusePosData = false`) and the EKF continues on IMU propagation until a later sample passes
+
+This is appropriate for **hover-class and slow-cruise copters**: any 25 m innovation is almost certainly a bad GPS fix, and snapping the state to the GPS is the right recovery.
+
+**Path 2 — `EK3_GLITCH_RAD <= 0` (special case)**
+
+A distinct branch in the same code (at `AP_NavEKF3_PosVelFusion.cpp:819-829`, with matching branches at `:894-905` for velocity and `:942-951` for height):
+
+```cpp
+} else if ((frontend->_gpsGlitchRadiusMax <= 0) && (PV_AidingMode != AID_NONE)) {
+    // Handle the special case where the glitch radius parameter has been set to a non-positive number.
+    // The innovation variance is increased to limit the state update to an amount corresponding
+    // to a test ratio of 1.
+    posCheckPassed = true;
+    varInnovVelPos[3] *= posTestRatio;
+    varInnovVelPos[4] *= posTestRatio;
+}
+```
+
+When the innovation test fails, the sample is **not** rejected and **not** used for a position reset. Instead, the innovation variance is multiplied by the failed test ratio, which bounds the Kalman update to what a test ratio of 1.0 would have produced. The state gradually converges toward GPS over multiple samples rather than snapping.
+
+### Which Path Fits Which Vehicle
+
+- **Hover-class, slow-cruise, or static-position multirotors:** use the default `25` (or larger for rough-GPS environments). Glitch rejection protects against real bad fixes.
+- **High-speed vehicles with sustained flight at 30-50+ m/s or aggressive acro:** use `0`. GPS processing latency of ~100 ms is already 5 m of apparent position error at 50 m/s and 10 m at 100 m/s. These are *legitimate* innovations, not glitches. Combined with covariance growth from the high dynamics, Path 1's `ResetPosition()` at the covariance threshold would snap the EKF state to where the (lagged) GPS *thinks* the vehicle is, several metres behind the IMU-propagated state. On a vehicle moving at 100 m/s, that position snap is a flyaway — the controller then drives toward the next waypoint from the wrong start point.
+
+Path 2 keeps the IMU-propagated position, applies a bounded correction toward the GPS, and lets the filter converge naturally as later GPS samples arrive. This is the correct behaviour when IMU propagation is more accurate than the current GPS sample, which is typical at high dynamics.
+
+### Log Diagnostics
+
+`STATUSTEXT` / `MSG` string `"GPS Glitch or Compass error"` during high-speed flight is the innovation test firing. **This message alone does not indicate the EKF accepted a bad fix.** It indicates the innovation test flagged a sample that exceeded the variance-scaled threshold. What happens next depends on `EK3_GLITCH_RAD`:
+
+- With `GLITCH_RAD > 0`: the message is often followed by `EKF lane switch` and state discontinuities from `ResetPosition()` — these **are** a symptom, and in a high-speed context they are the wrong response to a legitimate large innovation.
+- With `GLITCH_RAD <= 0`: the message still appears (the innovation test still flags) but the special path handles the sample via bounded variance scaling. No reset, no lane switch consequence.
+
+### Do Not Recommend "Restore Default"
+
+On any vehicle where sustained cruise regularly puts the airframe into a flight regime where GPS processing lag creates metres-scale apparent position error against IMU propagation, **the default `25` is the wrong value**. Seeing `"GPS Glitch"` messages in such a log is not evidence that glitch rejection is needed — it is evidence that the innovation test is doing what it should, and the question is whether you want the reset-to-GPS or bounded-variance path to handle the update. For high-speed platforms, bounded-variance (`<= 0`) is the right answer.
+
 ## Known Issues
 
 ### Motor-Induced Baro Noise
