@@ -98,6 +98,21 @@ Any **runtime data** that influences EKF state estimation:
 - XKF1 angles are centidegrees. GX/GY/GZ (gyro bias) are milliradians.
 - XKV1/XKV2 are diagonal elements of covariance matrix P. Smaller = more confident. Watch for variance growth (filter divergence).
 
+### Source Sets vs. Cores (common confusion)
+
+**These are orthogonal concepts — do not conflate them:**
+
+- **Core (lane)** — a complete EKF instance, typically one per IMU. `XKF*.C` identifies the core. "Lane switch" means the frontend picked a different core as primary; all cores still fuse the **same** sensors as configured by the currently-active source set.
+- **Source set** — a runtime-switchable configuration bundle (`EK3_SRC1_*`, `EK3_SRC2_*`, `EK3_SRC3_*`) that selects *which* sensors to fuse for position/velocity/yaw. Only **one** source set is active at a time across **all** cores.
+
+Source sets are switched **manually** — by the pilot via an RC option (`RC_OPTIONS`/auxiliary switch function `SOURCE_SET`), MAVLink, or Lua (`ahrs:set_posvelyaw_source_set()`). They do **not** provide automatic failover when a sensor glitches. If `SRC1_VELXY=3` (GPS) and GPS glitches, configuring `SRC2_VELXY=0` does *not* save you — nothing switches to SRC2 on its own.
+
+**Implication for GPS-glitch failsafe recommendations:** Do not recommend "set SRC2 to baro as a fallback" expecting automatic redundancy — that's wrong. Real redundancy comes from:
+- Multiple GPS units + blending (`GPS_AUTO_SWITCH`)
+- EKF's built-in GPS glitch detection (`EK3_GLITCH_RADIUS`, variance-based failsafe `FS_EKF_THRESH`/`FS_EKF_ACTION`)
+- Redundant sensors *within* the active source set (e.g. baro is always fused for height when `SRCn_POSZ=3 GPS` via the EKF's height-source hierarchy)
+- A scripted / RC-triggered source-set switch for planned regime changes (e.g. indoor ↔ outdoor), not glitch response
+
 ## EKF Analysis Methodology
 
 **Rule 1: No theories without data.** Do not speculate about EKF behavior based on code reading alone. The EKF is a complex dynamic system where multiple states interact. Theories MUST be validated against actual log data before being presented as explanations.
