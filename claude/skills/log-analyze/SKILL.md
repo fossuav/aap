@@ -172,6 +172,36 @@ After generating a plot, read the image file to view it.
 5. **Mind the units.** XKF1 angles are in centidegrees. PD is positive-down (NED). BARO.Alt is meters above origin. RFND.Dist is meters.
 6. **Use stats for quantitative comparison.** When comparing axes or checking for oscillation, `stats` gives instant min/max/mean/std without custom scripts.
 
+## Before Recommending a Fix — Verification Checklist
+
+Do NOT send a diagnosis or recommendation to the user until you have independently verified it against every corroborating data stream in the log. A plausible-sounding theory is not evidence.
+
+**For every hypothesis, walk through this list before reporting:**
+
+| Claim type | Data you MUST also pull before concluding |
+|------------|-------------------------------------------|
+| "Sensor X is wrong" | The *other* instance of the same sensor (IMU 0 vs 1, BARO 0 vs 1, GPS 1 vs 2) and the EKF innovation for that sensor. If both instances agree, it is not a sensor fault. |
+| "Motor / frame asymmetry" | `RCOU.C1…Cn` at stable hover AND during the event; `ESC[i].RPM` if available. Quantify the diagonal-pair imbalance. |
+| "Motor saturation limits authority" | RCOU values vs `MOT_SPIN_MIN` / `MOT_SPIN_MAX` / `MOT_PWM_MIN` / `MOT_PWM_MAX`. A motor pegged at the floor during a climb overshoot is proof, not speculation. |
+| "EKF is falsely reporting climb/descent" | XKF3 innovations (IVD, IPD), both IMUs' raw AccZ, and BARO.Alt. All three should disagree with the EKF before you blame the filter. |
+| "GPS glitch caused failsafe" | GPS.Spd and GPS.Alt at the instant of the ERR, plus GPS.NSats and HDop to show it wasn't a coverage issue. Show the innovation spike (XKF3.IVE/IVN/IPE/IPN), not just the ERR message. |
+| "Source-set / failover recommendation" | See EKF source-set playbook note in `libraries/AP_NavEKF3/CLAUDE.md` — source sets are manually switched, not automatic failover. Do not recommend `EK3_SRC2_*` as a "fallback" for glitch response. |
+| "Fence action caused the crash" | MODE changes AND fence ERR codes AND aircraft state (alt/speed) at fence breach time. |
+
+**Rule of thumb:** If a reviewer asked "how do you know?", you should be able to cite a specific row from the log. If the answer is "it's consistent with the symptom", you have not finished verifying.
+
+### Worked example — "climbs when moving left" misdiagnosis
+
+Initial plausible-but-unverified theory: *"accelerometer misalignment during hard left roll creates a false climb signal in the EKF"*. Evidence that seemed to support it: XKF3.IVD positive (GPS disagrees with EKF), both baro and EKF show climb.
+
+What actually showed up on full verification:
+- IMU 0 and IMU 1 AccZ traces were within 0.1 m/s² through the whole event → **not** an IMU fault.
+- `RCOU.C1..C4` at hover: `1455, 1475, 1186, 1277` — a ~250 PWM diagonal asymmetry. Motor 3 sat near `MOT_SPIN_MIN` before anything went wrong.
+- During left-roll events, the roll mixer drives M3 below its floor; `CTUN.ThO` hits 0.00 but M3 stays pinned at 1150 → the vehicle physically cannot descend.
+- On right-roll events M1/M4 are decreased instead, both have headroom, no symptom.
+
+The root cause was a **frame/yaw build asymmetry** leaving M3 at saturation. Recommending EKF parameter changes would have been a dead end. The verification table above is exactly what flushed this out.
+
 ## Oscillation Diagnosis Workflow
 
 When investigating oscillation or tuning issues:
