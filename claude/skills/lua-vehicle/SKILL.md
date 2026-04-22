@@ -1,17 +1,23 @@
 ---
 name: lua-vehicle
-description: Write ArduPilot Lua scripts involving vehicle control, movement commands, RC input, or telemetry. Use when the user asks to control the vehicle from Lua.
+description: "Write ArduPilot Lua scripts for vehicle control, movement commands, servo output, RC input, flight mode changes, and telemetry. Use when the user asks to control the vehicle, read RC channels, set waypoints, or interact with autopilot state from Lua."
 argument-hint: "<control task description>"
 allowed-tools: Read, Grep, Glob
 ---
 
 # ArduPilot Lua Vehicle Control
 
-Before writing vehicle control code, read the full playbooks:
+## Workflow
 
-1. **Read the vehicle control playbook:** `libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md` — complete reference for movement commands, controller behavior, state/telemetry, RC input
-2. **Read the general playbook:** `libraries/AP_Scripting/CLAUDE.md` — applet structure, parameter system, code constraints
-3. **Read the API docs:** `libraries/AP_Scripting/docs/docs.lua` — verify all function signatures
+1. **Read playbooks** — load the references below before writing control code
+2. **Choose controller type** — select from the hierarchy below (prefer safest level)
+3. **Implement with safety checks** — verify armed state, flight mode, and RC input priority
+4. **Validate** — confirm API signatures in `docs.lua`, test in SITL before hardware
+
+### Required Reading
+1. **Vehicle control playbook:** `libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md` — movement commands, controller behavior, state/telemetry, RC input
+2. **General playbook:** `libraries/AP_Scripting/CLAUDE.md` — applet structure, parameter system, code constraints
+3. **API docs:** `libraries/AP_Scripting/docs/docs.lua` — verify all function signatures
 
 ## Task: $ARGUMENTS
 
@@ -29,6 +35,22 @@ Before writing vehicle control code, read the full playbooks:
 - Rate controllers need continuous commands — stops rotating if commands stop
 - Velocity controllers need continuous commands — drifts if not called
 - Position controllers are fire-and-forget
+
+### Minimal Guided Mode Velocity Control Example
+
+```lua
+local function update()
+  if not arming:is_armed() then return update, 1000 end
+  if vehicle:get_mode() ~= 4 then  -- 4 = GUIDED for copter
+    gcs:send_text(6, "Not in GUIDED mode")
+    return update, 1000
+  end
+  -- Fly north at 2 m/s, maintain altitude
+  vehicle:set_target_velocity_NED(Vector3f_ud(2.0, 0.0, 0.0))
+  return update, 100  -- 10 Hz continuous command
+end
+return update, 1000
+```
 
 ### State & Telemetry
 - `ahrs:get_location()` — vehicle position

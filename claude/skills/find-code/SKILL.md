@@ -1,6 +1,6 @@
 ---
 name: find-code
-description: Find where features, modes, commands, or messages are implemented in the ArduPilot codebase. Use when the user asks where something is defined, implemented, or handled.
+description: "Find where features, flight modes, MAVLink commands, GCS message handlers, or subsystems are implemented in the ArduPilot codebase. Use when the user asks where something is defined, implemented, or handled in ArduPilot source code."
 argument-hint: "<feature, mode, command, or message>"
 allowed-tools: Read, Grep, Glob
 ---
@@ -11,82 +11,78 @@ Find the implementation of `$ARGUMENTS` in the ArduPilot codebase.
 
 IMPORTANT: Use the built-in Grep and Glob tools, NOT shell grep or find commands.
 
+## Workflow
+
+1. **Identify type** — determine what category the target falls into (flight mode, MAVLink handler, subsystem, parameter, etc.)
+2. **Search** — use the appropriate pattern from the sections below
+3. **Read and confirm** — open matched files to verify the implementation location
+
 ## Search strategies by type
 
 ### Flight modes
-Flight modes are classes in vehicle directories:
-```
-Glob: ArduCopter/mode_*.cpp
-Glob: ArduPlane/mode_*.cpp
-Glob: Rover/mode_*.cpp
-```
-Mode classes inherit from `Mode` and are defined in `mode.h`:
-```
-Grep for: class Mode.*$ARGUMENTS
-```
-Mode enum values:
-```
-Grep for: $ARGUMENTS in ArduCopter/mode.h or ArduPlane/mode.h
+Flight modes are classes in vehicle directories. Search with Grep tool:
+```bash
+# Find mode source files
+Glob pattern: ArduCopter/mode_*.cpp   # or ArduPlane/, Rover/
+# Find mode class definition
+Grep pattern: "class Mode.*$ARGUMENTS" path: ArduCopter/mode.h
+# Find mode enum value
+Grep pattern: "$ARGUMENTS" path: ArduCopter/mode.h
 ```
 
 ### MAVLink message handlers
-Incoming messages dispatched in GCS_MAVLINK:
-```
-Grep for: case MAVLINK_MSG_ID_$ARGUMENTS
-Grep for: handle_message_$ARGUMENTS
+Incoming messages dispatched in GCS_MAVLINK. Search with Grep tool:
+```bash
+Grep pattern: "case MAVLINK_MSG_ID_$ARGUMENTS" path: libraries/GCS_MAVLink/
+Grep pattern: "handle_message_$ARGUMENTS" path: libraries/GCS_MAVLink/
 ```
 
 ### Features / subsystems
-Library implementations in `libraries/`:
-```
-Grep for: class.*$ARGUMENTS in libraries/**/*.h
-```
-Singleton access:
-```
-Grep for: AP::$ARGUMENTS
-Grep for: $ARGUMENTS::get_singleton
+Library implementations in `libraries/`. Search with Grep tool:
+```bash
+# Find class definition
+Grep pattern: "class.*$ARGUMENTS" glob: "*.h" path: libraries/
+# Find singleton access
+Grep pattern: "AP::$ARGUMENTS" path: libraries/
+Grep pattern: "$ARGUMENTS::get_singleton" path: libraries/
 ```
 
 ### Vehicle-specific features
 Check the vehicle's main header and cpp files:
-```
-Grep for: $ARGUMENTS in ArduCopter/Copter.h
-Grep for: $ARGUMENTS in ArduCopter/*.cpp
+```bash
+Grep pattern: "$ARGUMENTS" path: ArduCopter/Copter.h
+Grep pattern: "$ARGUMENTS" glob: "*.cpp" path: ArduCopter/
 ```
 
 ### Parameters
 Parameter definitions (use /find-param for detailed search):
-```
-Grep for: @Param:.*$ARGUMENTS
-Grep for: AP_GROUPINFO.*"$ARGUMENTS"
+```bash
+Grep pattern: "@Param:.*$ARGUMENTS" path: libraries/
+Grep pattern: "AP_GROUPINFO.*\"$ARGUMENTS\"" path: libraries/
 ```
 
 ### Scheduler tasks
 Tasks registered in vehicle scheduler:
-```
-Grep for: SCHED_TASK.*$ARGUMENTS
-Grep for: $ARGUMENTS in ArduCopter/Copter.cpp (scheduler_tasks array)
+```bash
+Grep pattern: "SCHED_TASK.*$ARGUMENTS" path: ArduCopter/Copter.cpp
 ```
 
 ### RC auxiliary functions
-Auxiliary switch functions:
-```
-Grep for: $ARGUMENTS in libraries/RC_Channel/RC_Channel.h
-Grep for: case.*$ARGUMENTS in libraries/RC_Channel/RC_Channel.cpp
+```bash
+Grep pattern: "$ARGUMENTS" path: libraries/RC_Channel/RC_Channel.h
+Grep pattern: "case.*$ARGUMENTS" path: libraries/RC_Channel/RC_Channel.cpp
 ```
 
 ### Log messages
-Log message definitions:
-```
-Grep for: $ARGUMENTS in libraries/AP_Logger/LogStructure.h
-Grep for: Write_$ARGUMENTS in libraries/**/*.cpp
+```bash
+Grep pattern: "$ARGUMENTS" path: libraries/AP_Logger/LogStructure.h
+Grep pattern: "Write_$ARGUMENTS" glob: "*.cpp" path: libraries/
 ```
 
 ### Build options / feature flags
-Compile-time enables:
-```
-Grep for: $ARGUMENTS in Tools/scripts/build_options.py
-Grep for: #if.*$ARGUMENTS in libraries/**/*.h
+```bash
+Grep pattern: "$ARGUMENTS" path: Tools/scripts/build_options.py
+Grep pattern: "#if.*$ARGUMENTS" glob: "*.h" path: libraries/
 ```
 
 ## Search tips
@@ -97,3 +93,4 @@ Grep for: #if.*$ARGUMENTS in libraries/**/*.h
 - ArduPilot uses `_enabled` suffix for feature guards: `AP_FEATURE_ENABLED`
 - Singleton classes: look for `_singleton` member and `get_singleton()` method
 - Frontend/backend split: frontend in `AP_Foo.h`, backends in `AP_Foo_Backend*.h`
+- If initial search returns no results, try broader terms or check alternate spellings (e.g., `LOITER` vs `Loiter`)
