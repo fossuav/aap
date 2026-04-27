@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Playbook version:** 1.2.0
+
 ## Available Skills
 
 If skills are installed (`.claude/skills/`), prefer using them over manual commands. They pre-authorize tools and provide structured workflows:
@@ -23,6 +25,7 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/lua-crsf <menu>` | Writing CRSF transmitter menu scripts |
 | `/lua-vehicle <task>` | Lua vehicle control and movement commands |
 | `/log-analyze <logfile>` | Analyzing DataFlash .bin flight logs |
+| `/aap-update` | Checking the local playbook version against GitHub and updating |
 
 ## Build System
 
@@ -377,6 +380,29 @@ When modifying existing files:
   # Empty output means files are identical
   ```
 
+## Pull Requests
+
+- **Follow the repo's PR template:** Before drafting a PR body, read `.github/PULL_REQUEST_TEMPLATE.md` from the repository root and use its sections, headings, and ordering. Do not invent your own structure.
+- **Trim the checklist — don't dump it verbatim.** PR templates often ship with a long boilerplate ticklist that maintainers don't want copied wholesale. Include only:
+  - items that have already been done (check them with `[x]`), and
+  - items still outstanding that need to land before merge / approval (leave as `[ ]`).
+  Drop checklist items that don't apply to the change. If the template has nothing left to include after trimming, omit the checklist section entirely.
+- **Keep the rest of the template intact:** Summary / description / testing sections from the template should still be filled in, even when the checklist is short or removed.
+- **Before/after SITL plots for behavior changes:** When a PR changes runtime behavior (control loops, EKF, flight modes, sensors, autotune, mixers, etc.), attempt to include before/after plots from SITL logs to show the effect. Reviewers respond well to side-by-side comparisons — they communicate impact in seconds where prose can't. Skip this for PRs with no runtime effect (build system, docs, pure refactors with verified no-op behavior). Use `/log-analyze` to extract and plot the relevant fields from a baseline SITL run (pre-change branch) and a post-change run. GitHub does not accept image uploads via the `gh` CLI, so save plots as PNGs locally and either attach them via the GitHub web UI to embed in the description, or post them in a follow-up PR comment.
+
+## Writing for Reviewers
+
+These rules apply to **commit message bodies, PR descriptions, and PR comments**. Reviewers are time-poor; wordy text gets skimmed or skipped, so it fails to communicate.
+
+- **Be pithy.** Tell the reviewer exactly what is being done in as few words as possible. The diff carries the "what" — your prose carries the "why".
+- **Stay on the problem at hand.** Do not write changelog-style enumerations of files touched, functions renamed, or refactors performed. If a sentence only restates the diff, delete it.
+- **Address obvious-but-wrong alternatives.** When there is a tempting approach that a reviewer is likely to suggest but that you tried and rejected (or know won't work), include a brief sentence explaining why. This pre-empts back-and-forth and shows the alternative was considered.
+- **The Summary section must summarise — and that includes motivation.** State the problem being solved and why this change solves it; an accurate summary without the "why" is incomplete. Motivation is not filler.
+- **No filler:** drop generic openers ("This PR…", "In this commit we…"), sentences that only restate the title, and hype ("important fix", "huge improvement", "cleans things up nicely"). Genuine motivation belongs in the summary; cheerleading does not.
+- **Authorship attribution:**
+  - **Commit messages and PR descriptions:** must read as authored by the human contributor. Do **not** include `Co-Authored-By: Claude`, "Generated with Claude Code", robot emoji markers, or any other Claude attribution.
+  - **PR comments:** *may* be attributed to Claude (e.g. when responding to review feedback or posting status updates from Claude). The same pithy/on-topic/address-objections rules still apply.
+
 ## Testing
 
 Use `/check` for unit tests, `/autotest` for integration tests. Unit tests use Google Test framework in `libraries/*/tests/`. Tests require SITL board configuration.
@@ -387,7 +413,7 @@ Use `/check` for unit tests, `/autotest` for integration tests. Unit tests use G
 ./build/sitl/tests/test_math
 ```
 
-**Autotests:** Vehicle behavior tests are Python scripts in `Tools/autotest/`. Add new tests as methods to appropriate test suite (e.g., `arducopter.py`).
+**Autotests:** Vehicle behavior tests are Python scripts in `Tools/autotest/`. See `Tools/autotest/CLAUDE.md` for authoring conventions (event waits over delays, test registration, SITL speedup, Lua applet patterns). Use `/autotest` to run them.
 
 ## Lua Scripting API Design
 
@@ -396,80 +422,6 @@ When designing C++ APIs for Lua interaction:
 - Lua scripts are sandboxed and cannot share state directly
 - For shared event queues, use peek/pop pattern allowing scripts to check ownership before consuming
 - Protect shared C++ state with mutexes when accessible from Lua
-
-## Lua Applet Autotest Lessons Learned
-
-### Autotest Structure for Lua Scripts
-
-When writing autotests for Lua applets in `Tools/autotest/arducopter.py`:
-
-1. **Script Installation Sequence:**
-   ```python
-   # 1. Enable scripting first
-   self.set_parameters({"SCR_ENABLE": 1})
-   self.reboot_sitl()
-
-   # 2. Install script (creates parameters on next boot)
-   self.install_applet_script_context('my_script.lua')
-   self.reboot_sitl()
-
-   # 3. Wait for script initialization message BEFORE setting script params
-   self.wait_statustext("Script loaded message", check_context=True, timeout=30)
-
-   # 4. NOW set script-specific parameters (they exist after script runs)
-   self.set_parameters({"SCRIPT_PARAM": value})
-   ```
-
-2. **Context Collection Timing:**
-   - Call `self.context_collect('STATUSTEXT')` immediately after `context_push()`
-   - Do this BEFORE any reboots or actions that might generate messages you want to catch
-
-3. **SITL Speedup Considerations:**
-   - Tests run at high speedup (~100x), so time-based logic completes very fast
-   - Data collection that expects "real flight time" may get insufficient samples
-   - Relax data requirements or use sample counts rather than time durations
-   - Example: Accept `total_samples >= 50` instead of requiring specific bin fill levels
-
-4. **Multiple Test Phases:**
-   - When running multiple test phases, `check_context=True` matches ALL messages ever collected
-   - For subsequent phases needing fresh messages, either:
-     - Use `check_context=False` (waits for new messages only)
-     - Clear context between phases
-     - Use unique message strings per phase
-   - Timing can be tricky - message may arrive before `wait_statustext` starts listening
-
-5. **Protected Wrapper Pattern:**
-   - When using `pcall(update)` in Lua, capture ALL return values:
-     ```lua
-     local success, result, interval = pcall(update)
-     return protected_wrapper, interval or 100  -- Don't lose the interval!
-     ```
-
-6. **Mode Transitions:**
-   - Scripts that change flight modes (e.g., to LOITER on completion) affect subsequent test phases
-   - Explicitly set required mode before each test phase:
-     ```python
-     self.change_mode('GUIDED')  # Ensure correct mode before next test
-     ```
-
-### Test Method Registration
-
-Add new test methods to the appropriate test list in the test class:
-```python
-# In tests_scripting list (for scripting-related tests)
-self.ScriptMyNewTest,
-```
-
-### Checkpoint Commits
-
-**Always checkpoint after major milestones:**
-- After all tests pass
-- Before major refactoring
-- When switching between implementation phases
-
-Use atomic commits with proper prefixes:
-- `AP_Scripting: Add feature X` - for Lua scripts
-- `Tools: Add autotest for feature X` - for test code
 
 # Bash Guidelines
 

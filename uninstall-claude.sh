@@ -55,6 +55,12 @@ if [[ -f "ArduPlane/CLAUDE.md" ]]; then
     echo "  Removed: ArduPlane/CLAUDE.md"
 fi
 
+# Remove Tools/autotest CLAUDE file
+if [[ -f "Tools/autotest/CLAUDE.md" ]]; then
+    rm "Tools/autotest/CLAUDE.md"
+    echo "  Removed: Tools/autotest/CLAUDE.md"
+fi
+
 # Clean up backup files
 for bak in CLAUDE.md.bak \
            libraries/AP_Scripting/CLAUDE.md.bak \
@@ -62,7 +68,8 @@ for bak in CLAUDE.md.bak \
            libraries/AP_Scripting/CLAUDE_VEHICLE_CONTROL.md.bak \
            libraries/AP_NavEKF3/CLAUDE.md.bak \
            libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md.bak \
-           ArduPlane/CLAUDE.md.bak; do
+           ArduPlane/CLAUDE.md.bak \
+           Tools/autotest/CLAUDE.md.bak; do
     if [[ -f "$bak" ]]; then
         rm "$bak"
         echo "  Removed: $bak"
@@ -88,7 +95,7 @@ if [[ -d ".claude/hooks" ]] && [[ -z "$(ls -A .claude/hooks 2>/dev/null)" ]]; th
 fi
 
 # Remove Claude Code skills
-for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze; do
+for skill in boards find-code find-param build-options style-check hwdef-info explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze aap-update; do
     if [[ -d ".claude/skills/$skill" ]]; then
         rm -rf ".claude/skills/$skill"
         echo "  Removed: .claude/skills/$skill/"

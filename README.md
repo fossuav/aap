@@ -46,9 +46,11 @@ The install script places the following files:
 | `libraries/AP_NavEKF3/CLAUDE.md` | EKF3 navigation filter reference and analysis methodology |
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 | `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
+| `Tools/autotest/CLAUDE.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
 | `.claude/settings.json` | Project permissions and hooks — auto-allows safe commands, enforces rules |
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
+| `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules |
 | `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
 
@@ -71,6 +73,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/lua-crsf <menu>` | Write CRSF transmitter menu scripts with crsf_helper |
 | `/lua-vehicle <task>` | Lua vehicle control, movement, RC input |
 | `/log-analyze <logfile>` | Analyze DataFlash .bin logs (messages, params, events, plots) |
+| `/aap-update` | Compare local playbook version with GitHub and install updates |
 
 **Write skills** (local only — compile, run tests, launch simulator):
 
@@ -192,6 +195,9 @@ aap/
 │   │   ├── AP_NavEKF3/              # EKF3 navigation filter
 │   │   │   └── CLAUDE.md
 │   │   └── AP_HAL_ChibiOS/hwdef/    # ChibiOS board porting
+│   │       └── CLAUDE.md
+│   ├── Tools/
+│   │   └── autotest/                # Autotest authoring playbook
 │   │       └── CLAUDE.md
 │   ├── hooks/                       # Claude Code hooks (rule enforcement)
 │   │   ├── pre_bash_check.py       # PreToolUse: git commit, safety checks
