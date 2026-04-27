@@ -175,6 +175,8 @@ After generating a plot, read the image file to view it.
 8. **Separate physical vehicles even when the build spec is identical.** Logs from before and after a crash/rebuild are from different hardware. See "Multi-Log and Cross-Flight Analysis" below.
 9. **`BAT.Curr` is pack-level, not per-motor.** `ESC.Curr` is often zero on DShot bidir — verify before relying on it.
 10. **Aerodynamic body effects pollute in-flight calibration measurements.** On airframes with meaningful body lift, control fins, or significant drag, any in-flight attempt to characterise the thrust curve, hover throttle, or PID plant above low airspeed (~5–10 m/s) is contaminated by speed-dependent non-rotor contributions. Clean measurements for these quantities need static/bench conditions or stable-hover segments at minimal forward speed.
+11. **Two-instance sensor analysis: focus on what was the *same* on both instances, not what differed.** When a sensor has two instances (compass, GPS, IMU, baro), the failing instance is rarely the diagnostic target — both instances usually see the same external event with different sensitivity, and the one that drops is just the one with less margin. Pull both, then ask "what was the same on both around the event?" That answer is the root cause; the asymmetric response is downstream of it. Ignoring this leads to "GPS2 is broken, replace it" recommendations when GPS2 is fine and a passing jammer was the cause.
+12. **Verify the user's theory rather than inheriting it.** Customer reports often correctly identify the *time and direction* of a failure but mis-name the *cause*. Common substitutions: "GPS glitch" when actually compass; "multipath" when actually interference; "motor failure" when actually mixer saturation. Restate the user's theory as your first step, then build the diagnosis to confirm or disconfirm it explicitly. Do not assume the theory is right and look for confirming evidence — that is the standard route to a wrong fix.
 
 ## Vehicle Identification Reconnaissance
 
@@ -378,6 +380,94 @@ If component specs are unknown, the operating envelope (where DShot errors begin
 
 **Do not** recommend "set `GLITCH_RAD` back to 25" on a high-speed platform as a fix for EKF messages during peak-speed flight. On those vehicles, **the default value is the wrong one**, and the messages are a normal consequence of the innovation test at high dynamics — they are not evidence of a bad GPS fix.
 
+## Compass Yaw Sanity Check (180° / 90° Heading Errors)
+
+A compass that reports yaw 90° or 180° wrong is one of the most dangerous and most-missed pre-flight failure modes — pre-arm cannot catch it because the vehicle is stationary and GPS course is undefined. The vehicle arms cleanly, then flies sideways or backwards into the ground at the first commanded position move.
+
+**In-flight signature** (in this order):
+
+1. Position controller commands sustained forward pitch/roll for a position move; vehicle accelerates in the *wrong* direction.
+2. EKF GPS innovations (`XKF3.IVN`, `IVE`, `IPN`, `IPE`) ramp continuously and pin at the gate value as the position controller pushes harder.
+3. `EKF3 lane switch` events as cores disagree about the right answer.
+4. Status text: `"GPS Glitch or Compass error"` — this message is generic and can mean either; the log tells you which.
+5. `EKF3 IMU0 emergency yaw reset` (and IMU1) — yaw snaps by ~90° or 180° in one sample as the EKF gives up and aligns to GPS.
+6. After disarm: `"PreArm: AHRS: EKF3 Yaw inconsistent N deg. Wait"` where `N` is close to 90 or 180 — direct numerical confirmation of the heading error.
+
+**Diagnostic — compare EKF yaw to GPS ground course during forward flight:**
+
+```bash
+python3 .claude/skills/log-analyze/log_extract.py plot <log> \
+    --sources "ATT.Yaw,GPS.GCrs" --from-time <move_start> --to-time <move_end>
+```
+
+During steady forward flight at >2 m/s, `ATT.Yaw` and `GPS.GCrs` should agree to within ~10° (the residual is wind drift). A flat persistent offset of ~90°, ~180°, or ~270° across the entire moving segment is a compass orientation/calibration error. Stationary segments are not informative — `GCrs` is undefined at zero speed.
+
+**Disambiguating "GPS Glitch or Compass error":**
+
+The EKF cannot distinguish a wrong heading from a wrong GPS fix from inside the filter — both produce GPS innovations the same way. The message names both because either could be the cause; the log tells you which:
+
+| Evidence | Cause |
+|---|---|
+| `GPS.NSats` stable, `GPS.HDop` stable, both GPS instances agree on position | **Compass** |
+| `GPS.NSats` drops, `GPS.HDop` spikes, or two GPS instances disagree on position | **GPS** |
+| `ATT.Yaw` differs from `GPS.GCrs` by ~90°/180°/270° during forward flight | **Compass** |
+| Post-event `"EKF Yaw inconsistent N deg"` with N near 90 or 180 | **Compass** (N is the actual error) |
+| uBlox `MON-HW` `agcCnt` drops at the same instant | **GPS** (interference — see uBlox section below) |
+
+**Pre-arm limitation:** the GPS-course/compass consistency check requires forward motion. A stationary vehicle cannot trigger it. Catching this on the ground requires either an external reference (sun compass, known landmark bearing) or a brief taxi/walk-forward step before takeoff to confirm `XKF1.Yaw` matches `GPS.GCrs`.
+
+## GPS Receiver Health Diagnostics (uBlox MON-HW / MON-HW2)
+
+uBlox-based GPS units (`GPS_TYPE=2`) emit per-instance hardware-monitor messages that distinguish **interference** from **multipath** from **antenna fault** from **constellation outage**. The fields are routinely under-used because the field interpretations are non-obvious — and several of them are counter-intuitive.
+
+**Message names** (logged once every ~5 s per instance):
+
+| Message | Source | Content |
+|---|---|---|
+| `UBX1` | GPS instance 0 | MON-HW: `noisePerMS`, `jamInd`, `aPower`, `agcCnt` |
+| `UBX2` | GPS instance 0 | MON-HW2: `ofsI`, `magI`, `ofsQ`, `magQ` |
+| `UBY1` | GPS instance 1 | MON-HW (same fields as UBX1) |
+| `UBY2` | GPS instance 1 | MON-HW2 (same fields as UBX2) |
+
+**Field interpretations — the intuitive readings are wrong; read carefully:**
+
+| Field | Healthy | Meaning |
+|---|---|---|
+| `agcCnt` | 4000–5000 | AGC count. **Lower = strong incoming RF forcing AGC to back off.** The receiver is reducing front-end gain because something is too loud. **The most reliable interference indicator.** |
+| `noisePerMS` | 65–95 | Receiver-measured noise. Counter-intuitively *drops* during strong narrowband interference — AGC clamp suppresses everything, including the noise-floor measurement. Do not interpret a drop as "improvement". |
+| `jamInd` | 0–30 | Jamming indicator. **Unreliable on its own.** It is calibrated against initial conditions and tends to under-report sustained narrowband interference. Don't trust `jamInd` to decide whether interference is happening — use `agcCnt`. |
+| `aPower` | 1 | Antenna power state. 0 = open or short feedline. **Decisive when present** — points at hardware fault, not interference. |
+| `magI`, `magQ` | 100–170 | I/Q channel signal magnitudes. **Drop below ~50 = front-end saturated/compressed.** Second most reliable interference indicator after `agcCnt`. |
+| `ofsI`, `ofsQ` | -10 to 25 | I/Q DC offsets. Persistent large values point to receiver hardware issues, not interference. |
+
+**Interference vs multipath signature comparison:**
+
+| | Multipath | Interference | Antenna fault |
+|---|---|---|---|
+| `agcCnt` | unchanged | drops sharply | rises (toward max) |
+| `magI` / `magQ` | unchanged | drop sharply (often <50) | drop |
+| `noisePerMS` | unchanged or slight rise | drops with AGC clamp | rises |
+| `aPower` | 1 | 1 | **0** |
+| `NSats` | gradual decrease | full loss possible | progressive loss |
+| `HAcc` while fix held | inflated to several metres | stays at cm-level on unaffected receiver | N/A (loss of fix) |
+| Affected sky region | low-elevation satellites | whole sky | whole sky |
+| Both instances affected? | typically yes, similar magnitude | yes, often *asymmetric* (whichever antenna sees the source more) | typically only the one with the broken cable |
+| Recurrence | site-specific | source-of-RF-specific | deterministic, every flight |
+
+**Workflow when a GPS dropout is suspected:**
+
+1. Confirm dropout: extract `GPS.Status`, `GPS.NSats`, `GPS.HDop` (and `GPS2.*` if present). A dropout shows `Status=1`, `NSats=0`, `HDop=99.99`.
+2. Plot the hardware monitor data on both receivers across the dropout window:
+   ```bash
+   python3 .claude/skills/log-analyze/log_extract.py plot <log> \
+       --sources "UBX1.agcCnt,UBY1.agcCnt,UBX1.noisePerMS,UBY1.noisePerMS"
+   python3 .claude/skills/log-analyze/log_extract.py plot <log> \
+       --sources "UBX2.magI,UBX2.magQ,UBY2.magI,UBY2.magQ"
+   ```
+3. Match the pattern: AGC drop + magI/magQ collapse → interference. Sat count drift but stable AGC → multipath/sky obstruction. `aPower=0` → hardware fault.
+4. Check EKF response: `NKF4.GPS` (or `XKF4.GPS`) shows which instance the EKF is using. If the working instance was already primary, the vehicle should be unaffected.
+5. Asymmetry between instances (one drops, the other holds) usually means **antenna/feedline placement** difference, not module difference — the two receivers are configured the same and saw the same external event with different physical coupling.
+
 ## Before Recommending a Fix — Verification Checklist
 
 Do NOT send a diagnosis or recommendation to the user until you have independently verified it against every corroborating data stream in the log. A plausible-sounding theory is not evidence.
@@ -391,6 +481,8 @@ Do NOT send a diagnosis or recommendation to the user until you have independent
 | "Motor saturation limits authority" | RCOU values vs `MOT_SPIN_MIN` / `MOT_SPIN_MAX` / `MOT_PWM_MIN` / `MOT_PWM_MAX`. A motor pegged at the floor during a climb overshoot is proof, not speculation. |
 | "EKF is falsely reporting climb/descent" | XKF3 innovations (IVD, IPD), both IMUs' raw AccZ, and BARO.Alt. All three should disagree with the EKF before you blame the filter. |
 | "GPS glitch caused failsafe" | GPS.Spd and GPS.Alt at the instant of the ERR, plus GPS.NSats and HDop to show it wasn't a coverage issue. Show the innovation spike (XKF3.IVE/IVN/IPE/IPN), not just the ERR message. |
+| "GPS receiver dropped fix / RTK lost" | uBlox `MON-HW` `agcCnt` and `MON-HW2` `magI`/`magQ` on **both** receivers during the dropout window; the *other* GPS instance's status; the EKF's `NKF4.GPS` (or `XKF4.GPS`) source field; and `aPower`. Distinguish interference (AGC drops) from multipath (no AGC drop) from antenna fault (`aPower=0`) before recommending action. See "GPS Receiver Health Diagnostics" above. |
+| "Compass / heading is wrong" | `ATT.Yaw` vs `GPS.GCrs` during steady forward flight at >2 m/s — must agree to ~10°. A flat persistent ~90°/180°/270° offset is direct evidence; "EKF Yaw inconsistent N deg" post-event is the numerical confirmation. Innovation spikes alone are not enough — they only show that *something* disagrees with GPS, not that compass is the wrong something. See "Compass Yaw Sanity Check" above. |
 | "Source-set / failover recommendation" | See EKF source-set playbook note in `libraries/AP_NavEKF3/CLAUDE.md` — source sets are manually switched, not automatic failover. Do not recommend `EK3_SRC2_*` as a "fallback" for glitch response. |
 | "Fence action caused the crash" | MODE changes AND fence ERR codes AND aircraft state (alt/speed) at fence breach time. |
 
@@ -473,6 +565,7 @@ When investigating oscillation or tuning issues:
 - `--condition` uses pymavlink syntax: `"MSG.Field==value"`, `"MSG.Field>value"`, supports `and`/`or`.
 - Use `--sources` with both `compare` and `plot` for ad-hoc cross-message-type analysis.
 - The `stats` command supports both `--sources "TYPE.Field,..."` and `--types TYPE --fields F1,F2` syntax.
+- **Producing a customer-facing PDF report:** write the analysis as a markdown file with adjacent PNG plots referenced as `![](plotname.png)`, then convert with `pandoc <file>.md -o <file>.pdf --pdf-engine=xelatex -V geometry:margin=2cm -V mainfont="DejaVu Serif" -V monofont="DejaVu Sans Mono"`. The DejaVu fonts cover Unicode characters (≈, °, arrows) that the default LaTeX font misses; without them xelatex emits "Missing character" warnings and the symbols vanish from the PDF.
 
 ## Telemetry Log (.tlog) Support
 
