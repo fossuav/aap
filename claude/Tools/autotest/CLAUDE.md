@@ -18,7 +18,8 @@ Reviewer feedback (Peter Barker) is that `time.sleep(N)`, `self.delay_sim_time(N
 - `wait_statustext(text, check_context=True)` for script messages, GCS notifications, EKF events
 - `wait_distance_to_location(loc, min_m, max_m)` for navigation progress
 - `wait_servo_channel_value(ch, value)` for output verification
-- `assert_receive_message('TYPE', condition=...)` for catching a single MAVLink message (raises if none arrives in time)
+- `assert_receive_message('TYPE', condition=...)` for catching a single MAVLink message (raises if none arrives in time) — **always prefer this to `self.mav.recv_match(...)` + a manual `if m is None` check**. The helper raises with a useful timeout message; the open-coded version is two extra lines that a reviewer (Peter) will rewrite for you.
+- `wait_location(loc, minimum_duration=N)` for position-hold verification — confirms the vehicle stayed near `loc` for `N` seconds rather than a one-shot distance check after a sleep. Use this whenever a test wants to assert "the controller held station here after event X"; pair with `accuracy=` for the radius and `height_accuracy=None` if you don't care about altitude.
 - `wait_message_field_values('TYPE', {'field': value, ...})` for waiting until a MAVLink message's fields hit specific values
 
 The full set of `wait_*` helpers lives on the `TestSuite` base class in `Tools/autotest/vehicle_test_suite.py` — grep there before adding a sleep.
@@ -37,6 +38,19 @@ If you find yourself copying the same multi-line setup or check sequence between
 - the logic encapsulates an awkward multi-step sequence worth giving a name.
 
 Vehicle-specific helpers (e.g. tied to a single mode in `mode_*.cpp`) belong in that vehicle's test file rather than the shared base class.
+
+**Don't open-code the takeoff sequence on Copter.** Reviewer feedback (Peter Barker): the canonical way to get a Copter test airborne is `self.takeoff(alt, mode='GUIDED')` (defined in `arducopter.py`). That helper already handles `change_mode`, `wait_ready_to_arm`, `arm_vehicle`, `user_takeoff`, and `wait_altitude` with the right `minimum_duration`. Writing those four calls out by hand will draw a `suggestion: self.takeoff(...)` block on review. Match what surrounding tests do.
+
+### Match the test to the code's intent, not its surface
+
+A test must encode the **invariant the code is meant to enforce**, not just exercise the code path. Reviewer feedback (Peter Barker) flags tests that go through the motions of triggering a feature but assert the wrong property — e.g. a "guarded action" check that calls the action and confirms it ran, when the whole point of the guard is to prevent the action under certain conditions. That test would pass even if the guard were deleted.
+
+Before writing assertions, state the rule the code enforces in one sentence (e.g. "EKF reset is allowed only when disarmed"), then build the test around proving *both halves* of that rule:
+
+- the **allowed** case behaves as advertised (reset happened, side effects observable), and
+- the **disallowed** case is refused (no side effect, or a refusal STATUSTEXT, or both).
+
+A single-phase test that covers only the allowed case is a regression hazard: the guard can rot and the test still passes. If you cannot reach the disallowed case (e.g. it requires hardware state SITL can't reproduce), say so in the test comment so a reader knows the coverage gap is deliberate.
 
 ### Don't add `context_push` / `context_pop` manually
 
