@@ -435,11 +435,11 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **LEDs:** If using standard notifications + external/onboard LEDs, ensure `define DEFAULT_NTF_LED_TYPES 455` is set if needed (sets bits 0,1,2,6,7,8).
 
 ### 7.3. Peripherals
-*   **UARTs (Natural Ordering):**
-    *   **MANDATORY for Non-IOMCU boards:** UARTs must be listed in "natural order" in `SERIAL_ORDER`.
-    *   `SERIAL0` is usually `OTG1` (USB).
-    *   `SERIAL1` should map to `UART1`, `SERIAL2` to `UART2`, and so on.
-    *   **Use `EMPTY`** to skip missing physical UARTs to maintain the index (e.g., if `UART5` is missing: `SERIAL_ORDER OTG1 USART1 USART2 USART3 UART4 EMPTY USART6`).
+*   **UARTs — two valid conventions for `SERIAL_ORDER`:**
+    *   `SERIAL0` is always `OTG1` (USB) under both conventions.
+    *   **UART-numbered convention** (most non-Pixhawk boards). `SERIAL1 → UART1`, `SERIAL2 → UART2`, … Use `EMPTY` to skip missing instances (e.g. if `UART5` is missing: `SERIAL_ORDER OTG1 USART1 USART2 USART3 UART4 EMPTY USART6`). Use this when the board's silkscreen/README labels ports as `TX1/RX1`, `TX3/RX3`, etc. — the user expects `SERIALn` to match the printed number.
+    *   **Pixhawk-family convention.** `SERIALn` index follows the *physical port label* on the board (`TELEM1`, `TELEM2`, `GPS1`, `FrSky`, etc.), not the underlying UART. The remapping is intentional and is the established pattern across Pixhawk6X, CubeOrange, fmuv5, and similar designs (e.g. `SERIAL_ORDER OTG1 UART7 UART5 USART1 UART8 USART2 UART4 USART3 OTG2`). Use this when the README labels ports by function ("Telem1", "GPS", "FrSky") rather than by UART number.
+    *   **The convention must match the README.** The failure mode this rule prevents is mixing the two — e.g. labelling a port "TX3" in the README while it's actually USART2, or using natural ordering while the silkscreen says "TELEM1/TELEM2/GPS". If the README uses Pixhawk-style port names, a non-natural `SERIAL_ORDER` is correct and expected; do not "fix" it.
     *   Set default protocols: `define DEFAULT_SERIALn_PROTOCOL SerialProtocol_MAVLink2`.
     *   Use `NODMA` for low-bandwidth ports (e.g., GPS, generic UARTs) if DMA channels are scarce.
     *   **RC Input:** Typically `SerialProtocol_RCIN`.

@@ -284,23 +284,34 @@ def check_hwdef_patterns(board):
                 shown = f" {value}" if value else ""
                 issues.append(f"Redundant `define {name}{shown}` — {why}")
 
-    # SERIAL_ORDER natural ordering — SERIALn should map to USARTn / UARTn.
+    # SERIAL_ORDER convention check.
+    # Two conventions are valid (§7.3): UART-numbered (SERIALn → UARTn) used by
+    # most non-Pixhawk boards, and Pixhawk-family (SERIALn matches the physical
+    # port label, e.g. TELEM1/GPS/FrSky, not the underlying UART). The right
+    # convention depends on how the README labels ports — we can't decide that
+    # from the .dat alone, so this is advisory, not a "fix this" finding.
     m = re.search(r"^SERIAL_ORDER\s+(.+)$", text, re.MULTILINE)
     if m:
         entries = m.group(1).split()
+        natural = True
         for idx, entry in enumerate(entries):
             if entry in ("EMPTY", "OTG1", "OTG2"):
                 continue
             em = re.match(r"^U(S?ART)(\d+)$", entry)
             if not em:
-                continue  # not the standard form; skip
-            expected_n = int(em.group(2))
-            if idx != expected_n:
-                issues.append(
-                    f"SERIAL_ORDER position {idx} maps to `{entry}` "
-                    f"(expected SERIAL{idx} → U(S)ART{idx} per natural-order rule §7.3)"
-                )
-                break  # one warning is enough; reviewer can sort the rest
+                continue
+            if idx != int(em.group(2)):
+                natural = False
+                break
+        if not natural:
+            issues.append(
+                "SERIAL_ORDER does not follow UART-numbered ordering "
+                "(SERIALn → U(S)ARTn). This is fine if the README uses "
+                "Pixhawk-style port labels (Telem1/GPS/FrSky/...) — the index "
+                "is then expected to track the printed label, not the UART "
+                "number. Confirm the README's labelling matches the chosen "
+                "convention (§7.3)."
+            )
 
     # CS / DRDY pin labels must not start with SPIx_ or I2Cx_ — the parser
     # treats those as alternate-function lookups.
