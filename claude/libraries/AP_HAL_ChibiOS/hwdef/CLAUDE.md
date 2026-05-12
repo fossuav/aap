@@ -440,7 +440,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   **UART-numbered convention** (most non-Pixhawk boards). `SERIAL1 → UART1`, `SERIAL2 → UART2`, … Use `EMPTY` to skip missing instances (e.g. if `UART5` is missing: `SERIAL_ORDER OTG1 USART1 USART2 USART3 UART4 EMPTY USART6`). Use this when the board's silkscreen/README labels ports as `TX1/RX1`, `TX3/RX3`, etc. — the user expects `SERIALn` to match the printed number.
     *   **Pixhawk-family convention.** `SERIALn` index follows the *physical port label* on the board (`TELEM1`, `TELEM2`, `GPS1`, `FrSky`, etc.), not the underlying UART. The remapping is intentional and is the established pattern across Pixhawk6X, CubeOrange, fmuv5, and similar designs (e.g. `SERIAL_ORDER OTG1 UART7 UART5 USART1 UART8 USART2 UART4 USART3 OTG2`). Use this when the README labels ports by function ("Telem1", "GPS", "FrSky") rather than by UART number.
     *   **The convention must match the README.** The failure mode this rule prevents is mixing the two — e.g. labelling a port "TX3" in the README while it's actually USART2, or using natural ordering while the silkscreen says "TELEM1/TELEM2/GPS". If the README uses Pixhawk-style port names, a non-natural `SERIAL_ORDER` is correct and expected; do not "fix" it.
-    *   Set default protocols: `define DEFAULT_SERIALn_PROTOCOL SerialProtocol_MAVLink2`.
+    *   **`DEFAULT_SERIALn_PROTOCOL` — only set it when the desired protocol differs from the in-code default for that index.** `libraries/AP_SerialManager/AP_SerialManager.cpp` already supplies defaults: `SERIAL0/1/2 → MAVLink2`, `SERIAL3/4 → GPS`, `SERIAL5+ → None`. A board that wants `SERIAL1 = MAVLink2` (Telem1) and `SERIAL3 = GPS` should **not** set those — they're already correct. Conversely, if the README labels `SERIAL4` as "FrSky" or `SERIAL1` as "GPS2", you **must** set the matching `define DEFAULT_SERIAL4_PROTOCOL …` / `DEFAULT_SERIAL1_PROTOCOL …` so the board ships in the documented state. *Reviewers: don't blanket-flag a missing `DEFAULT_SERIALn_PROTOCOL`; only flag entries where the README's claimed role contradicts the in-code default.*
     *   Use `NODMA` for low-bandwidth ports (e.g., GPS, generic UARTs) if DMA channels are scarce.
     *   **RC Input:** Typically `SerialProtocol_RCIN`.
     *   **ESC Telemetry:** `SerialProtocol_ESCTelemetry`.
@@ -513,10 +513,14 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   `HAL_WITH_RAMTRON 1` - Only define if board has a RAMTRON/FRAM device with corresponding `SPIDEV` entry
 *   `HAL_WITH_RTC_SRAM 1` - Not used in codebase, do not add
 *   `HAL_WITH_DSP TRUE` - Defaults to enabled on boards with >1MB flash (H7, F7). Only set to FALSE to disable on small boards.
+*   `HAL_CHIBIOS_ARCH_<BoardName>` — **only `HAL_CHIBIOS_ARCH_FMUV3` and `HAL_CHIBIOS_ARCH_FMUV6` are consumed by code** (`libraries/AP_BoardConfig/board_drivers.cpp`, for Pixhawk1-era IMU probing). Any other variant (e.g. `HAL_CHIBIOS_ARCH_<MyBoard>`) is dead: nothing reads it, and it just bloats every binary the board produces. Do not add it; remove it from existing boards if you touch them.
+
+**Dead defines vs. inconsistent defines.** If a define appears in both `hwdef.dat` and `hwdef-bl.dat` with different spellings (e.g. `HAL_CHIBIOS_ARCH_FOO` vs `HAL_CHIBIOS_ARCH_FOO_REV2`), check whether *anything outside the board's own hwdef tree* reads it (`grep -r <NAME> libraries/ Tools/`). If the answer is zero hits, **delete both** rather than aligning the spelling — the spelling doesn't matter because nothing reads it. Only recommend "make them consistent" when the define is actually consumed somewhere.
 
 **General rule:** Before adding a `define`, check if it's already the default in:
 *   `libraries/AP_HAL/board/chibios.h`
 *   `libraries/AP_HAL_ChibiOS/hwdef/scripts/defaults.h`
+*   `libraries/AP_SerialManager/AP_SerialManager.cpp` (for `DEFAULT_SERIALn_PROTOCOL`, `DEFAULT_SERIALn_BAUD`, `DEFAULT_SERIALn_OPTIONS`)
 *   The relevant library's config header (e.g., `AP_BoardConfig_config.h`)
 
 ## 8. Documentation Standards (Reviewer Preferences)
