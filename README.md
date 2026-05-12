@@ -51,6 +51,7 @@ The install script places the following files:
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
+| `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
 | `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules |
 | `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
 
@@ -68,6 +69,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/build-options [search]` | Search compile-time feature flags (`AP_*_ENABLED` defines) |
 | `/style-check [files]` | Check code style with astyle dry-run and whitespace checks |
 | `/hwdef-info <board>` | Show board hardware definition (MCU, UARTs, pins, sensors) |
+| `/hwdef-check <PR>` | Review an hwdef PR — worktree checkout, DMA/board-ID/file/commit checks, playbook pass, draft review comment |
 | `/explain <topic>` | Explain ArduPilot code, architecture, or subsystems |
 | `/lua <task>` | Write or modify Lua applets (loads playbook + API docs) |
 | `/lua-crsf <menu>` | Write CRSF transmitter menu scripts with crsf_helper |
@@ -217,6 +219,9 @@ aap/
 │       ├── check/SKILL.md           # /check - run unit tests
 │       ├── autotest/SKILL.md        # /autotest - run SITL integration tests
 │       ├── sitl/SKILL.md            # /sitl - launch SITL simulator
+│       ├── hwdef-check/             # /hwdef-check - review an hwdef PR
+│       │   ├── SKILL.md
+│       │   └── hwdef_check.py
 │       └── log-analyze/             # /log-analyze - analyze flight logs
 │           ├── SKILL.md
 │           └── log_extract.py

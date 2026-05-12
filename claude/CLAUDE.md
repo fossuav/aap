@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.2.0
+**Playbook version:** 1.3.0
 
 ## Available Skills
 
@@ -20,6 +20,7 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/find-param <NAME>` | Finding parameter definitions in source |
 | `/build-options [search]` | Searching compile-time feature flags |
 | `/hwdef-info <board>` | Showing board hardware definitions |
+| `/hwdef-check <PR>` | Reviewing an hwdef PR — checks out the PR in a worktree, runs DMA/board-ID/file/commit checks plus a playbook pass, drafts a review comment |
 | `/explain <topic>` | Explaining code or architecture |
 | `/lua <task>` | Writing or modifying Lua applets |
 | `/lua-crsf <menu>` | Writing CRSF transmitter menu scripts |

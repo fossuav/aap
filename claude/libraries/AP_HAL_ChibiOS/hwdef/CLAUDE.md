@@ -413,17 +413,24 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **Board ID:** Use `APJ_BOARD_ID AP_HW_<BoardName>`.
 
 ### 7.2. MCU & System
-*   **H7:** `MCU STM32H7xx STM32H743xx`, `FLASH_RESERVE_START_KB 128`, `STM32_ST_USE_TIMER 2`.
-*   **F7:** `MCU STM32F7xx STM32F745xx`, `FLASH_RESERVE_START_KB 96`, `STM32_ST_USE_TIMER 5`.
-*   **F4:** `MCU STM32F4xx STM32F405xx`, `FLASH_RESERVE_START_KB 48`, `STM32_ST_USE_TIMER 5`.
+*   **H7:** `MCU STM32H7xx STM32H743xx`, `FLASH_RESERVE_START_KB 128`.
+*   **F7:** `MCU STM32F7xx STM32F745xx`, `FLASH_RESERVE_START_KB 96`.
+*   **F4:** `MCU STM32F4xx STM32F405xx`, `FLASH_RESERVE_START_KB 48`.
 
-**CRITICAL - System Timer Selection:**
-*   The system timer (`STM32_ST_USE_TIMER`) **MUST** be a 32-bit timer. Using a 16-bit timer causes build failure.
-*   **32-bit timers:** TIM2, TIM5 (on all families)
-*   **16-bit timers (DO NOT USE):** TIM3, TIM4, TIM12, TIM13, TIM14, etc.
-*   **H7 recommendation:** Use TIM2. TIM5 is often used for PWM outputs. TIM12 is 16-bit and will fail.
-*   **F4/F7 recommendation:** Use TIM5 unless it's needed for PWM outputs.
-*   **Both hwdef.dat AND hwdef-bl.dat** must use the same 32-bit timer setting.
+**System Timer (`STM32_ST_USE_TIMER`):**
+
+*   **Default if not set in hwdef:** comes from `libraries/AP_HAL_ChibiOS/hwdef/common/stm32*_mcuconf.h`.
+    *   **F1/F3/F4/F7/G4/L4/L4+: TIM2** (this is what gets used unless you override).
+    *   **H7 (all variants — base, A3, type2): TIM5.**
+*   **Must be a 32-bit timer**, otherwise the build fails.
+    *   **32-bit:** TIM2, TIM5 (on all the MCU families ArduPilot ships).
+    *   **16-bit (do NOT use):** TIM3, TIM4, TIM12, TIM13, TIM14, TIM15, etc. (A few existing boards have these set and "appear to work" — assume it's broken until proven otherwise.)
+*   **Only override when you have to.** Override when the default timer is also used for PWM (or another peripheral), since the same hardware timer cannot serve both jobs.
+    *   F7 board uses TIM2 for PWM? → set `STM32_ST_USE_TIMER 5`.
+    *   F7 board uses TIM5 for PWM (TIM2 free)? → no override needed; leave the default.
+    *   H7 board uses TIM5 for PWM? → set `STM32_ST_USE_TIMER 2`.
+    *   H7 board uses TIM2 for PWM (TIM5 free)? → no override needed.
+*   **Both `hwdef.dat` and `hwdef-bl.dat` must agree.** If you override in one, override in the other to the same value.
 *   **Clock:** Explicitly set `MCU_CLOCKRATE_MHZ` (e.g., 480 for H7).
 *   **LEDs:** If using standard notifications + external/onboard LEDs, ensure `define DEFAULT_NTF_LED_TYPES 455` is set if needed (sets bits 0,1,2,6,7,8).
 
@@ -855,7 +862,9 @@ When reviewing hardware designs or creating a `REVIEW.md` file, check these crit
 ### 13.1. General DMA Requirements (All MCUs)
 Certain peripherals have strict or high-priority DMA requirements for reliable operation:
 *   **RC Input (CRITICAL):** `USARTn_RX` **MUST** have DMA for high-rate protocols (CRSF/ELRS) or those requiring precision (inverted SBUS).
-*   **GPS (HIGH):** Should have DMA for high baud rates. If `NODMA` is unavoidable, set `GPS_DRV_OPTIONS` to 1 (lower baudrate).
+*   **GPS (HIGH):** Should have DMA for high baud rates. If `NODMA` is unavoidable for *all* GPS UARTs on the board, the **user** can force ublox to 115200 by setting `GPS_DRV_OPTIONS` bit 2 (value `4`). Caveats:
+    *   `GPS_DRV_OPTIONS` is a single global parameter on `AP_GPS` (see `libraries/AP_GPS/AP_GPS.cpp` `_DRV_OPTIONS`), so the bit applies to every GPS instance. On a board with one DMA-enabled GPS and one `NODMA` GPS, do **not** recommend this — it would needlessly throttle the working port.
+    *   This is end-user advice, not something the hwdef can set. Don't put it in `defaults.parm` (it's a user preference per §7.6).
 *   **HD VTX (HIGH):** MSP DisplayPort and high-rate telemetry require high bandwidth; prioritize DMA.
 *   **DShot (HIGH):** Motor timers must have DMA for bi-directional communication.
 *   **ESC Telemetry (LOW):** Does **not** require DMA if the board supports bi-directional DShot (as DShot provides the primary telemetry path).

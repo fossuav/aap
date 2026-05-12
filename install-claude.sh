@@ -111,6 +111,13 @@ for skill in boards find-code find-param build-options style-check hwdef-info ex
     install_file "$SKILLS_URL/$skill/SKILL.md" ".claude/skills/$skill/SKILL.md"
 done
 
+# hwdef-check skill (has additional Python tool)
+mkdir -p .claude/skills/hwdef-check
+for file in SKILL.md hwdef_check.py; do
+    install_file "$SKILLS_URL/hwdef-check/$file" ".claude/skills/hwdef-check/$file"
+done
+chmod +x .claude/skills/hwdef-check/hwdef_check.py
+
 # autotest skill (has additional Python tool for parsing results)
 mkdir -p .claude/skills/autotest
 for file in SKILL.md autotest_results.py; do
@@ -158,6 +165,7 @@ echo "  - /find-param     - Find parameter definitions in source code"
 echo "  - /build-options  - Search compile-time feature flags"
 echo "  - /style-check    - Check code style of modified files"
 echo "  - /hwdef-info     - Show board hardware definitions"
+echo "  - /hwdef-check    - Review an hwdef PR (DMA, board ID, files, commits, playbook)"
 echo "  - /explain        - Explain ArduPilot code and architecture"
 echo "  - /build          - Configure and build firmware"
 echo "  - /check          - Build and run unit tests"
