@@ -29,6 +29,7 @@ errors (missing files, bad arguments) — finding review issues is not an error.
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -39,6 +40,7 @@ from pathlib import Path
 HWDEF_DIR = Path("libraries/AP_HAL_ChibiOS/hwdef")
 BOARD_TYPES = Path("Tools/AP_Bootloader/board_types.txt")
 BOOTLOADER_DIR = Path("Tools/bootloaders")
+STATE_FILE = Path(".git/hwdef-check-state.json")
 
 REQUIRED_COMMIT_PREFIXES = ("AP_Bootloader", "bootloaders", "AP_HAL_ChibiOS")
 
@@ -464,6 +466,150 @@ def cmd_commits(args):
     section("Commit structure", check_commits(args.base, args.board))
 
 
+# ---------- in-place PR checkout state machine ----------
+
+def _current_ref():
+    """Return (ref, is_detached). ``ref`` is the branch name when on a branch,
+    or the HEAD SHA when detached."""
+    proc = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    if proc.returncode != 0:
+        raise RuntimeError(f"git rev-parse failed: {proc.stderr.strip()}")
+    name = proc.stdout.strip()
+    if name == "HEAD":
+        sha = git("rev-parse", "HEAD").strip()
+        return sha, True
+    return name, False
+
+
+def _in_progress_op():
+    """Return a label for any in-progress git operation, else None."""
+    git_dir = Path(".git")
+    for d in ("rebase-merge", "rebase-apply"):
+        if (git_dir / d).is_dir():
+            return f"rebase (.git/{d})"
+    for f, label in (("MERGE_HEAD", "merge"),
+                     ("CHERRY_PICK_HEAD", "cherry-pick"),
+                     ("REVERT_HEAD", "revert"),
+                     ("BISECT_LOG", "bisect")):
+        if (git_dir / f).exists():
+            return label
+    return None
+
+
+def _has_tracked_changes():
+    """True iff the working tree has staged/unstaged changes to tracked files.
+    Deliberately ignores untracked files so that .claude/ (the skill's own
+    install root) is not swept up by a stash."""
+    out = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        text=True,
+    )
+    return bool(out.strip())
+
+
+def cmd_prepare(args):
+    if not Path(".git").exists():
+        sys.exit("Not in a git repository root.")
+
+    if STATE_FILE.exists():
+        prev = json.loads(STATE_FILE.read_text())
+        sys.exit(
+            f"hwdef-check is already in progress for PR {prev['pr']} "
+            f"(branch `{prev['pr_branch']}`). Run "
+            f"`python3 .claude/skills/hwdef-check/hwdef_check.py restore` first."
+        )
+
+    op = _in_progress_op()
+    if op:
+        sys.exit(f"Refusing to proceed: {op} in progress. Resolve it first.")
+
+    original_ref, is_detached = _current_ref()
+
+    stashed = False
+    if _has_tracked_changes():
+        msg = f"hwdef-check: auto-stash for PR {args.pr}"
+        proc = run(["git", "stash", "push", "-m", msg])
+        if proc.returncode != 0:
+            sys.exit(f"git stash push failed: {proc.stderr.strip()}")
+        stashed = True
+
+    pr_branch = f"hwdef-check-pr{args.pr}"
+    gh_cmd = ["gh", "pr", "checkout", str(args.pr), "--branch", pr_branch]
+    if args.repo:
+        gh_cmd += ["--repo", args.repo]
+    proc = subprocess.run(gh_cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        # Roll back the stash so the user is left where they started.
+        if stashed:
+            subprocess.run(["git", "stash", "pop"], capture_output=True, text=True)
+        sys.exit(
+            "gh pr checkout failed — leaving working tree as it was.\n"
+            f"  cmd: {' '.join(gh_cmd)}\n"
+            f"  stderr: {proc.stderr.strip()}"
+        )
+
+    STATE_FILE.write_text(json.dumps({
+        "pr":           args.pr,
+        "original_ref": original_ref,
+        "is_detached":  is_detached,
+        "pr_branch":    pr_branch,
+        "stashed":      stashed,
+    }, indent=2))
+
+    print(f"Prepared review of PR {args.pr}")
+    print(f"  Original ref: {original_ref}{' (detached)' if is_detached else ''}")
+    print(f"  PR branch:    {pr_branch}")
+    if stashed:
+        print(f"  Stashed tracked changes (will be popped by `restore`)")
+    print()
+    print(f"State written to {STATE_FILE}.")
+    print(f"When done, run `python3 .claude/skills/hwdef-check/hwdef_check.py restore`.")
+
+
+def cmd_restore(args):
+    if not STATE_FILE.exists():
+        print("No hwdef-check state file — nothing to restore.")
+        return 0
+    state = json.loads(STATE_FILE.read_text())
+
+    # 1. Checkout the original ref.
+    proc = run(["git", "checkout", state["original_ref"]])
+    if proc.returncode != 0:
+        print(f"git checkout {state['original_ref']} failed:")
+        print(f"  {proc.stderr.strip()}")
+        print()
+        print(f"State file kept at `{STATE_FILE}` — fix the working tree (likely")
+        print(f"uncommitted changes blocking the switch) and re-run `restore`.")
+        return 1
+    print(f"Restored ref: {state['original_ref']}"
+          f"{' (detached)' if state.get('is_detached') else ''}")
+
+    # 2. Delete the PR branch (best effort).
+    pr_branch = state["pr_branch"]
+    proc = run(["git", "branch", "-D", pr_branch])
+    if proc.returncode == 0:
+        print(f"Deleted branch: {pr_branch}")
+    elif "not found" in proc.stderr.lower() or "did not match" in proc.stderr.lower():
+        pass  # branch already gone, nothing to clean
+    else:
+        print(f"Warning: could not delete {pr_branch}: {proc.stderr.strip()}")
+
+    # 3. Pop the stash, if we made one.
+    if state.get("stashed"):
+        proc = run(["git", "stash", "pop"])
+        if proc.returncode != 0:
+            print("git stash pop failed (likely a merge conflict):")
+            print(f"  {proc.stderr.strip()}")
+            print("Your stashed changes are still in `git stash list` — resolve by hand.")
+            # Don't delete the state file; the user may want to know what we did.
+            return 1
+        print("Popped auto-stash (tracked changes restored)")
+
+    STATE_FILE.unlink()
+    print("hwdef-check state cleared.")
+    return 0
+
+
 def cmd_all(args):
     boards = detect_new_boards(args.base)
     if not boards:
@@ -549,6 +695,18 @@ def main():
     s.add_argument("--skip-configure", action="store_true",
                    help="skip ./waf configure (use when caller has already run it)")
     s.set_defaults(func=cmd_all)
+
+    s = sub.add_parser("prepare",
+                       help="stash + check out a PR branch into the current repo")
+    s.add_argument("--pr", type=int, required=True,
+                   help="PR number to fetch and switch to")
+    s.add_argument("--repo",
+                   help="<owner>/<repo>; defaults to gh's auto-detected remote")
+    s.set_defaults(func=cmd_prepare)
+
+    s = sub.add_parser("restore",
+                       help="undo `prepare`: switch back to the saved ref and pop the stash")
+    s.set_defaults(func=cmd_restore)
 
     args = p.parse_args()
     sys.exit(args.func(args) or 0)
