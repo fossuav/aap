@@ -233,14 +233,22 @@ def check_hwdef_patterns(board):
     text = hwdef.read_text()
     bl_text = bl_hwdef.read_text() if bl_hwdef.exists() else ""
 
-    # 32-bit system timer (only flags an explicit override to a 16-bit timer;
-    # the default is checked separately below).
+    # 16-bit system timer without ChibiOS 16-bit tick mode enabled.
+    # A 16-bit timer (TIM3/TIM4/TIM12/…) is fine only when CH_CFG_ST_RESOLUTION 16
+    # is also set; otherwise ChibiOS treats the counter as 32-bit and wraps badly
+    # (see hwdef CLAUDE.md §7.2).
     m = re.search(r"^(?:define\s+)?STM32_ST_USE_TIMER\s+(\S+)", text, re.MULTILINE)
     if m and m.group(1) not in VALID_SYSTEM_TIMERS:
-        issues.append(
-            f"`STM32_ST_USE_TIMER {m.group(1)}` is not a 32-bit timer "
-            f"— must be TIM2 or TIM5 (see hwdef CLAUDE.md §7.2)"
+        has_16bit_res = re.search(
+            r"^\s*define\s+CH_CFG_ST_RESOLUTION\s+16\b", text, re.MULTILINE
         )
+        if not has_16bit_res:
+            issues.append(
+                f"`STM32_ST_USE_TIMER {m.group(1)}` is a 16-bit timer but "
+                f"`define CH_CFG_ST_RESOLUTION 16` is not set — either switch "
+                f"to a 32-bit timer (TIM2/TIM5) or add the resolution define "
+                f"(see hwdef CLAUDE.md §7.2)"
+            )
 
     # System timer vs PWM conflict.
     st_val, st_source = effective_system_timer(text)

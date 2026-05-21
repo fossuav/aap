@@ -174,6 +174,7 @@ The actual pin numbers used in ArduPilot parameters (e.g., `RSSI_PIN`, `ARSPD_PI
 
 **Allowed in defaults.parm:**
 *   `SERVO13_FUNCTION 120` - NeoPixel LED output (if board has dedicated LED pad)
+*   **Motor frame type on flight-stack copter boards:** small FPV / "BetaflightX"-style copter boards typically ship with their ESCs wired in the Betaflight motor order, so setting the frame type to match (`FRAME_TYPE 12` via `defaults.parm`, or `define HAL_FRAME_TYPE_DEFAULT 12` in `hwdef.dat`) is accepted practice — users would otherwise have to remap motors before the first arm. This is the one frame-related setting boards may bake in. `FRAME_CLASS` is still left to the user.
 
 **NOT allowed in defaults.parm:**
 *   `MOT_PWM_TYPE` - User chooses DShot/PWM type
@@ -422,15 +423,15 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **Default if not set in hwdef:** comes from `libraries/AP_HAL_ChibiOS/hwdef/common/stm32*_mcuconf.h`.
     *   **F1/F3/F4/F7/G4/L4/L4+: TIM2** (this is what gets used unless you override).
     *   **H7 (all variants — base, A3, type2): TIM5.**
-*   **Must be a 32-bit timer**, otherwise the build fails.
-    *   **32-bit:** TIM2, TIM5 (on all the MCU families ArduPilot ships).
-    *   **16-bit (do NOT use):** TIM3, TIM4, TIM12, TIM13, TIM14, TIM15, etc. (A few existing boards have these set and "appear to work" — assume it's broken until proven otherwise.)
+*   **32-bit timers (TIM2/TIM5) are preferred** because they don't need extra config and don't suffer wrap-around quirks.
+*   **16-bit timers (TIM3, TIM4, TIM12, TIM13, TIM14, etc.) are valid** as long as you also set `define CH_CFG_ST_RESOLUTION 16` — ChibiOS then runs the tick in 16-bit mode. Without that define a 16-bit timer will misbehave; with it, boards that need to free both TIM2 and TIM5 for PWM can fall back to TIM3/TIM4 cleanly.
 *   **Only override when you have to.** Override when the default timer is also used for PWM (or another peripheral), since the same hardware timer cannot serve both jobs.
     *   F7 board uses TIM2 for PWM? → set `STM32_ST_USE_TIMER 5`.
     *   F7 board uses TIM5 for PWM (TIM2 free)? → no override needed; leave the default.
+    *   F4 board uses both TIM2 and TIM5 for PWM? → set `STM32_ST_USE_TIMER 4` plus `define CH_CFG_ST_RESOLUTION 16` (or any free 16-bit timer).
     *   H7 board uses TIM5 for PWM? → set `STM32_ST_USE_TIMER 2`.
     *   H7 board uses TIM2 for PWM (TIM5 free)? → no override needed.
-*   **Both `hwdef.dat` and `hwdef-bl.dat` must agree.** If you override in one, override in the other to the same value.
+*   **Both `hwdef.dat` and `hwdef-bl.dat` must agree.** If you override the timer (or the resolution) in one, set the same value in the other.
 *   **Clock:** Explicitly set `MCU_CLOCKRATE_MHZ` (e.g., 480 for H7).
 *   **LEDs:** If using standard notifications + external/onboard LEDs, ensure `define DEFAULT_NTF_LED_TYPES 455` is set if needed (sets bits 0,1,2,6,7,8).
 
@@ -495,9 +496,10 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **Purpose:** This file should be used **sparingly** - only for hardware-specific output assignments that cannot be set in `hwdef.dat`.
 *   **Allowed:**
     *   `SERVO13_FUNCTION 120` - NeoPixel LED output on dedicated LED pad
+    *   `FRAME_TYPE 12` (BetaflightX) on small copter boards whose ESC wiring is fixed to the Betaflight motor order — equivalent to `define HAL_FRAME_TYPE_DEFAULT 12` in `hwdef.dat`, either form is acceptable. `FRAME_CLASS` is still left to the user.
 *   **NOT Allowed (user preferences - do not set):**
     *   `MOT_PWM_TYPE`, `SERVO_DSHOT_ESC` - Motor/ESC configuration
-    *   `FRAME_CLASS`, `FRAME_TYPE` - Vehicle configuration
+    *   `FRAME_CLASS` - Vehicle class is the user's choice
     *   `NTF_LED_TYPES`, `NTF_LED_LEN` - LED configuration
     *   `OSD_TYPE` - OSD configuration
     *   `BATT_MONITOR` - Use `HAL_BATT_MONITOR_DEFAULT` in hwdef.dat instead
