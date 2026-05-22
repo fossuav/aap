@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.3.5
+**Playbook version:** 1.3.6
 
 ## Available Skills
 
@@ -322,10 +322,13 @@ AP_Int16 rtl_alt;
 ```
 
 **Code Comments:**
-- Every function declaration should have a comment explaining its purpose
-- New `.h` and `.cpp` files should start with GPLv3 license and purpose description
-- Comments explain "why", not just "what"
-- Comments must be descriptive statements about code operation, not development process notes
+- Match the comment density of the surrounding file. If the neighbouring functions are uncommented or use one-line comments, do not add a paragraph to yours. New comments that stand out from the existing style are the clearest sign code was machine-written.
+- A multi-line comment on a one- or two-line change is a red flag. Cut it to a single line stating the non-obvious "why", or delete it.
+- State a fact once, at the declaration. Do not repeat the same explanation on the definition, at call sites, or across files.
+- Comment only what the code cannot say itself. Skip comments on self-explanatory getters, setters, and trivial wrappers. A brief one-line purpose comment on a public/header declaration is welcome; do not restate it on the `.cpp` definition.
+- Comments explain "why", not "what". Never narrate what the next line does or record development process ("now we add", "changed to", "previously this was").
+- ASCII only: write `-`, `->`, `"`, `...`. Never use em-dashes, en-dashes, arrows, smart quotes, or the ellipsis character in comments or strings.
+- New `.h` and `.cpp` files should start with GPLv3 license and purpose description.
 
 ### Surgical Modification Principle
 
@@ -400,6 +403,11 @@ These rules apply to **commit message bodies, PR descriptions, and PR comments**
 - **Address obvious-but-wrong alternatives.** When there is a tempting approach that a reviewer is likely to suggest but that you tried and rejected (or know won't work), include a brief sentence explaining why. This pre-empts back-and-forth and shows the alternative was considered.
 - **The Summary section must summarise — and that includes motivation.** State the problem being solved and why this change solves it; an accurate summary without the "why" is incomplete. Motivation is not filler.
 - **No filler:** drop generic openers ("This PR…", "In this commit we…"), sentences that only restate the title, and hype ("important fix", "huge improvement", "cleans things up nicely"). Genuine motivation belongs in the summary; cheerleading does not.
+- **Do not look machine-generated.** Maintainers reject text that reads as LLM output even when the change is sound. Match the plain, terse house style of existing ArduPilot commit messages:
+  - No bold mini-headlines on bullet points (`**Thing.** explanation`). Use a plain bullet or a short sentence.
+  - Use backticks sparingly, only where an identifier would otherwise be ambiguous, not around every symbol.
+  - ASCII punctuation only: `-`, `--`, `"`, `...`. No em-dashes, en-dashes, arrows, smart quotes, or ellipsis characters.
+  - Do not template every item as a uniform problem/solution pair. Vary sentence structure the way a person would.
 - **Authorship attribution:**
   - **Commit messages and PR descriptions:** must read as authored by the human contributor. Do **not** include `Co-Authored-By: Claude`, "Generated with Claude Code", robot emoji markers, or any other Claude attribution.
   - **PR comments:** *may* be attributed to Claude (e.g. when responding to review feedback or posting status updates from Claude). The same pithy/on-topic/address-objections rules still apply.
