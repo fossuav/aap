@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.3.6
+**Playbook version:** 1.3.7
 
 ## Available Skills
 
@@ -308,6 +308,11 @@ uint32_t val = (static_cast<uint32_t>(payload[1]) << 8) | payload[0];
 uint32_t val = (payload[1] << 8) | payload[0];
 ```
 
+**Self-consistency between description and code:**
+- If your PR description, commit message, or a comment treats a value as valid (e.g. "0 is valid for pit mode"), the code path must handle that value without crashing.
+- Domain math (`log`, `log10f`, `sqrt`, `acos`, `asin`, division) has restricted inputs. Before adding such a call, identify every value that can reach it, especially the edge cases your own design admits.
+- Reviewers will read the prose and the diff together. A description that promises behaviour the code does not deliver wastes their time and yours.
+
 ### Comments and Documentation
 
 **Parameter Documentation:** All `AP_Param` parameters require documentation blocks:
@@ -337,6 +342,7 @@ When modifying existing files:
 - No unrelated refactoring or style changes
 - Produce the smallest possible diff
 - Never remove existing code (defines, constants, helpers) unless directly required by the change
+- Do not "tidy up" sibling code in a class you are touching. Adding default-initializers (`{0}`, `= 0`, `{}`) to existing members that were uninitialized before, normalising whitespace on neighbouring lines, or reordering declarations are all out of scope. Touch only the lines the change requires; defensive initialization sprayed across siblings is a reliable LLM-tell and reviewers will flag it.
 
 ## Commit Conventions
 
