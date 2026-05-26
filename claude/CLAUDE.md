@@ -266,6 +266,7 @@ astyle --options=Tools/CodeStyle/astylerc path/to/modified_file.cpp
 **Memory:**
 - No dynamic memory allocation (`malloc`, `new`) in performance-critical flight code paths
 - `new` and `malloc` zero their memory; stack variables must be explicitly initialized
+- ArduPilot zeroes BSS at startup, and class instances reach you either through BSS (singletons, statics), through `new`-zeroed heap, or through an explicit constructor. Do not add `{0}` / `= 0` / `{}` initializers to POD class members in headers as a defensive habit; they are redundant noise and a strong LLM-tell. The only places explicit init is required are stack locals and members where a non-zero default is intended.
 - Be mindful of stack size; avoid deep recursion and large local variables
 - Prefer `calloc`/`free` over `new[]`/`delete[]` for arrays - less allocation overhead:
 ```cpp
