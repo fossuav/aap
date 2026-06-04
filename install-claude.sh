@@ -88,12 +88,19 @@ install_file "$REPO_URL/ArduPlane/CLAUDE.md" "ArduPlane/CLAUDE.md"
 mkdir -p Tools/autotest
 install_file "$REPO_URL/Tools/autotest/CLAUDE.md" "Tools/autotest/CLAUDE.md"
 
-# Install Claude Code settings (project-level, shared permissions + hooks).
-# Machine-specific permissions belong in .claude/settings.local.json, which this
-# installer never touches; settings.json is playbook-managed and updated in place
-# (with a .bak) so hook and permission fixes reach existing installs.
+# Install Claude Code settings (project-level permissions + hooks). Never
+# overwrite an existing settings.json - permissions are the user's call. When the
+# playbook ships permission/hook changes, the user updates it deliberately:
+# compare against the canonical copy and merge what they want.
 mkdir -p .claude
-install_file "$REPO_URL/settings.json" ".claude/settings.json"
+dst=".claude/settings.json"
+if [[ -f "$dst" ]]; then
+    echo "  Note: .claude/settings.json already exists, not overwriting (permissions are user-managed)"
+    echo "  To adopt playbook changes, diff it against $REPO_URL/settings.json and merge by hand"
+else
+    download_file "$REPO_URL/settings.json" "$dst"
+    echo "  Installed: $dst"
+fi
 
 # Install Claude Code skills
 echo ""
