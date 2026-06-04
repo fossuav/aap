@@ -9,6 +9,8 @@ allowed-tools: Bash(python3 *), Read, Grep, Glob
 
 You have a log extraction tool at `.claude/skills/log-analyze/log_extract.py` that handles common analysis tasks without writing one-off scripts. It supports both DataFlash `.bin` logs and MAVLink `.tlog` telemetry logs.
 
+Prefer this tool over ad-hoc `mavlogdump.py ...` or `python3 -c "..."` one-liners: each distinct one-liner is a fresh permission prompt, whereas the tool's subcommands are already covered. When you genuinely need a custom extraction the tool can't do, write a small `.py` script and run it with a plain `python3 yourscript.py` - do not prefix it with `PYTHONUNBUFFERED=1` or `timeout`, which changes the first token and defeats the `python3` permission.
+
 ## Standard Workflow
 
 ### Step 1: Overview (ALWAYS do this first)
