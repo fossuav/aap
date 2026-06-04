@@ -47,10 +47,11 @@ The install script places the following files:
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 | `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
 | `Tools/autotest/CLAUDE.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
-| `.claude/settings.json` | Project permissions and hooks — auto-allows safe commands, enforces rules |
+| `.claude/settings.json` | Project permissions and hooks — auto-allows the skill scripts and a few read-only tools (not blanket `python3`/`git`/`rm`), enforces rules. Machine-specific allows go in `settings.local.json` |
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
+| `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
 | `.claude/skills/pr-checks/ci_failures.py` | Helper used by `/pr-checks` to download a PR's failed CI job logs and extract the failing tests/build errors |
 | `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules |

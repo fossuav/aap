@@ -2,7 +2,7 @@
 name: pr-checks
 description: Download a pull request's failing CI checks and identify the failing tests or build errors. Use when the user asks why a PR's CI is red, which tests failed, or to triage GitHub Actions failures on a PR.
 argument-hint: "[PR number/url/branch] [--repo OWNER/REPO]"
-allowed-tools: Bash(python3 *), Bash(gh pr:*), Bash(gh run:*), Bash(gh api:*), Read, Grep
+allowed-tools: Bash(python3 *ci_failures.py*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Read, Grep
 ---
 
 # Triage PR CI Failures

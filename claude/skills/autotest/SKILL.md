@@ -3,7 +3,7 @@ name: autotest
 description: Run ArduPilot SITL autotests (integration/behavior tests) and inspect their results. Use when the user asks to run autotests, vehicle tests, specific test methods, or to examine why an autotest failed.
 argument-hint: "<vehicle> [test_name]"
 disable-model-invocation: true
-allowed-tools: Bash(python3 *autotest*), Bash(python3 *autotest_results.py*), Bash(./waf *), Bash(timeout *), Read, Grep
+allowed-tools: Bash(python3 *autotest*), Bash(python3 *autotest_results.py*), Bash(./waf *), Read, Grep
 ---
 
 # Run ArduPilot Autotests
@@ -57,24 +57,26 @@ python3 Tools/autotest/autotest.py --show-test-timings test.Copter.AltHold
 python3 Tools/autotest/autotest.py --debug test.Copter.AltHold
 ```
 
-### Running cleanly in this environment
+### Bounding a run that might hang
 
-Keep the invocation matching the pre-authorized patterns so it doesn't prompt:
+Use the runner script - it wraps `autotest.py` with a wall-clock timeout, streams
+output, and warns about a stale lock, all under one pre-authorized script (so we
+grant the script, not a blanket `timeout`/`python3`):
 
-- Bound a run that might hang with `timeout`, not a background `&` plus `pkill`:
-  `timeout 600 python3 Tools/autotest/autotest.py test.Copter.<Test>`. `timeout`
-  is allow-listed; `pkill`, `nohup`, and launching `build/sitl/bin/arducopter`
-  directly are not, and they are the wrong tool anyway - drive SITL through
-  `autotest.py` / `sim_vehicle.py`.
-- Do NOT prefix commands with environment variables (`PYTHONUNBUFFERED=1 python3 ...`).
-  An env-var prefix changes the command's first token, so it no longer matches the
-  `python3` permission and you get an avoidable prompt. autotest already streams its
-  output; if you want to watch a long run, redirect to a file and read the file.
-- If a previous run left a lock and autotest refuses to start, the wedged process
-  is the thing to clear (with the user's ok) - don't work around it by launching the
-  binary by hand.
-- Inspect results with `autotest_results.py` (below), not `tail`/`head`/`grep` over
-  the per-test logs.
+```bash
+python3 .claude/skills/autotest/run_autotest.py test.Copter.<Test>
+python3 .claude/skills/autotest/run_autotest.py --timeout 1200 test.Plane.QuadPlane
+```
+
+It exits 124 on timeout and kills the SITL children. Build first with `/build`.
+
+Do NOT reach for `&` + `pkill`, `nohup`, launching `build/sitl/bin/arducopter`
+directly, or an env-var prefix like `PYTHONUNBUFFERED=1 python3 ...`. They are the
+wrong tools (drive SITL through `autotest.py` / `sim_vehicle.py`), and the env
+prefix also changes the command's first token so it no longer matches the
+pre-authorized script and prompts needlessly. If a previous run left a live lock,
+clear the wedged process (with the user's ok) - don't work around it by hand.
+Inspect results with `autotest_results.py` (below), not `tail`/`grep` over the logs.
 
 ## Test file locations
 
