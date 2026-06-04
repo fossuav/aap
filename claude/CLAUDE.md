@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.3.7
+**Playbook version:** 1.3.9
 
 ## Available Skills
 
@@ -26,6 +26,7 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/lua-crsf <menu>` | Writing CRSF transmitter menu scripts |
 | `/lua-vehicle <task>` | Lua vehicle control and movement commands |
 | `/log-analyze <logfile>` | Analyzing DataFlash .bin flight logs |
+| `/pr-checks [PR]` | Downloading a PR's failing CI checks and identifying the failing tests/build errors |
 | `/aap-update` | Checking the local playbook version against GitHub and updating |
 
 ## Build System

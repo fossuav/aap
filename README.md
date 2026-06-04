@@ -52,6 +52,7 @@ The install script places the following files:
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
+| `.claude/skills/pr-checks/ci_failures.py` | Helper used by `/pr-checks` to download a PR's failed CI job logs and extract the failing tests/build errors |
 | `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules |
 | `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
 
@@ -75,6 +76,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/lua-crsf <menu>` | Write CRSF transmitter menu scripts with crsf_helper |
 | `/lua-vehicle <task>` | Lua vehicle control, movement, RC input |
 | `/log-analyze <logfile>` | Analyze DataFlash .bin logs (messages, params, events, plots) |
+| `/pr-checks [PR]` | Download a PR's failing CI checks and identify the failing tests/build errors |
 | `/aap-update` | Compare local playbook version with GitHub and install updates |
 
 **Write skills** (local only — compile, run tests, launch simulator):

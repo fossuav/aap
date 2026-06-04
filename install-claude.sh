@@ -88,16 +88,12 @@ install_file "$REPO_URL/ArduPlane/CLAUDE.md" "ArduPlane/CLAUDE.md"
 mkdir -p Tools/autotest
 install_file "$REPO_URL/Tools/autotest/CLAUDE.md" "Tools/autotest/CLAUDE.md"
 
-# Install Claude Code settings (project-level, shared permissions)
+# Install Claude Code settings (project-level, shared permissions + hooks).
+# Machine-specific permissions belong in .claude/settings.local.json, which this
+# installer never touches; settings.json is playbook-managed and updated in place
+# (with a .bak) so hook and permission fixes reach existing installs.
 mkdir -p .claude
-dst=".claude/settings.json"
-if [[ -f "$dst" ]]; then
-    echo "  Note: .claude/settings.json already exists, not overwriting"
-    echo "  To update, remove it first and re-run this script"
-else
-    download_file "$REPO_URL/settings.json" "$dst"
-    echo "  Installed: $dst"
-fi
+install_file "$REPO_URL/settings.json" ".claude/settings.json"
 
 # Install Claude Code skills
 echo ""
@@ -131,6 +127,13 @@ for file in SKILL.md log_extract.py; do
     install_file "$SKILLS_URL/log-analyze/$file" ".claude/skills/log-analyze/$file"
 done
 chmod +x .claude/skills/log-analyze/log_extract.py
+
+# pr-checks skill (has additional Python tool)
+mkdir -p .claude/skills/pr-checks
+for file in SKILL.md ci_failures.py; do
+    install_file "$SKILLS_URL/pr-checks/$file" ".claude/skills/pr-checks/$file"
+done
+chmod +x .claude/skills/pr-checks/ci_failures.py
 
 # Install Claude Code hooks (rule enforcement)
 echo ""
@@ -175,6 +178,7 @@ echo "  - /lua             - Write or modify Lua applets"
 echo "  - /lua-crsf        - Write CRSF transmitter menu scripts"
 echo "  - /lua-vehicle     - Lua vehicle control and movement commands"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
+echo "  - /pr-checks      - Download a PR's failing CI checks and identify failing tests"
 echo "  - /aap-update     - Check for and install playbook updates"
 echo ""
 echo "  Hooks (rule enforcement):"
