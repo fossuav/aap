@@ -7,40 +7,39 @@
       "Write",
       "Grep",
       "Glob",
-      "Bash(python3 *)",
-      "Bash(./waf *)",
-      "Bash(gh pr view *)",
-      "Bash(gh pr diff *)",
-      "Bash(gh pr list *)",
-      "Bash(gh pr status *)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(git status *)",
-      "Bash(git show *)",
-      "Bash(git stash *)",
-      "Bash(git branch *)",
-      "Bash(git checkout *)",
-      "Bash(git cherry-pick *)",
-      "Bash(git fetch *)",
-      "Bash(git worktree *)",
-      "Bash(git rev-parse *)",
-      "Bash(mktemp *)",
-      "Bash(rm -f /tmp/*)",
-      "Bash(grep *)",
-      "Bash(find *)",
-      "Bash(cat *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(wc *)",
-      "Bash(sort *)",
-      "Bash(ls *)",
-      "Bash(mkdir *)",
-      "Bash(chmod *)",
-      "Bash(astyle *)",
-      "Bash(Tools/autotest/autotest.py *)",
-      "Bash(Tools/autotest/sim_vehicle.py *)"
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(pip3 show:*)",
+      "Bash(timeout:*)",
+      "Bash(./waf:*)",
+      "Bash(Tools/autotest/autotest.py:*)",
+      "Bash(Tools/autotest/sim_vehicle.py:*)",
+      "Bash(mavlogdump.py:*)",
+      "Bash(mavproxy.py:*)",
+      "Bash(astyle:*)",
+      "Bash(luacheck:*)",
+      "Bash(git:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh run:*)",
+      "Bash(gh api:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh auth status:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(awk:*)",
+      "Bash(cut:*)",
+      "Bash(tr:*)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(mktemp:*)",
+      "Bash(rm -f /tmp/*)"
     ]
   },
   "hooks": {
@@ -50,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/pre_bash_check.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre_bash_check.py\""
           }
         ]
       }
@@ -61,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/post_edit_check.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/post_edit_check.py\""
           }
         ]
       }
