@@ -29,6 +29,19 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/pr-checks [PR]` | Downloading a PR's failing CI checks and identifying the failing tests/build errors |
 | `/aap-update` | Checking the local playbook version against GitHub and updating |
 
+## Tooling and Permissions
+
+Permissions in `.claude/settings.json` authorize **specific skill scripts**, not the underlying tools. There is intentionally no blanket `python3`, `git`, `timeout`, `rm`, or `gh api` grant: a wide-open tool permission means any future command - including a destructive one - runs unprompted. Each repeatable operation is instead a script under `.claude/skills/<skill>/`, and the script's path is what gets allow-listed. Machine-specific allows (out-of-repo log paths, personal helpers) belong in `.claude/settings.local.json`, which the installer never touches.
+
+The corollary for how you work:
+
+- When you catch yourself about to run the same ad-hoc command shape more than once - a `mavlogdump`/`python3 -c` one-liner, a `gh api`/`gh run` loop, a `timeout`-wrapped invocation - that is a signal to **offer to fold it into a skill script**, not to ask for a broad tool permission. A script can be granted narrowly (`python3 .claude/skills/<skill>/<tool>.py:*`) and wraps the messy parts (timeouts, multi-step `gh` calls, output handling) so subprocess calls inside it never prompt.
+- A genuinely one-off custom script should just prompt once - approve it and move on. Do not reach for a blanket grant to avoid a single prompt, and do not dodge the prompt by collapsing it into a one-liner.
+- Prefer existing skills over hand-rolled commands: `/autotest` (runs via `run_autotest.py`, results via `autotest_results.py`), `/log-analyze` (`log_extract.py`), `/pr-checks` (`ci_failures.py`). Reach for a raw command only when no skill covers the task - and if it recurs, propose a script.
+- Hooks are anchored with `"$CLAUDE_PROJECT_DIR/.claude/hooks/..."` so they survive a `cd` into a worktree or sibling clone; keep new hook entries anchored the same way.
+
+When you propose a new script, say what it folds in and which narrow permission it would need, then add it under the relevant skill (with a row in `install-claude.sh`, the README table, and this file if it is a new slash command).
+
 ## Build System
 
 ArduPilot uses the Waf build system. Always run `./waf` from the repository root. **Always use `/build` (or `./waf` directly) for all building — never use `autotest.py build.*` for builds.** Use `/boards` to search targets.
