@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.3.9
+**Playbook version:** 1.3.10
 
 ## Available Skills
 
@@ -429,6 +429,7 @@ These rules apply to **commit message bodies, PR descriptions, and PR comments**
   - Use backticks sparingly, only where an identifier would otherwise be ambiguous, not around every symbol.
   - ASCII punctuation only: `-`, `--`, `"`, `...`. No em-dashes, en-dashes, arrows, smart quotes, or ellipsis characters.
   - Do not template every item as a uniform problem/solution pair. Vary sentence structure the way a person would.
+- **Do not hard-wrap PR descriptions or PR comments.** GitHub renders them as markdown and soft-wraps to the reader's width, so manual line breaks just read as ragged. Write one line per paragraph and one line per bullet. The exception is commit message bodies and in-repo `README.md` files: keep those wrapped to ~75 columns to match the repo's convention.
 - **Authorship attribution:**
   - **Commit messages and PR descriptions:** must read as authored by the human contributor. Do **not** include `Co-Authored-By: Claude`, "Generated with Claude Code", robot emoji markers, or any other Claude attribution.
   - **PR comments:** *may* be attributed to Claude (e.g. when responding to review feedback or posting status updates from Claude). The same pithy/on-topic/address-objections rules still apply.
