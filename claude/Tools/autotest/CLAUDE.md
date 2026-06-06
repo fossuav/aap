@@ -62,6 +62,20 @@ Only introduce a nested `context_push()` / `context_pop()` pair when you genuine
 
 The autotest harness uses a lock file to prevent concurrent runs — launching two `autotest.py` invocations at once (or a single `test.<Vehicle>.<A>` and `test.<Vehicle>.<B>` in two shells) will fail or interfere with each other. Always run tests serially: complete one invocation before starting the next, even when iterating on multiple test methods. If you need to exercise several tests in one go, pass them as multiple arguments to a single `autotest.py` invocation rather than spawning separate processes.
 
+### The lock file is shared across sibling clones (BUILDLOGS)
+
+The lock lives at `buildlogs_path('autotest.lck')`, which resolves to `os.getenv("BUILDLOGS", reltopdir("../buildlogs"))` (`Tools/autotest/autotest.py`). The default `../buildlogs` is **one level above the repo root**, so two sibling checkouts (e.g. `~/github/ardupilot-dist` and `~/github/smallfastdrone`) both resolve to the *same* `~/github/buildlogs/autotest.lck` and share one lock and one log output tree.
+
+Consequences:
+
+- A present `autotest.lck` is not necessarily stale — it may be a live lock held by an autotest running in a **different** sibling clone. Never `rm` it to "clear a stale lock" without first confirming no `autotest.py`/`arducopter` process is running (`ps aux | grep -E "autotest|arducopter"`). Deleting a live lock lets two runs collide and corrupt each other.
+- To isolate a repo's autotests (own lock, own log files), set a repo-local `BUILDLOGS`, e.g. `export BUILDLOGS=$PWD/buildlogs`.
+- Isolating `BUILDLOGS` removes the *lock* contention but **not** the network contention: every SITL autotest binds the same default TCP ports (5760/5762/5763), so two concurrent runs still collide with an `EOF`/connection error mid-test. The shared lock exists precisely to serialise that. Repo-local `BUILDLOGS` is for keeping logs and locks separate across clones, not for running two autotests at the same time — still run them serially, or give one a port offset.
+
+### Long convergence and fixed-window assertions
+
+`assert_dataflash_message_field_level_at` (and `delay_sim_time(N)` before a check) assert that a value is reached within a fixed window. EKF state that converges slowly — accel-bias learning via zero-velocity fusion, wind, mag — can take longer than the window, so a change that merely *slows* convergence fails such a test identically to one that *breaks* it. Before concluding "X broke Y" from a fixed-window failure, plot the actual trajectory over a longer disarmed window (a throwaway probe test that injects the stimulus and `delay_sim_time`s well past the assertion window) to tell "slower" apart from "broken". Note `wait_ready_to_arm()` itself can burn ~40 s of sim time for GPS/EKF lock, so re-zero such plots at the moment the stimulus is actually applied (e.g. the `PARM` step in the log), not at boot.
+
 ### Test method registration
 
 Each vehicle test class has several list-returning methods (`tests1a`, `tests1b`, `tests1c`, …) that the harness combines into the full test list. The split is purely for runtime balancing — there is **no** topical "tests_scripting" or per-feature list. To register a new test, append the method reference to one of these lists:
