@@ -418,6 +418,28 @@ The EKF cannot distinguish a wrong heading from a wrong GPS fix from inside the 
 
 **Pre-arm limitation:** the GPS-course/compass consistency check requires forward motion. A stationary vehicle cannot trigger it. Catching this on the ground requires either an external reference (sun compass, known landmark bearing) or a brief taxi/walk-forward step before takeoff to confirm `XKF1.Yaw` matches `GPS.GCrs`.
 
+## Reversed Yaw / Wrong FRAME_TYPE (Props-In vs Props-Out)
+
+A multirotor whose configured `FRAME_TYPE` has the wrong motor rotation directions for the physical build — most commonly BetaFlightX (`FRAME_TYPE=12`, props-in) flashed onto a props-out airframe that needs BetaFlightXReversed (`FRAME_TYPE=15`), or the reverse — has its **yaw torque sign inverted while roll and pitch are unaffected**. The vehicle then yaws away from any disturbance under positive feedback: the harder the controller corrects, the faster it spins. On a throw, hand-launch, or first takeoff this presents as an uncontrollable yaw spin that "spins itself into the ground" with roll/pitch looking fine the whole way down.
+
+**Why roll/pitch survive but yaw inverts.** Roll and pitch torque come from *which* motors thrust harder — a function of motor *position*, unchanged by reversing spin direction. Yaw torque comes from the net rotor reaction torque — a function of motor *rotation direction*, which flips sign when props/rotation are reversed. So a reversed build flies roll/pitch normally and is divergent in yaw only. "Roll/pitch controlled, yaw runs away" is the fingerprint; do not mistake it for weak yaw authority or an aggressive throw spin.
+
+**The decisive test — command sign vs response sign.** Insufficient yaw authority lets the spin *coast* at a roughly constant rate; inverted yaw makes it *accelerate* in the commanded-against direction. Pick a window where the controller is steadily fighting the spin (yaw demand one sign, not wrapping) and compare the rate-loop output to the actual yaw acceleration:
+
+```bash
+python3 .../log_extract.py extract <log> --types RATE --fields YDes,Y,YOut \
+    --from-time <t0> --to-time <t1> --limit 0
+```
+
+- **Correct frame:** sustained positive `YOut` drives `RATE.Y` *more positive* (toward zero if braking a negative spin). Command and response share sign.
+- **Reversed frame:** sustained positive `YOut` drives `RATE.Y` *more negative* — command and response have opposite signs, and `|RATE.Y|` grows while the controller commands maximum opposing torque. That is proof, not inference.
+
+Cross-check the rate-loop output against raw `IMU.GyrZ` (rad/s) so the conclusion does not rest on a single logged field, and confirm `RATE.R`/`RATE.P` track their demands normally (roll/pitch healthy) to complete the asymmetry.
+
+**Heading-wrap red herring.** At multi-rev/s spin the angle loop's wrapped heading error makes `RATE.YDes` periodically dive to *match* the spin (and `YOut` collapse to ~0) once per revolution — see the runaway sweep through the target. That is the angle controller momentarily pointing the same way as the runaway, a *symptom* of the spin, not its cause. Diagnose on the steady-demand segment, not the wrap.
+
+**Confirm and fix.** `FRAME_CLASS` + `FRAME_TYPE` from `PARM`, then make the configured rotation match the hardware: either switch `FRAME_TYPE` between 12 (BetaFlightX) and 15 (BetaFlightXReversed), or reverse all four motor directions (DShot reverse, or swap two phase wires per motor) to match the configured frame. Bench-verify before flight: command yaw in one direction in a motor test and confirm the airframe *wants* to rotate that way. A reversed frame diverges in yaw on **any** takeoff, not only on a spin-throw — so this is a ground-checkable, deterministic fault, not a flight-condition edge case.
+
 ## GPS Receiver Health Diagnostics (uBlox MON-HW / MON-HW2)
 
 uBlox-based GPS units (`GPS_TYPE=2`) emit per-instance hardware-monitor messages that distinguish **interference** from **multipath** from **antenna fault** from **constellation outage**. The fields are routinely under-used because the field interpretations are non-obvious — and several of them are counter-intuitive.
@@ -485,6 +507,7 @@ Do NOT send a diagnosis or recommendation to the user until you have independent
 | "GPS glitch caused failsafe" | GPS.Spd and GPS.Alt at the instant of the ERR, plus GPS.NSats and HDop to show it wasn't a coverage issue. Show the innovation spike (XKF3.IVE/IVN/IPE/IPN), not just the ERR message. |
 | "GPS receiver dropped fix / RTK lost" | uBlox `MON-HW` `agcCnt` and `MON-HW2` `magI`/`magQ` on **both** receivers during the dropout window; the *other* GPS instance's status; the EKF's `NKF4.GPS` (or `XKF4.GPS`) source field; and `aPower`. Distinguish interference (AGC drops) from multipath (no AGC drop) from antenna fault (`aPower=0`) before recommending action. See "GPS Receiver Health Diagnostics" above. |
 | "Compass / heading is wrong" | `ATT.Yaw` vs `GPS.GCrs` during steady forward flight at >2 m/s — must agree to ~10°. A flat persistent ~90°/180°/270° offset is direct evidence; "EKF Yaw inconsistent N deg" post-event is the numerical confirmation. Innovation spikes alone are not enough — they only show that *something* disagrees with GPS, not that compass is the wrong something. See "Compass Yaw Sanity Check" above. |
+| "Uncontrolled yaw spin / reversed FRAME_TYPE" | A steady-demand window of `RATE.YDes`/`YOut` vs `RATE.Y` (and raw `IMU.GyrZ`): sustained one-sign `YOut` driving yaw acceleration the *same* sign is inverted yaw, not weak authority (which coasts). Confirm `RATE.R`/`RATE.P` track normally (roll/pitch healthy) and read `FRAME_TYPE`. See "Reversed Yaw / Wrong FRAME_TYPE" above. |
 | "Source-set / failover recommendation" | See EKF source-set playbook note in `libraries/AP_NavEKF3/CLAUDE.md` — source sets are manually switched, not automatic failover. Do not recommend `EK3_SRC2_*` as a "fallback" for glitch response. |
 | "Fence action caused the crash" | MODE changes AND fence ERR codes AND aircraft state (alt/speed) at fence breach time. |
 
@@ -511,6 +534,23 @@ When investigating oscillation or tuning issues:
 3. **PID plot** — `--recipe pid_yaw` (or roll/pitch) to see P/I/D/FF components
 4. **Rate tracking** — `--recipe rate_yaw` to check desired vs actual tracking quality
 5. **Zoom in** — use `--from-time`/`--to-time` on plots to examine specific maneuvers
+
+## Vibration and Harmonic-Notch Analysis (FFT from a log)
+
+When `VIBE.VibeX/Y/Z` is high (over ~15 m/s² sustained / ~30 peak) or you suspect the notch is mistuned, you can FFT the batch-sampled IMU and read the spectrum directly. `VIBE` gives you the magnitude; the FFT gives you the frequency.
+
+**Source data: ISBH/ISBD batch samples.** When `INS_LOG_BAT_MASK` is set, the IMU logs raw blocks of 2048 samples at the sensor rate (often ~4 kHz) — far above the 400 Hz `IMU` message and the only data fast enough to FFT the motor fundamental. `log_extract.py` has no FFT subcommand, so write a one-off script using `pymavlink` to read `ISBH` (header) + `ISBD` (data arrays), assemble each 2048-sample window, and average per-window PSDs (Welch-style). Pitfalls that will bite you:
+
+- **Time filter on `TimeUS`, not `_timestamp`.** `_timestamp` is unix epoch; the log-relative seconds you want are `msg.TimeUS / 1e6`.
+- **`ISBH.instance` encodes pre/post-filter.** Pre-filter blocks use instance `0..N-1`; post-filter blocks (only present with `INS_LOG_BAT_OPT` bit for post/pre-post) use `instance + imu_count`. With a 2-IMU mask: 0,1 = pre-filter IMU0/IMU1; 2,3 = post-filter. If only 0,1 appear, you have **pre-filter only** and cannot measure notch residual — re-fly with `INS_LOG_BAT_OPT=2` (post-filter) to get it.
+- **`ISBH.type`**: 0 = accel, 1 = gyro.
+- **`ISBH.mul` is a MULT-table index, not a scale factor.** Peak *frequencies* are scale-invariant so they're valid regardless; do not quote PSD *magnitudes* without resolving `mul` against the `MULT` messages — use the calibrated `VIBE` values for magnitude instead.
+
+**Reading the spectrum.** The dominant copter peak is almost always the motor/prop fundamental: `f_fund_Hz = mean(ESC.RPM) / 60` (e.g. 15,000 RPM → 250 Hz), with harmonics at 2x/3x. Four motors at slightly different RPM spread the fundamental into a band tens of Hz wide. Overlay `f_fund` and `INS_HNTCH_FREQ` on the plot.
+
+**The harmonic notch is constant-Q, not constant-Hz** — the single most common misread. `NotchFilter::calculate_A_and_Q()` computes the quality factor *once* from the base `INS_HNTCH_FREQ` and `INS_HNTCH_BW`, and every dynamic frequency update reuses the stored `_Q` (`set_center_frequency` → `init_with_A_and_Q`); the bandwidth is never recomputed. So the absolute −3 dB bandwidth **scales linearly with the tracked center frequency**: `BW(f) ≈ BW_base × f / FREQ_base`. Concretely `BW=10` at a 40 Hz base is `Q≈3.7` and becomes ~55 Hz at 220 Hz, ~64 Hz at 256 Hz. **Do not flag `INS_HNTCH_BW=10` as "too narrow to cover a 40 Hz-wide peak at 250 Hz"** — at the tracked frequency it is ~6x wider than its base value. In ESC/RPM/FFT tracking modes (`INS_HNTCH_MODE` 3/2/4) `FREQ` is only the floor; the notch follows RPM. Decode `INS_HNTCH_OPTS` against the `Options` enum in `libraries/Filter/HarmonicNotchFilter.h` (DoubleNotch=1, DynamicHarmonic=2, LoopRateUpdate=4, EnableOnAllIMUs=8, TripleNotch=16, TreatLowAsMin=32) — values and the presence of a MultiSource bit differ by branch, so read the enum, don't assume.
+
+**The notch cannot fix a vibration-induced altitude problem.** The harmonic notch cleans the gyro (and optionally accel) for the *control loops*. It does not remove the DC bias that high-amplitude accel vibration rectifies onto AccZ (`INS_ACC_VRFB_Z` territory — see the indoor playbook §4.8). So when high `VIBE` correlates with an `XKF2.AZ` bias and EKF-altitude drift, retuning the notch will not help: the fix is mechanical (prop balance, motor-mount integrity, FC soft-mount). Confirm the source frequency with the FFT, then say so plainly rather than recommending notch changes.
 
 ## Common Message Types
 
