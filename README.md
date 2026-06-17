@@ -4,11 +4,12 @@
 
 This project provides guidance documents for using Large Language Models (LLMs) to generate and modify code for the ArduPilot autopilot platform.
 
-Three usage modes are supported:
+Four usage modes are supported:
 
 1. **Claude Code** - Anthropic's CLI tool for interactive development with Claude
-2. **Gemini CLI** - Google's CLI tool for interactive development with Gemini
-3. **Chat-based LLMs** - Traditional prompt-based code generation with any LLM
+2. **Codex** - OpenAI's coding agent for interactive repository work
+3. **Gemini CLI** - Google's CLI tool for interactive development with Gemini
+4. **Chat-based LLMs** - Traditional prompt-based code generation with any LLM
 
 The playbooks contain rules and constraints that ensure generated code is safe, testable, and consistent with ArduPilot development standards.
 
@@ -106,6 +107,55 @@ To remove the playbook files from ArduPilot:
 ```bash
 cd /path/to/ardupilot
 curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.sh | bash
+```
+
+---
+
+## **Codex Integration**
+
+Codex uses `AGENTS.md` files for repository guidance and can load skills from `.codex/skills`.
+
+### Quick Start
+
+1. Install the playbooks into your ArduPilot repository:
+   ```bash
+   cd /path/to/ardupilot
+   curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/install-codex.sh | bash
+   ```
+
+2. Start Codex from the repository root.
+
+Codex will read the `AGENTS.md` files and use the installed skills as workflow guides for common ArduPilot tasks.
+
+### Installed Files
+
+The install script places the following files:
+
+| File | Purpose |
+|------|---------|
+| `AGENTS.md` | Build system, architecture overview, C++ development guidelines |
+| `libraries/AP_Scripting/AGENTS.md` | Lua scripting patterns, applet structure, parameter system |
+| `libraries/AP_Scripting/CODEX_CRSF_MENU.md` | CRSF (Crossfire) menu implementation |
+| `libraries/AP_Scripting/CODEX_VEHICLE_CONTROL.md` | Vehicle control APIs, movement commands, RC input |
+| `libraries/AP_NavEKF3/AGENTS.md` | EKF3 navigation filter reference and analysis methodology |
+| `libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md` | ChibiOS board porting and hwdef.dat creation |
+| `ArduPlane/AGENTS.md` | Plane flight modes, log analysis, QuadPlane operations |
+| `Tools/autotest/AGENTS.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
+| `.codex/skills/*/SKILL.md` | Codex skills for the same workflows as the Claude slash commands |
+| `.codex/skills/log-analyze/log_extract.py` | Log extraction tool used by the log analysis skill |
+| `.codex/skills/autotest/autotest_results.py` | Autotest result parser used by the autotest skill |
+| `.codex/skills/autotest/run_autotest.py` | Timed autotest runner used by the autotest skill |
+| `.codex/skills/hwdef-check/hwdef_check.py` | Helper used by the hwdef review skill |
+| `.codex/skills/pr-checks/ci_failures.py` | Helper used by the PR checks skill |
+
+Codex installs no Claude-style permissions or hooks; command approval remains controlled by the Codex environment.
+
+### Uninstalling
+
+To remove the Codex playbook files from ArduPilot:
+```bash
+cd /path/to/ardupilot
+curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-codex.sh | bash
 ```
 
 ---
@@ -228,6 +278,23 @@ aap/
 │       └── log-analyze/             # /log-analyze - analyze flight logs
 │           ├── SKILL.md
 │           └── log_extract.py
+├── codex/                           # Codex playbooks (AGENTS.md files)
+│   ├── AGENTS.md                    # Root playbook (build, architecture, C++)
+│   ├── ArduPlane/
+│   │   └── AGENTS.md                # Plane log analysis, flight modes, QuadPlane
+│   ├── libraries/
+│   │   ├── AP_Scripting/
+│   │   │   ├── AGENTS.md
+│   │   │   ├── CODEX_CRSF_MENU.md
+│   │   │   └── CODEX_VEHICLE_CONTROL.md
+│   │   ├── AP_NavEKF3/
+│   │   │   └── AGENTS.md
+│   │   └── AP_HAL_ChibiOS/hwdef/
+│   │       └── AGENTS.md
+│   ├── Tools/
+│   │   └── autotest/
+│   │       └── AGENTS.md
+│   └── skills/                      # Codex skills and helper scripts
 ├── gemini/                          # Gemini CLI playbooks (GEMINI.md files)
 │   ├── GEMINI.md                    # Root playbook (build, architecture, C++)
 │   └── libraries/AP_Scripting/      # Lua scripting playbooks
@@ -244,6 +311,8 @@ aap/
 │   └── docs.lua                     # Lua API documentation
 ├── install-claude.sh                # Install Claude playbooks to ArduPilot
 ├── uninstall-claude.sh              # Remove Claude playbooks from ArduPilot
+├── install-codex.sh                 # Install Codex playbooks to ArduPilot
+├── uninstall-codex.sh               # Remove Codex playbooks from ArduPilot
 ├── install-gemini.sh                # Install Gemini playbooks to ArduPilot
 ├── uninstall-gemini.sh              # Remove Gemini playbooks from ArduPilot
 └── README.md
