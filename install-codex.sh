@@ -3,7 +3,7 @@
 # Install ArduPilot AI Playbooks for Codex
 #
 # Run this script from the root of an ArduPilot repository to install
-# AGENTS.md files that guide Codex when working with the codebase.
+# AGENTS.override.md files that guide Codex when working with the codebase.
 #
 # Usage: curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/install-codex.sh | bash
 #
@@ -62,31 +62,32 @@ install_file() {
 
 echo "Installing Codex playbooks to ArduPilot repository..."
 
-# Install root AGENTS.md
-install_file "$REPO_URL/AGENTS.md" "./AGENTS.md"
+# Install root AGENTS.override.md
+install_file "$REPO_URL/AGENTS.md" "./AGENTS.override.md"
 
 # Install AP_Scripting playbooks
 mkdir -p libraries/AP_Scripting
 
-for file in AGENTS.md CODEX_CRSF_MENU.md CODEX_VEHICLE_CONTROL.md; do
+install_file "$REPO_URL/libraries/AP_Scripting/AGENTS.md" "libraries/AP_Scripting/AGENTS.override.md"
+for file in CODEX_CRSF_MENU.md CODEX_VEHICLE_CONTROL.md; do
     install_file "$REPO_URL/libraries/AP_Scripting/$file" "libraries/AP_Scripting/$file"
 done
 
 # Install AP_NavEKF3 playbook
 mkdir -p libraries/AP_NavEKF3
-install_file "$REPO_URL/libraries/AP_NavEKF3/AGENTS.md" "libraries/AP_NavEKF3/AGENTS.md"
+install_file "$REPO_URL/libraries/AP_NavEKF3/AGENTS.md" "libraries/AP_NavEKF3/AGENTS.override.md"
 
 # Install AP_HAL_ChibiOS hwdef playbook
 mkdir -p libraries/AP_HAL_ChibiOS/hwdef
-install_file "$REPO_URL/libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md" "libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md"
+install_file "$REPO_URL/libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md" "libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md"
 
 # Install ArduPlane playbook
 mkdir -p ArduPlane
-install_file "$REPO_URL/ArduPlane/AGENTS.md" "ArduPlane/AGENTS.md"
+install_file "$REPO_URL/ArduPlane/AGENTS.md" "ArduPlane/AGENTS.override.md"
 
 # Install Tools/autotest playbook
 mkdir -p Tools/autotest
-install_file "$REPO_URL/Tools/autotest/AGENTS.md" "Tools/autotest/AGENTS.md"
+install_file "$REPO_URL/Tools/autotest/AGENTS.md" "Tools/autotest/AGENTS.override.md"
 
 # Install Codex skills
 echo ""
@@ -133,15 +134,15 @@ echo "Installation complete!"
 echo ""
 echo "The following files are now available for Codex:"
 echo ""
-echo "  Playbooks (AGENTS.md files):"
-echo "  - AGENTS.md (root - build system, architecture, C++ guidelines)"
-echo "  - libraries/AP_Scripting/AGENTS.md (Lua scripting patterns)"
+echo "  Playbooks (AGENTS.override.md files):"
+echo "  - AGENTS.override.md (root - build system, architecture, C++ guidelines)"
+echo "  - libraries/AP_Scripting/AGENTS.override.md (Lua scripting patterns)"
 echo "  - libraries/AP_Scripting/CODEX_CRSF_MENU.md (CRSF menu implementation)"
 echo "  - libraries/AP_Scripting/CODEX_VEHICLE_CONTROL.md (vehicle control APIs)"
-echo "  - libraries/AP_NavEKF3/AGENTS.md (EKF3 navigation filter reference)"
-echo "  - libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md (ChibiOS board porting)"
-echo "  - ArduPlane/AGENTS.md (Plane log analysis, flight modes, QuadPlane)"
-echo "  - Tools/autotest/AGENTS.md (autotest authoring conventions, Lua applet patterns)"
+echo "  - libraries/AP_NavEKF3/AGENTS.override.md (EKF3 navigation filter reference)"
+echo "  - libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md (ChibiOS board porting)"
+echo "  - ArduPlane/AGENTS.override.md (Plane log analysis, flight modes, QuadPlane)"
+echo "  - Tools/autotest/AGENTS.override.md (autotest authoring conventions, Lua applet patterns)"
 echo ""
 echo "  Skills (slash commands):"
 echo "  - /boards         - List and search available board targets"

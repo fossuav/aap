@@ -1,4 +1,4 @@
-# AGENTS.md
+# AGENTS.override.md
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
@@ -172,7 +172,7 @@ The `libraries/AP_HAL/` defines the hardware abstraction interface. All hardware
 - `AP_Logger/` - DataFlash logging
 
 **Scripting & External Integration:**
-- `AP_Scripting/` - Lua scripting engine (see `libraries/AP_Scripting/AGENTS.md`)
+- `AP_Scripting/` - Lua scripting engine (see `libraries/AP_Scripting/AGENTS.override.md`)
 - `AP_DDS/` - ROS2/DDS integration for external control and telemetry
 - `AP_ExternalControl/` - Interface for external control sources (DDS, Lua)
 
@@ -443,7 +443,7 @@ Use `/check` for unit tests, `/autotest` for integration tests. Unit tests use G
 ./build/sitl/tests/test_math
 ```
 
-**Autotests:** Vehicle behavior tests are Python scripts in `Tools/autotest/`. See `Tools/autotest/AGENTS.md` for authoring conventions (event waits over delays, test registration, SITL speedup, Lua applet patterns). Use `/autotest` to run them.
+**Autotests:** Vehicle behavior tests are Python scripts in `Tools/autotest/`. See `Tools/autotest/AGENTS.override.md` for authoring conventions (event waits over delays, test registration, SITL speedup, Lua applet patterns). Use `/autotest` to run them.
 
 ## Lua Scripting API Design
 

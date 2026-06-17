@@ -1,4 +1,4 @@
-# AGENTS.md
+# AGENTS.override.md
 
 This file provides guidance to Codex (openai.com/codex) when working with Lua scripts in libraries/AP_Scripting.
 

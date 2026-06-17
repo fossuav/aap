@@ -7,7 +7,7 @@ description: Write or modify ArduPilot Lua applets. Use when the user asks to cr
 
 Before writing or modifying any Lua code, read the full playbook and API reference:
 
-1. **Read the playbook:** `libraries/AP_Scripting/AGENTS.md`
+1. **Read the playbook:** `libraries/AP_Scripting/AGENTS.override.md`
 2. **Read the API docs:** `libraries/AP_Scripting/docs/docs.lua` — this is the **absolute source of truth** for all function signatures. Never invent or assume API patterns.
 
 For vehicle control tasks, also read: `libraries/AP_Scripting/CODEX_VEHICLE_CONTROL.md`

@@ -45,7 +45,7 @@ STATE_FILE = Path(".git/hwdef-check-state.json")
 REQUIRED_COMMIT_PREFIXES = ("AP_Bootloader", "bootloaders", "AP_HAL_ChibiOS")
 
 # Defines that should NOT appear in hwdef.dat because they only restate the
-# default. From AP_HAL_ChibiOS/hwdef AGENTS.md section 7.7. Each entry maps
+# default. From AP_HAL_ChibiOS/hwdef AGENTS.override.md section 7.7. Each entry maps
 # the define name to the value that matches the default (or None for "any
 # value is redundant — codebase doesn't consume the symbol").
 REDUNDANT_DEFINES = {
@@ -57,7 +57,7 @@ REDUNDANT_DEFINES = {
     "HAL_WITH_DSP":           ("TRUE", "Defaults enabled on boards >1MB flash (H7, F7); only set to disable"),
 }
 
-# 32-bit timers usable for the system tick. From hwdef AGENTS.md section 7.2.
+# 32-bit timers usable for the system tick. From hwdef AGENTS.override.md section 7.2.
 VALID_SYSTEM_TIMERS = {"2", "5", "TIM2", "TIM5"}
 
 # Default STM32_ST_USE_TIMER per MCU family when an hwdef does NOT override it.
@@ -236,7 +236,7 @@ def check_hwdef_patterns(board):
     # 16-bit system timer without ChibiOS 16-bit tick mode enabled.
     # A 16-bit timer (TIM3/TIM4/TIM12/…) is fine only when CH_CFG_ST_RESOLUTION 16
     # is also set; otherwise ChibiOS treats the counter as 32-bit and wraps badly
-    # (see hwdef AGENTS.md §7.2).
+    # (see hwdef AGENTS.override.md §7.2).
     m = re.search(r"^(?:define\s+)?STM32_ST_USE_TIMER\s+(\S+)", text, re.MULTILINE)
     if m and m.group(1) not in VALID_SYSTEM_TIMERS:
         has_16bit_res = re.search(
@@ -247,7 +247,7 @@ def check_hwdef_patterns(board):
                 f"`STM32_ST_USE_TIMER {m.group(1)}` is a 16-bit timer but "
                 f"`define CH_CFG_ST_RESOLUTION 16` is not set — either switch "
                 f"to a 32-bit timer (TIM2/TIM5) or add the resolution define "
-                f"(see hwdef AGENTS.md §7.2)"
+                f"(see hwdef AGENTS.override.md §7.2)"
             )
 
     # System timer vs PWM conflict.
@@ -263,7 +263,7 @@ def check_hwdef_patterns(board):
                     f"the {fam} ChibiOS default `STM32_ST_USE_TIMER` "
                     f"(see `stm32*_mcuconf.h`). Set `STM32_ST_USE_TIMER` "
                     f"explicitly in both `hwdef.dat` and `hwdef-bl.dat` to the "
-                    f"other 32-bit timer (see hwdef AGENTS.md §7.2)."
+                    f"other 32-bit timer (see hwdef AGENTS.override.md §7.2)."
                 )
             else:
                 issues.append(
@@ -330,7 +330,7 @@ def check_hwdef_patterns(board):
     for label in sorted(set(bad_labels)):
         issues.append(
             f"Pin label `{label}` uses peripheral-style prefix — rename to "
-            f"`IMUx_CS`/`BARO_CS`/etc (hwdef AGENTS.md §7.3 SPI)"
+            f"`IMUx_CS`/`BARO_CS`/etc (hwdef AGENTS.override.md §7.3 SPI)"
         )
 
     return issues

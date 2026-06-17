@@ -8,7 +8,7 @@ description: Write ArduPilot CRSF (Crossfire) menu scripts using crsf_helper.lua
 Before writing any CRSF menu code, read the full playbooks:
 
 1. **Read the CRSF playbook:** `libraries/AP_Scripting/CODEX_CRSF_MENU.md` — complete reference for menu definition syntax, item types, command lifecycle, and the crsf_helper.lua library
-2. **Read the general playbook:** `libraries/AP_Scripting/AGENTS.md` — applet structure, parameter system, code constraints
+2. **Read the general playbook:** `libraries/AP_Scripting/AGENTS.override.md` — applet structure, parameter system, code constraints
 3. **Read the API docs:** `libraries/AP_Scripting/docs/docs.lua` — verify all function signatures
 
 ## Task: $ARGUMENTS

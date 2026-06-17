@@ -1,4 +1,4 @@
-# AP_NavEKF3 - AGENTS.md
+# AP_NavEKF3 - AGENTS.override.md
 
 Reference guide for working with the EKF3 navigation filter in ArduPilot.
 

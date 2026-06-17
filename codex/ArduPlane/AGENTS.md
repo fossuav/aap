@@ -1,4 +1,4 @@
-# ArduPlane — AGENTS.md
+# ArduPlane - AGENTS.override.md
 
 Reference guide for ArduPlane development and flight log analysis.
 

@@ -1,6 +1,6 @@
 # CODEX_VEHICLE_CONTROL.md
 
-This file provides guidance for Lua scripts involving vehicle control. For general script structure and patterns, see AGENTS.md.
+This file provides guidance for Lua scripts involving vehicle control. For general script structure and patterns, see AGENTS.override.md.
 
 ## Reading Vehicle State & Telemetry
 

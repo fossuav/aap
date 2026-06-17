@@ -3,7 +3,7 @@
 # Uninstall ArduPilot AI Playbooks for Codex
 #
 # Run this script from the root of an ArduPilot repository to remove
-# AGENTS.md files installed by install-codex.sh
+# AGENTS.override.md files installed by install-codex.sh
 #
 # Usage: curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-codex.sh | bash
 #
@@ -22,14 +22,14 @@ fi
 
 echo "Removing Codex playbooks from ArduPilot repository..."
 
-# Remove root AGENTS.md
-if [[ -f "AGENTS.md" ]]; then
-    rm AGENTS.md
-    echo "  Removed: AGENTS.md"
+# Remove root AGENTS.override.md
+if [[ -f "AGENTS.override.md" ]]; then
+    rm AGENTS.override.md
+    echo "  Removed: AGENTS.override.md"
 fi
 
 # Remove AP_Scripting playbooks
-for file in AGENTS.md CODEX_CRSF_MENU.md CODEX_VEHICLE_CONTROL.md; do
+for file in AGENTS.override.md CODEX_CRSF_MENU.md CODEX_VEHICLE_CONTROL.md; do
     dst="libraries/AP_Scripting/$file"
     if [[ -f "$dst" ]]; then
         rm "$dst"
@@ -38,38 +38,38 @@ for file in AGENTS.md CODEX_CRSF_MENU.md CODEX_VEHICLE_CONTROL.md; do
 done
 
 # Remove AP_NavEKF3 playbook
-if [[ -f "libraries/AP_NavEKF3/AGENTS.md" ]]; then
-    rm "libraries/AP_NavEKF3/AGENTS.md"
-    echo "  Removed: libraries/AP_NavEKF3/AGENTS.md"
+if [[ -f "libraries/AP_NavEKF3/AGENTS.override.md" ]]; then
+    rm "libraries/AP_NavEKF3/AGENTS.override.md"
+    echo "  Removed: libraries/AP_NavEKF3/AGENTS.override.md"
 fi
 
 # Remove AP_HAL_ChibiOS hwdef playbook
-if [[ -f "libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md" ]]; then
-    rm "libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md"
-    echo "  Removed: libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md"
+if [[ -f "libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md" ]]; then
+    rm "libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md"
+    echo "  Removed: libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md"
 fi
 
 # Remove ArduPlane playbook
-if [[ -f "ArduPlane/AGENTS.md" ]]; then
-    rm "ArduPlane/AGENTS.md"
-    echo "  Removed: ArduPlane/AGENTS.md"
+if [[ -f "ArduPlane/AGENTS.override.md" ]]; then
+    rm "ArduPlane/AGENTS.override.md"
+    echo "  Removed: ArduPlane/AGENTS.override.md"
 fi
 
 # Remove Tools/autotest playbook
-if [[ -f "Tools/autotest/AGENTS.md" ]]; then
-    rm "Tools/autotest/AGENTS.md"
-    echo "  Removed: Tools/autotest/AGENTS.md"
+if [[ -f "Tools/autotest/AGENTS.override.md" ]]; then
+    rm "Tools/autotest/AGENTS.override.md"
+    echo "  Removed: Tools/autotest/AGENTS.override.md"
 fi
 
 # Clean up backup files
-for bak in AGENTS.md.bak \
-           libraries/AP_Scripting/AGENTS.md.bak \
+for bak in AGENTS.override.md.bak \
+           libraries/AP_Scripting/AGENTS.override.md.bak \
            libraries/AP_Scripting/CODEX_CRSF_MENU.md.bak \
            libraries/AP_Scripting/CODEX_VEHICLE_CONTROL.md.bak \
-           libraries/AP_NavEKF3/AGENTS.md.bak \
-           libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md.bak \
-           ArduPlane/AGENTS.md.bak \
-           Tools/autotest/AGENTS.md.bak; do
+           libraries/AP_NavEKF3/AGENTS.override.md.bak \
+           libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md.bak \
+           ArduPlane/AGENTS.override.md.bak \
+           Tools/autotest/AGENTS.override.md.bak; do
     if [[ -f "$bak" ]]; then
         rm "$bak"
         echo "  Removed: $bak"

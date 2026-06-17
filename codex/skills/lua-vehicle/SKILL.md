@@ -8,7 +8,7 @@ description: Write ArduPilot Lua scripts involving vehicle control, movement com
 Before writing vehicle control code, read the full playbooks:
 
 1. **Read the vehicle control playbook:** `libraries/AP_Scripting/CODEX_VEHICLE_CONTROL.md` — complete reference for movement commands, controller behavior, state/telemetry, RC input
-2. **Read the general playbook:** `libraries/AP_Scripting/AGENTS.md` — applet structure, parameter system, code constraints
+2. **Read the general playbook:** `libraries/AP_Scripting/AGENTS.override.md` — applet structure, parameter system, code constraints
 3. **Read the API docs:** `libraries/AP_Scripting/docs/docs.lua` — verify all function signatures
 
 ## Task: $ARGUMENTS

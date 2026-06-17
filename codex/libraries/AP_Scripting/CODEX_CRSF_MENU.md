@@ -1,6 +1,6 @@
 # CODEX_CRSF_MENU.md
 
-This file provides guidance for Lua scripts implementing CRSF (Crossfire) menus. For general script structure, see AGENTS.md.
+This file provides guidance for Lua scripts implementing CRSF (Crossfire) menus. For general script structure, see AGENTS.override.md.
 
 ## Architecture Overview
 

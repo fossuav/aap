@@ -113,7 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/fossuav/aap/main/uninstall-claude.s
 
 ## **Codex Integration**
 
-Codex uses `AGENTS.md` files for repository guidance and can load skills from `.codex/skills`.
+Codex uses `AGENTS.override.md` files for repository guidance and can load skills from `.codex/skills`. The override filename is deliberate: it takes precedence over any existing ArduPilot `AGENTS.md`.
 
 ### Quick Start
 
@@ -125,7 +125,7 @@ Codex uses `AGENTS.md` files for repository guidance and can load skills from `.
 
 2. Start Codex from the repository root.
 
-Codex will read the `AGENTS.md` files and use the installed skills as workflow guides for common ArduPilot tasks.
+Codex will read the `AGENTS.override.md` files and use the installed skills as workflow guides for common ArduPilot tasks.
 
 ### Installed Files
 
@@ -133,14 +133,14 @@ The install script places the following files:
 
 | File | Purpose |
 |------|---------|
-| `AGENTS.md` | Build system, architecture overview, C++ development guidelines |
-| `libraries/AP_Scripting/AGENTS.md` | Lua scripting patterns, applet structure, parameter system |
+| `AGENTS.override.md` | Build system, architecture overview, C++ development guidelines |
+| `libraries/AP_Scripting/AGENTS.override.md` | Lua scripting patterns, applet structure, parameter system |
 | `libraries/AP_Scripting/CODEX_CRSF_MENU.md` | CRSF (Crossfire) menu implementation |
 | `libraries/AP_Scripting/CODEX_VEHICLE_CONTROL.md` | Vehicle control APIs, movement commands, RC input |
-| `libraries/AP_NavEKF3/AGENTS.md` | EKF3 navigation filter reference and analysis methodology |
-| `libraries/AP_HAL_ChibiOS/hwdef/AGENTS.md` | ChibiOS board porting and hwdef.dat creation |
-| `ArduPlane/AGENTS.md` | Plane flight modes, log analysis, QuadPlane operations |
-| `Tools/autotest/AGENTS.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
+| `libraries/AP_NavEKF3/AGENTS.override.md` | EKF3 navigation filter reference and analysis methodology |
+| `libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md` | ChibiOS board porting and hwdef.dat creation |
+| `ArduPlane/AGENTS.override.md` | Plane flight modes, log analysis, QuadPlane operations |
+| `Tools/autotest/AGENTS.override.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
 | `.codex/skills/*/SKILL.md` | Codex skills for the same workflows as the Claude slash commands |
 | `.codex/skills/log-analyze/log_extract.py` | Log extraction tool used by the log analysis skill |
 | `.codex/skills/autotest/autotest_results.py` | Autotest result parser used by the autotest skill |
@@ -278,8 +278,8 @@ aap/
 │       └── log-analyze/             # /log-analyze - analyze flight logs
 │           ├── SKILL.md
 │           └── log_extract.py
-├── codex/                           # Codex playbooks (AGENTS.md files)
-│   ├── AGENTS.md                    # Root playbook (build, architecture, C++)
+├── codex/                           # Codex playbook templates installed as AGENTS.override.md
+│   ├── AGENTS.md                    # Root playbook template (build, architecture, C++)
 │   ├── ArduPlane/
 │   │   └── AGENTS.md                # Plane log analysis, flight modes, QuadPlane
 │   ├── libraries/

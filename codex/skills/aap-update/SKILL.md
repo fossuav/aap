@@ -5,16 +5,16 @@ description: Check the local ArduPilot AI Playbook version against the upstream 
 
 # Update ArduPilot AI Playbooks
 
-Compares the `**Playbook version:**` line in the local `AGENTS.md` against the same line in the upstream `codex/AGENTS.md` on GitHub, and re-runs `install-codex.sh` if the upstream is newer.
+Compares the `**Playbook version:**` line in the local `AGENTS.override.md` against the same line in the upstream `codex/AGENTS.md` template on GitHub, and re-runs `install-codex.sh` if the upstream is newer.
 
 ## Workflow
 
 ### Step 1: Read the local version
 
-The root playbook lives at `./AGENTS.md` in an ArduPilot checkout.
+The root playbook lives at `./AGENTS.override.md` in an ArduPilot checkout.
 
 ```bash
-LOCAL=$(grep -m1 '^\*\*Playbook version:\*\*' ./AGENTS.md | sed 's/^\*\*Playbook version:\*\* *//')
+LOCAL=$(grep -m1 '^\*\*Playbook version:\*\*' ./AGENTS.override.md | sed 's/^\*\*Playbook version:\*\* *//')
 echo "Local: ${LOCAL:-<not found>}"
 ```
 
@@ -53,10 +53,10 @@ The installer downloads each file, diffs against the existing copy, and only wri
 
 ### Step 5: Verify
 
-After the installer finishes, re-read `./AGENTS.md` and confirm the version line now matches the upstream version.
+After the installer finishes, re-read `./AGENTS.override.md` and confirm the version line now matches the upstream version.
 
 ## Notes
 
 - This skill must be run from the root of an ArduPilot checkout (the same directory layout `install-codex.sh` requires).
-- The version line format is exactly `**Playbook version:** X.Y.Z` near the top of `codex/AGENTS.md` upstream and `AGENTS.md` locally.
+- The version line format is exactly `**Playbook version:** X.Y.Z` near the top of `codex/AGENTS.md` upstream and `AGENTS.override.md` locally.
 - The skill installs playbooks and skills only. It does not install Codex permissions or hooks.
