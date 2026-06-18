@@ -13,6 +13,7 @@
       "Bash(python3 .claude/skills/autotest/run_autotest.py:*)",
       "Bash(python3 .claude/skills/autotest/autotest_results.py:*)",
       "Bash(python3 .claude/skills/log-analyze/log_extract.py:*)",
+      "Bash(python3 .claude/skills/log-analyze/flow_cal_check.py:*)",
       "Bash(python3 .claude/skills/pr-checks/ci_failures.py:*)",
       "Bash(python3 .claude/skills/hwdef-check/hwdef_check.py:*)",
       "Bash(astyle:*)",

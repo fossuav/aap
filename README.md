@@ -51,6 +51,7 @@ The install script places the following files:
 | `.claude/settings.json` | Project permissions and hooks — auto-allows the skill scripts and a few read-only tools (not blanket `python3`/`git`/`rm`), enforces rules. Machine-specific allows go in `settings.local.json` |
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
+| `.claude/skills/log-analyze/flow_cal_check.py` | Verifies optical-flow scale/orientation against GPS truth (per-axis scaler check) used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
@@ -143,6 +144,7 @@ The install script places the following files:
 | `Tools/autotest/AGENTS.override.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
 | `.codex/skills/*/SKILL.md` | Codex skills for the same workflows as the Claude slash commands |
 | `.codex/skills/log-analyze/log_extract.py` | Log extraction tool used by the log analysis skill |
+| `.codex/skills/log-analyze/flow_cal_check.py` | Verifies optical-flow scale/orientation against GPS truth (per-axis scaler check) used by the log analysis skill |
 | `.codex/skills/autotest/autotest_results.py` | Autotest result parser used by the autotest skill |
 | `.codex/skills/autotest/run_autotest.py` | Timed autotest runner used by the autotest skill |
 | `.codex/skills/hwdef-check/hwdef_check.py` | Helper used by the hwdef review skill |

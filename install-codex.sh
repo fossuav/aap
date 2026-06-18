@@ -115,12 +115,12 @@ for file in SKILL.md autotest_results.py run_autotest.py; do
 done
 chmod +x .codex/skills/autotest/autotest_results.py .codex/skills/autotest/run_autotest.py
 
-# log-analyze skill (has additional Python tool)
+# log-analyze skill (has additional Python tools)
 mkdir -p .codex/skills/log-analyze
-for file in SKILL.md log_extract.py; do
+for file in SKILL.md log_extract.py flow_cal_check.py; do
     install_file "$SKILLS_URL/log-analyze/$file" ".codex/skills/log-analyze/$file"
 done
-chmod +x .codex/skills/log-analyze/log_extract.py
+chmod +x .codex/skills/log-analyze/log_extract.py .codex/skills/log-analyze/flow_cal_check.py
 
 # pr-checks skill (has additional Python tool)
 mkdir -p .codex/skills/pr-checks

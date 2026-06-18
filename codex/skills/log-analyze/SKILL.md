@@ -7,7 +7,29 @@ description: Analyze ArduPilot DataFlash .bin log files or MAVLink .tlog telemet
 
 You have a log extraction tool at `.codex/skills/log-analyze/log_extract.py` that handles common analysis tasks without writing one-off scripts. It supports both DataFlash `.bin` logs and MAVLink `.tlog` telemetry logs.
 
-Prefer this tool over ad-hoc `mavlogdump.py ...` or `python3 -c "..."` one-liners. It wraps the common extraction, filtering, plotting, and summary paths in one reviewed command shape. When you genuinely need a custom extraction the tool can't do, write a small `.py` script and run it as `python3 yourscript.py`; don't hide it inside a one-liner.
+There is also a focused helper at `.codex/skills/log-analyze/flow_cal_check.py` for verifying optical-flow calibration against GPS truth (see "Optical-flow calibration check" below).
+
+Prefer these tools over ad-hoc `mavlogdump.py ...` or `python3 -c "..."` one-liners. They wrap the common extraction, filtering, plotting, and summary paths in one reviewed command shape. When you genuinely need a custom extraction the tools can't do, write a small `.py` script and run it as `python3 yourscript.py`; don't hide it inside a one-liner.
+
+## Optical-flow calibration check
+
+When verifying or setting `FLOW_FXSCALER`/`FLOW_FYSCALER` (or diagnosing optical-flow Loiter that drifts/leans), use the dedicated helper instead of hand-rolling the comparison - it encodes the lessons that a naive flow-vs-velocity check gets wrong.
+
+```bash
+python3 .codex/skills/log-analyze/flow_cal_check.py <log.bin> [--speed-min 1.5] [--qual-min 50]
+```
+
+Needs a flight with **GPS** (outdoors, as truth - flow may or may not be the nav source), flow logged (`OF` or `ROFH`), `ATT`, and `RFND`. It compares the gyro-compensated flow rate to the flow rate implied by GPS velocity, per body axis, and reports for each axis:
+
+- **`flow/ideal`** - measured flow / GPS-implied flow = the scale error; it prints the suggested `FLOW_F*SCALER` value (forward motion -> `FYSCALER`, sideways -> `FXSCALER`).
+- **`corr` + `exercise(rms)`** - reliability guards. An axis that was barely moved (low rms) or whose flow doesn't track GPS (low corr) is flagged **LOW-SNR/UNRELIABLE** rather than given a garbage scaler.
+- A **cross-coupling / yaw-error** number that only runs when *both* axes were exercised. High cross-coupling means the flow frame is rotated **or the compass/yaw is wrong** - a per-axis scale cal cannot fix a rotation, so orientation/compass must be fixed first.
+
+Key interpretation rules (these are why the helper exists):
+
+- A scale calibration that "keeps the same values" usually means the flight was **one-directional** - both axes must be exercised (fly forward+back AND left+right at >2 m/s) before either scaler is trustworthy.
+- The built-in vehicle `FlowCal` reporting `no better scalar ... fit > orig` is **not** confirmation the scalers are right; it means the residual is not scale-shaped, i.e. a **rotation/orientation** error it cannot fit. Chase orientation/compass, not the scaler.
+- Comparing the *EKF velocity* (`XKF1.VN/VE`) to GPS overstates the scale error vs the raw flow because of EKF filtering; this helper's body-axis `flow/ideal` is the honest number.
 
 ## Standard Workflow
 
