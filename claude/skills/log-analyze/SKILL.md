@@ -18,19 +18,24 @@ Prefer these tools over ad-hoc `mavlogdump.py ...` or `python3 -c "..."` one-lin
 When verifying or setting `FLOW_FXSCALER`/`FLOW_FYSCALER` (or diagnosing optical-flow Loiter that drifts/leans), use the dedicated helper instead of hand-rolling the comparison - it encodes the lessons that a naive flow-vs-velocity check gets wrong.
 
 ```bash
-python3 .claude/skills/log-analyze/flow_cal_check.py <log.bin> [--speed-min 1.5] [--qual-min 50]
+python3 .claude/skills/log-analyze/flow_cal_check.py <log.bin> [--speed-min 1.0] [--qual-min 50] [--height auto|aglkf|rfnd]
 ```
 
-Needs a flight with **GPS** (outdoors, as truth - flow may or may not be the nav source), flow logged (`OF` or `ROFH`), `ATT`, and `RFND`. It compares the gyro-compensated flow rate to the flow rate implied by GPS velocity, per body axis, and reports for each axis:
+Needs a flight with **GPS** (outdoors, as truth - flow may or may not be the nav source), flow logged (`OF` or `ROFH`), `ATT`, a height source (`RFND` or the AGL-KF `XKF6`), and `IMU` for the sensor-rate check. It compares the gyro-compensated flow rate to the flow rate implied by GPS velocity, per body axis, and reports:
 
-- **`flow/ideal`** - measured flow / GPS-implied flow = the scale error; it prints the suggested `FLOW_F*SCALER` value (forward motion -> `FYSCALER`, sideways -> `FXSCALER`).
-- **`corr` + `exercise(rms)`** - reliability guards. An axis that was barely moved (low rms) or whose flow doesn't track GPS (low corr) is flagged **LOW-SNR/UNRELIABLE** rather than given a garbage scaler.
-- A **cross-coupling / yaw-error** number that only runs when *both* axes were exercised. High cross-coupling means the flow frame is rotated **or the compass/yaw is wrong** - a per-axis scale cal cannot fix a rotation, so orientation/compass must be fixed first.
+- **Sensor-rate check (run this conclusion first).** It regresses the flow node's reported body rate against the flight-controller IMU gyro during rotation. `slope ~1.0` means the sensor clocks its output at the right rate. A slope far from 1 (e.g. ~0.5) means the **whole sensor** - flow AND its own gyro - is mis-rated, typically a DroneCAN flow node (ARK Flow/HereFlow) reporting `integration_interval` wrong or a bad `IMU_INTEG_RATE`/firmware. A `FLOW_*SCALER` **cannot** fix that (it scales `flowRate`, not `bodyRate`), so when the slope is off the helper suppresses the scaler suggestion and tells you to fix the sensor.
+- **`flow/ideal`** per axis - measured flow / GPS-implied flow = the scale error; prints the suggested `FLOW_F*SCALER` (forward motion -> `FYSCALER`, sideways -> `FXSCALER`), **only when the sensor-rate check passed**.
+- **`corr`** and the **motion split** - each axis is fit only on samples where its own body-frame motion dominates, so a flight that does forward/back and strafe in separate segments calibrates both. An axis with too few samples is reported "not exercised" rather than given a garbage value.
+- **`cross-axis`** per axis - flow that leaked onto the other axis during this motion. High (>15%) on a reliable axis means the flow frame is rotated **or the compass/yaw is wrong** - a per-axis scale cal cannot fix a rotation, so fix orientation/compass first.
 
-Key interpretation rules (these are why the helper exists):
+`--height` picks the range source. `aglkf` (default when `XKF6` is present, i.e. `EK3_OPTIONS` bit 4 set) uses the AGL-KF height the EKF actually feeds the flow fusion; calibrating against the same height the EKF uses makes the EKF velocity correct by construction. `rfnd` uses raw `RFND.Dist`.
 
-- A scale calibration that "keeps the same values" usually means the flight was **one-directional** - both axes must be exercised (fly forward+back AND left+right at >2 m/s) before either scaler is trustworthy.
-- The built-in vehicle `FlowCal` reporting `no better scalar ... fit > orig` is **not** confirmation the scalers are right; it means the residual is not scale-shaped, i.e. a **rotation/orientation** error it cannot fit. Chase orientation/compass, not the scaler.
+Key interpretation rules (these are why the helper exists - each was a real misdiagnosis):
+
+- **The onboard `FlowCal` is structurally blind to a whole-sensor rate error.** It fits flow against the sensor's *own* gyro (`bodyRate`) and only samples during rotation; if both flow and gyro are scaled by the same factor it sees perfect consistency and reports `no better scalar`. `flowX ~ bodyX` "looking good" is the same trap - it's internal consistency, not absolute scale. Only an external reference (the FC IMU, or GPS over a known height) exposes it. This is exactly what the sensor-rate check is for.
+- A `FlowCal` `no better scalar` can ALSO mean the residual is not scale-shaped, i.e. a **rotation/orientation** error it cannot fit. Chase orientation, not the scaler, when cross-axis is high.
+- **`flow/ideal != 1` is ambiguous between flow scale and height.** `ratio ~= height_used / true_height` when the flow is actually correct, so a half-reading rangefinder and a half-scale flow look identical. Validate the height independently: regress `dRFND/dt` against GPS-Doppler climb rate (`-VZ`) - terrain- and flow-independent; slope ~1 means RFND is right. Baro climb is often inflated near ground (prop wash), so do not trust baro/EKF altitude as the height reference.
+- A scale calibration that "keeps the same values" can mean the flight was **one-directional in the body frame** - yawing the nose to face the direction of travel puts ground left/right onto the forward axis. Strafe (hold heading, translate sideways at >1.5 m/s) to exercise the X axis.
 - Comparing the *EKF velocity* (`XKF1.VN/VE`) to GPS overstates the scale error vs the raw flow because of EKF filtering; this helper's body-axis `flow/ideal` is the honest number.
 
 ## Standard Workflow
