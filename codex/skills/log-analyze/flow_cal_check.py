@@ -196,9 +196,11 @@ def main():
                 print("  %s: sensor/IMU slope=%+.2f corr=%+.2f n=%d" % (a, sl, co, nn))
         if not sensor_rate_ok:
             print("  *** slope != 1.0: the flow node is reporting at the WRONG RATE ***")
-            print("  *** flow AND its gyro are scaled by ~%.2fx together. A FLOW_*SCALER" % mag)
-            print("  *** cannot fix this (it scales flowRate, not bodyRate). Fix the sensor:")
-            print("  *** check integration_interval / IMU_INTEG_RATE / firmware on the flow node.")
+            print("  *** flow AND its gyro are scaled by ~%.2fx together - a FLOW_*SCALER" % mag)
+            print("  *** cannot fix this (it scales flowRate, not bodyRate).")
+            print("  *** HereFlow/DroneCAN fix: set FLOW_HF_RATEF=%.2f (= 1/slope; scales flow" % (1.0 / mag))
+            print("  ***   and gyro together, keeping the gyro compensation valid).")
+            print("  *** Root cause is sensor-side: integration_interval / IMU_INTEG_RATE / firmware.")
         else:
             print("  slope ~1.0: sensor output rate looks correct.")
         print("")
