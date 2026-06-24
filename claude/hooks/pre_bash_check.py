@@ -54,6 +54,10 @@ def check_commit_amend(command):
 def check_rebase_or_squash(command):
     """Block git rebase and git reset used for squashing."""
     if re.search(r'\bgit\s+rebase\b', command):
+        # Allow driving an already-in-progress rebase (resolving conflicts);
+        # only a fresh/interactive rebase carries the squash-loses-work risk.
+        if re.search(r'\bgit\s+rebase\s+--(continue|skip|abort|quit|edit-todo)\b', command):
+            return None
         return (
             "BLOCKED: git rebase requires explicit user permission.\n"
             "Prefer incremental new commits — squashing can lose work.\n"
