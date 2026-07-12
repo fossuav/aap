@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.3.10
+**Playbook version:** 1.4.0
 
 ## Available Skills
 
@@ -433,6 +433,23 @@ These rules apply to **commit message bodies, PR descriptions, and PR comments**
 - **Authorship attribution:**
   - **Commit messages and PR descriptions:** must read as authored by the human contributor. Do **not** include `Co-Authored-By: Claude`, "Generated with Claude Code", robot emoji markers, or any other Claude attribution.
   - **PR comments:** *may* be attributed to Claude (e.g. when responding to review feedback or posting status updates from Claude). The same pithy/on-topic/address-objections rules still apply.
+
+## Diagnosing from Logs and Data
+
+A mechanism inferred from one log is a **hypothesis, not a diagnosis**. Say so, and go and test it, before it reaches a fix, a commit message, or the user.
+
+**Measure the fix, do not just reason about it.** Any change to a control law, a gain, a schedule, or a physics model gets an A/B in SITL, with a number that would go the wrong way if the change were wrong. Reasoning that sounds airtight is exactly how a wrong change gets committed - the point of the A/B is that it can contradict you. If a change cannot be measured, that is a reason to be more suspicious of it, not less.
+
+**Interrogate the measurement before the mechanism.** A real number can still be the wrong number. Before building a theory on it, ask what would make it lie:
+- **Angles fold.** Euler roll/pitch/yaw wrap at gimbal limits (pitch at +/-90 deg), so any angle difference is meaningless through an aerobatic or near-vertical attitude. Work from the rotation matrix or quaternion, or from a fold-free quantity - a dot product between two vectors has no such problem.
+- **Dead parameter names read as "absent", not as an error.** `param:get`/`AP_Param::get` on a renamed parameter returns nil/false, which surrounding code often treats as "no limit" or "default". Verify the name exists in the source (4.7 renamed `WPNAV_*` to `WP_*` and moved it to SI units).
+- **Saturated sensors.** Accelerometers clip (`VIBE.Clip`). Past that point the EKF's velocity and attitude are contaminated, and no estimator or lane change can recover information the sensor never captured.
+- **Degenerate fits.** A two-point slope measured across a small lever is noise divided by a small number. Check the leverage before believing the slope.
+- **Simulator-only artifacts.** Cross-check any conclusion that rests on one model against another model, or against the real vehicle. A high-fidelity sim is still a model, and its drag/inertia will differ.
+
+**A comment that warns against your change is evidence.** If the code you are about to modify explicitly documents the failure your change would re-create, that is a record of someone already hitting it. Reproduce the failure or A/B the change before deleting the comment. Do not assume it is stale.
+
+**Correct the record loudly.** When a claim that reached a commit message, a code comment, or the user turns out to be wrong, say so plainly and revert it. An invented mechanism is worse than no mechanism, because it gets built on.
 
 ## Testing
 

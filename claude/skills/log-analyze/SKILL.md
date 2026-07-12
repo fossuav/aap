@@ -678,3 +678,49 @@ python3 .claude/skills/log-analyze/log_extract.py extract <tlog> --types ATTITUD
 python3 .claude/skills/log-analyze/log_extract.py plot <tlog> \
     --sources "VFR_HUD.alt,VFR_HUD.climb" --output /tmp/alt.png --system 5
 ```
+
+## Traps: when the log lies to you
+
+Each of these has produced a confidently wrong root cause. Check them before building
+a theory on a number.
+
+**Accelerometer clipping poisons EKF velocity.** `VIBE.Clip0/1/2` are cumulative clip
+counters. Once they climb, the EKF's velocity and attitude in that window are
+contaminated, and `XKF2.AZ` (Z accel bias) will walk. Most IMUs clip at 15.5 g
+(`AP_InertialSensor_Backend.h`); some at 29.5 g. A sustained 7 g pull plus vibration
+punches through the lower limit easily. There is no software recovery: DCM eats the
+same accelerometers, and adding an EKF lane does not help when both IMUs clip together
+(check them separately - `VIBE` has an `IMU` field).
+
+```bash
+# clipping and vibration per IMU, before trusting EKF velocity in a high-g window
+python3 .claude/skills/log-analyze/log_extract.py extract <log> --types VIBE \
+    --fields IMU,VibeX,VibeY,VibeZ,Clip
+```
+
+**Euler angles fold.** `ATT.Pitch` wraps at +/-90 deg (roll flips 180 instead), so
+through a loop, a vertical, or any inverted attitude, an "angle difference" built from
+Euler pitch is nonsense. It will produce plausible-looking numbers. Build the rotation
+matrix from roll/pitch/yaw (or use `SIM`'s quaternion) and work with vectors:
+
+```
+thrust axis (body -z) . velocity_unit   ->  is thrust perpendicular to the path?
+```
+
+**`XKF1.VN/VE/VD` are unreliable in RealFlight/flightaxis logs** - they have read
+10.7 m/s where GPS, the EKF's own position derivative, and the live in-flight estimate
+all said 20. Position and altitude are fine. Use `GPS.Spd`, `CTUN.Alt`, or `SIM` truth.
+The live estimate the flight code sees is correct; it is the logged field that is wrong,
+so do not conclude the autopilot is flying on a bad number.
+
+**Differentiating logged position aliases.** `XKF1` can log duplicate records, so a
+short-baseline finite difference alternates between 0 and a huge value. Use a >= 0.5 s
+baseline, or `SIM` (25 Hz truth) where available.
+
+**`SIM` is ground truth in a sim log** - attitude (incl. quaternion `Q1..Q4`), position
+and altitude, independent of the EKF. Prefer it over any estimator output when the
+question is "what did the vehicle actually do".
+
+**Statustext timestamps lag the event** they describe, by up to ~0.7 s in a busy log.
+Do not align a control-law analysis to a `MSG` timestamp; find the event in the data
+(e.g. the throttle step at the start of a pull).
