@@ -63,6 +63,32 @@ Movement commands only work in modes accepting external guidance (Guided, Auto w
 | `vehicle:set_target_posvel_NED(...)` | Target position + velocity (arrive with specific speed) |
 | `vehicle:set_target_posvelaccel_NED(...)` | Target position + velocity + acceleration (full trajectory control) |
 
+### Branch-Dependent Bindings (check the checkout before use)
+
+Some scripting-control bindings exist only on certain branches (e.g. the SFD
+`auto-acro-4.7` branch), not in mainline. **Check availability before writing code
+against them** -- `docs/docs.lua` in the checkout is the source of truth:
+
+```bash
+grep -n "use_angle_boost\|set_target_rate_and_climbrate" libraries/AP_Scripting/docs/docs.lua
+```
+
+**If present:**
+
+| Binding | Use |
+|---------|-----|
+| `use_angle_boost` (optional trailing arg on `set_target_rate_and_throttle` and `set_target_angle_and_rate_and_throttle`) | `false` delivers the commanded throttle unscaled at ANY attitude, including inverted. This is the designed API for aerobatic arcs and for holding a deliberately tilted attitude with exact thrust. |
+| `vehicle:set_target_rate_and_climbrate(...)` | Body rates with a CLOSED-LOOP vertical. For upright, slow phases (a flat spin, a hold) where the position controller's Z axis is trustworthy -- no thrust model needed. |
+
+**If absent (mainline):** guided applies angle boost unconditionally. Commanded
+thrust is divided by cos of the target tilt (to hold altitude while leaning) and
+zeroed entirely past 90 degrees of tilt -- so no scripted command produces thrust
+while inverted, every inverted phase is ballistic, and a tilted hold receives more
+thrust than it asked for. Do not fight this with a cos(tilt) pre-multiply: it
+cancels with the CURRENT tilt where boost divides by the TARGET's, so it is only
+exact once the body has caught up with the command. Design the maneuver around the
+constraint instead (ballistic inverted phases, level thrust phases).
+
 ### Yaw Control
 
 | Type | Description |
@@ -102,7 +128,15 @@ Movement commands only work in modes accepting external guidance (Guided, Auto w
 - Goal: Maintain rotational rate/attitude with given throttle
 - **Continuous command** - must call repeatedly
 - Overrides all other controllers
-- If commands stop: stops rotating, holds last attitude
+- If commands stop: holds the last attitude target until `GUID_TIMEOUT` (default 3 s),
+  then the firmware levels the attitude, zeros rates, and swaps a thrust command for
+  closed-loop zero climb rate. Until the timeout the stale target is flown as-is --
+  a frozen attitude may be inverted, and with boost active its thrust is then zero
+  (free fall), so the timeout window is uncontrolled.
+- **Safety corollary:** a one-shot command that may be the LAST command a script ever
+  sends (an abort path, an error handler) should be `set_target_angle_and_climbrate`
+  level-and-hold -- that target actively rights the vehicle and survives the timeout
+  as itself. A rate+throttle one-shot freezes whatever attitude the abort caught.
 
 ## Controller Transitions
 
