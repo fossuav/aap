@@ -68,7 +68,7 @@ If the user's `origin` doesn't point at the PR's target repo (typical when `orig
 - detects the new board(s) added in the PR
 - checks required files (hwdef.dat, hwdef-bl.dat, README.md, bootloader bin+hex)
 - checks `APJ_BOARD_ID` registration + uniqueness in `Tools/AP_Bootloader/board_types.txt`
-- runs static hwdef.dat checks (32-bit system timer, default-vs-PWM conflict, bootloader timer match, redundant defines, SERIAL_ORDER natural order, CS/DRDY pin labels)
+- runs static hwdef.dat checks (32-bit system timer, default-vs-PWM conflict, bootloader timer match, redundant defines, SERIAL_ORDER natural order, CS/DRDY pin labels, hi-res IMU sampling)
 - runs `./waf configure --board <Board>` (slow — ~30-60s; submodules are already in place from the parent checkout)
 - parses `build/<Board>/hwdef.h` for `NO DMA` and `SHARED` annotations
 - checks commit structure (expects separate `AP_Bootloader:`, `bootloaders:`, `AP_HAL_ChibiOS:` commits)
@@ -95,7 +95,14 @@ Apply, at minimum:
 - **defaults.parm scope** (§7.6): only hardware-output assignments, no user preferences (no `MOT_PWM_TYPE`, `FRAME_CLASS`, `RC_OPTIONS`, etc.).
 - **BIDIR rules** (§3.5): no `BIDIR` on `TIM4_CH4`; BIDIR pairs handled correctly.
 
-The helper covers the system-timer rules (§7.2) including the F4/F7-default-TIM2 vs H7-default-TIM5 distinction, so don't second-guess it on that axis.
+**I2C pull-ups — only checkable with a schematic.** The parser gives I2C pins `OPENDRAIN` with **no internal pull** (`FLOATING`) unless the pin line says `PULLUP`, so a bus with no external pull-ups does not work. The `.dat` alone cannot tell you which case you are in — bare pins are correct for a board with external resistors and broken for a board without. So:
+
+- If a schematic is available (the user supplied one, or the PR links one), find the pull-ups. Expect ~2.2k-4.7k to 3.3V on **each** SDA/SCL pair, including internal buses. Confirm every bus in `I2C_ORDER` is covered — a board can populate them on some buses and miss others.
+- If external pull-ups exist, the pins must stay bare. Adding `PULLUP` there is wrong: it parallels the STM32's ~40k internal, shifting the effective value ~10% and implying a dependency the board does not have.
+- If a bus has none, `PULLUP` on both its SDA and SCL lines is the fix, but say plainly that internal pull-ups are ~40k — far too weak for reliable 400kHz — so it is a fallback, not a substitute for fitting resistors.
+- With no schematic, do not guess or infer from the absence of `PULLUP`. Ask the author to confirm which buses have external pull-ups, and note that ~30 boards in-tree set `PULLUP` precisely because they lack them.
+
+The helper covers the system-timer rules (§7.2) including the F4/F7-default-TIM2 vs H7-default-TIM5 distinction, and the hi-res IMU note (§7.4), so don't second-guess it on those axes. Its hi-res finding is advisory by design — the mask indexes *runtime* IMU instances (assigned by probe order), not hwdef line numbers, so a board listing many candidate chips for different populations cannot be bit-checked statically.
 
 Don't enumerate every section of the playbook in the comment; only raise the issues you actually find.
 
