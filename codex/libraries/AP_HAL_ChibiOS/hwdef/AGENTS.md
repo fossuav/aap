@@ -464,6 +464,11 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
             *   I2C4 = bus index 2 → bit 2 = 0 (external)
             *   `define HAL_I2C_INTERNAL_MASK 1` (0b001)
         *   If both I2C1 and I2C4 are internal: `define HAL_I2C_INTERNAL_MASK 5` (0b101)
+    *   **Pull-ups — check the schematic, do not assume.** I2C pins are generated as `OPENDRAIN` with **no internal pull** (`FLOATING`) unless the pin line carries `PULLUP`. An I2C bus with no pull-ups anywhere does not work at all.
+        *   Almost all boards fit external pull-ups (typically 2.2k-4.7k to 3.3V) on every SDA/SCL pair. When they do, leave the pin lines bare: `PB6 I2C1_SCL I2C1`. Adding `PULLUP` there parallels the STM32's ~40k internal with the external resistor, shifting the effective value by ~10% and falsely implying the board depends on the internal pull.
+        *   Only when a bus genuinely has no external resistors, add `PULLUP` to **both** its lines: `PB6 I2C1_SCL I2C1 PULLUP` / `PB7 I2C1_SDA I2C1 PULLUP`. Around 30 in-tree boards do this. Treat it as a fallback, not a fix: ~40k is far too weak for reliable 400kHz operation, so tell the vendor to fit resistors.
+        *   Check **every** bus in `I2C_ORDER`, internal ones included — a board can populate pull-ups on its external connectors and omit them on an internal sensor bus.
+        *   Without a schematic you cannot tell the two cases apart, because both look like a bare pin line. Ask rather than guess.
 *   **ADC:**
     *   Use `ADC1` for battery.
     *   Standard scaling: `SCALE(1)`.
@@ -487,6 +492,11 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **IMU:**
     *   `IMU <Driver> SPI:<name> <Rotation>`
     *   Example: `IMU Invensensev3 SPI:imu1 ROTATION_YAW_270`.
+    *   **High-resolution sampling (`HAL_INS_HIGHRES_SAMPLE`):** several Invensensev3 parts can return extra FIFO resolution, and a board with one should normally enable it. Capable chips (see the switch in `AP_InertialSensor_Invensensev3.cpp`): **ICM42688, IIM42652, IIM42653** (19-bit) and **ICM45686** (20-bit). ICM40609/ICM42605/ICM40605 have no hi-res FIFO; ICM42670 has one but the driver marks it "not working" and skips it.
+        *   **SPI only.** The driver sets `highres_sampling` only when the device is on SPI; an I2C-attached IMU silently ignores the bit.
+        *   The value is a **bitmask over runtime IMU instances**, and instances are assigned in order of *successful probe* — not by hwdef line number. Boards that list several candidate chips for different populations (Pixhawk6X lists 13 `IMU` lines against a 3-instance cap) still only ever fill instances 0..2, so the mask tracks slots, not lines. In practice set the same bits as `HAL_DEFAULT_INS_FAST_SAMPLE`: `define HAL_INS_HIGHRES_SAMPLE 3` for two IMUs, `7` for three.
+        *   It is independent of fast sampling despite conventionally matching it.
+        *   **Trade-off:** hi-res pins the accel to 16G and the gyro to 2000dps, and enlarges the FIFO sample (more SPI bandwidth and DMA-safe buffer). Declining it is legitimate — just do so deliberately.
 
 ### 7.5. OSD & Flash
 *   **OSD:** `define OSD_ENABLED 1`, `ROMFS_WILDCARD libraries/AP_OSD/fonts/font*.bin`.

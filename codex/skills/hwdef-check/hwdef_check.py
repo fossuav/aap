@@ -60,6 +60,18 @@ REDUNDANT_DEFINES = {
 # 32-bit timers usable for the system tick. From hwdef AGENTS.override.md section 7.2.
 VALID_SYSTEM_TIMERS = {"2", "5", "TIM2", "TIM5"}
 
+# Invensensev3 IMUs whose FIFO supports high-resolution samples, and the bit
+# depth the driver gets from them. Keep in sync with the switch in
+# AP_InertialSensor_Invensensev3.cpp (search HAL_INS_HIGHRES_SAMPLE). Chips
+# absent from this map (ICM40609, ICM42605, ICM40605) have no hi-res FIFO;
+# ICM42670 has one but the driver marks it "not working" and skips it.
+HIGHRES_CAPABLE_IMUS = {
+    "icm42688": "19-bit",
+    "iim42652": "19-bit",
+    "iim42653": "19-bit",
+    "icm45686": "20-bit",
+}
+
 # Default STM32_ST_USE_TIMER per MCU family when an hwdef does NOT override it.
 # Sourced from libraries/AP_HAL_ChibiOS/hwdef/common/stm32*_mcuconf.h.
 # Keep in sync with that header set.
@@ -223,6 +235,74 @@ def pwm_timers(hwdef_text):
     return timers
 
 
+def parse_highres_mask(text):
+    """Return the HAL_INS_HIGHRES_SAMPLE bitmask, or None if not defined."""
+    m = re.search(
+        r"^\s*define\s+HAL_INS_HIGHRES_SAMPLE\s+(0[xX][0-9a-fA-F]+|\d+)",
+        text, re.MULTILINE,
+    )
+    if not m:
+        return None
+    return int(m.group(1), 0)
+
+
+def check_highres_sampling(text):
+    """Note hi-res-capable SPI IMUs when HAL_INS_HIGHRES_SAMPLE is off.
+
+    Deliberately advisory and coarse. The mask is indexed by *runtime* IMU
+    instance, assigned in order of successful probe -- not by hwdef line. Boards
+    that support several populations list every candidate chip (Pixhawk6X lists
+    13 IMU lines against a 3-instance cap), so a per-bit check would fire on
+    lines that can never become that instance. All we can say statically is
+    whether hi-res is plausible for the board and switched off.
+    """
+    imu_lines = re.findall(r"^\s*IMU\s+(\S+)\s+(\S+)", text, re.MULTILINE)
+    if not imu_lines:
+        return []
+
+    capable, unknown = set(), False
+    for driver, devspec in imu_lines:
+        # hi-res comes out of the FIFO over SPI only; the driver ignores the
+        # bit for an I2C-attached IMU.
+        if driver != "Invensensev3" or not devspec.startswith("SPI:"):
+            continue
+        devname = devspec.split(":", 1)[1].lower()
+        chip = next((c for c in HIGHRES_CAPABLE_IMUS if c in devname), None)
+        if chip:
+            capable.add(chip)
+        else:
+            # generic SPIDEV name (imu1, imu2, ...) -- chip is only known at
+            # runtime from WHOAMI, so we cannot rule hi-res in or out.
+            unknown = True
+
+    mask = parse_highres_mask(text)
+    if mask:
+        return []
+    state = "is 0" if mask == 0 else "is not defined"
+
+    if capable:
+        listed = ", ".join(
+            f"{c.upper()} ({HIGHRES_CAPABLE_IMUS[c]})" for c in sorted(capable)
+        )
+        return [
+            f"`HAL_INS_HIGHRES_SAMPLE` {state}, but this board has {listed} on "
+            f"SPI, which supports hi-res FIFO sampling. Boards that enable it "
+            f"conventionally set the same bits as `HAL_DEFAULT_INS_FAST_SAMPLE` "
+            f"(bits are runtime IMU instances, not hwdef line numbers). Note it "
+            f"pins the accel to 16G and the gyro to 2000dps and grows the FIFO "
+            f"sample, so declining it is legitimate -- just confirm it is "
+            f"deliberate (hwdef AGENTS.override.md §7.4)."
+        ]
+    if unknown:
+        return [
+            f"`HAL_INS_HIGHRES_SAMPLE` {state} and the IMU SPIDEV names do not "
+            f"identify the chips (the driver probes by WHOAMI). If any is an "
+            f"ICM42688, IIM42652, IIM42653 or ICM45686, hi-res FIFO sampling "
+            f"is available and is usually enabled (hwdef AGENTS.override.md §7.4)."
+        ]
+    return []
+
+
 def check_hwdef_patterns(board):
     """Static checks against hwdef.dat for things the playbook flags."""
     issues = []
@@ -320,6 +400,13 @@ def check_hwdef_patterns(board):
                 "number. Confirm the README's labelling matches the chosen "
                 "convention (§7.3)."
             )
+
+    # High-resolution IMU sampling (hwdef AGENTS.override.md §7.4).
+    # HAL_INS_HIGHRES_SAMPLE is a per-instance bitmask over the IMU lines, and
+    # the driver only honours it for a hi-res-capable chip on SPI. Flag capable
+    # SPI IMUs whose bit is clear — it is free resolution otherwise left on the
+    # table.
+    issues.extend(check_highres_sampling(text))
 
     # CS / DRDY pin labels must not start with SPIx_ or I2Cx_ — the parser
     # treats those as alternate-function lookups.
