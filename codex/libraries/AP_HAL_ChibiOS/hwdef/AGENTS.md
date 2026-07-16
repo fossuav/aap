@@ -473,7 +473,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   Use `ADC1` for battery.
     *   Standard scaling: `SCALE(1)`.
     *   Define `HAL_BATT_VOLT_PIN`, `HAL_BATT_CURR_PIN`, `HAL_BATT_VOLT_SCALE` (e.g., 11.0), `HAL_BATT_CURR_SCALE`.
-    *   **CRITICAL - Package Limitations:** ADC3 channels (e.g., PC2, PC3) are NOT available on 100-pin LQFP packages. Verify ADC pin availability against the specific MCU package datasheet before assigning battery/analog inputs. Prefer ADC1 channels which are available on all packages.
+    *   **Resolve the pin against `ADC1_map`/`ADC2_map`/`ADC3_map` in `scripts/STM32<MCU>xx.py`, not against the schematic's net label.** Those dicts are what the generator uses: a pin missing from `ADC3_map` cannot be written as `ADC3` at all, and a vendor labelling a pin `ADC3_INP0` is naming one function, not the only one. Prefer `ADC1` — it covers the most pins on every package. See §12.5 for the `PC2`/`PC3` `_C`-pad case on H7, which is routinely and wrongly written off as unusable on 100-pin parts.
 *   **PWM/Motors:**
     *   Use `BIDIR` for DShot capability.
     *   Group timers carefully (comments like `# Motors` vs `# LEDs` help).
@@ -863,10 +863,13 @@ When reviewing hardware designs or creating a `REVIEW.md` file, check these crit
 *   **Transceiver Selection:** TJA1462 or similar automotive-grade transceivers recommended.
 
 ### 12.5. Package-Specific Limitations
-*   **100-pin LQFP:** Some peripherals not available (e.g., ADC3 on STM32H743VIT6).
-*   **HAL_WITH_MCU_MONITORING:** Requires ADC3 internal channels for MCU temperature/VREF monitoring. Not available on 100-pin packages - do not enable on these boards.
+*   **Check the pin table, do not reason from pin count.** "Peripheral X is unavailable on the N-pin package" is almost always wrong as stated. A peripheral's *internal* channels never depend on the package, and an external input is only unavailable if the pin it lives on is not bonded. Establish which of the two you are talking about before writing it down.
+*   **ADC3 on 100-pin STM32H743 (LQFP100):** ADC3's *external* inputs are unavailable, because ArduPilot maps them only to port F and port H pins (`PF3`-`PF10`, `PH2`-`PH5`) and neither port is bonded on LQFP100. ADC3's *internal* channels are unaffected.
+*   **HAL_WITH_MCU_MONITORING:** uses ADC3's internal VSENSE/VREFINT/VBAT channels, which are not pins, so it works on **every** package including LQFP100. It is set by the MCU definition (`STM32H743xx.py` and the other H7 scripts, in their `DEFINES` block), not per board. Do not set it in a hwdef (redundant, §7.7), and do not disable it or recommend a bigger package on the mistaken grounds that "ADC3 is not available".
+*   **`PA0`/`PA1`/`PC2`/`PC3` on STM32H7 — the `_C` pads:** on every LQFP H7 package the bonded pad is the `_C` variant (`PC2_C` is pin 17 on LQFP100); the plain pad exists only on the largest BGA. Datasheet Note 6 states there is a direct path between `Pxy_C` and `Pxy` through an analog switch, and that **`Pxy` alternate functions are available on `Pxy_C` when the switch is closed**. Closed is the reset state and ArduPilot never writes `SYSCFG_PMCR`, so `PC2`/`PC3` work as `ADC1_INP12`/`ADC1_INP13` normally. Do **not** claim these pins are unusable on a 100-pin part; CUAV-7-Nano ships reading `PC2 BATT_VOLTAGE_SENS ADC1`. Note the `_C` pads are rated 1mA max, which is irrelevant for a divider into an ADC but rules out driving loads.
+*   **Trust `STM32<MCU>xx.py` over the vendor schematic's net labels.** A schematic labelling `PC2` as `ADC3_INP0` is describing one of its functions, not the only one. The `ADC1_map`/`ADC2_map`/`ADC3_map` dicts in the MCU script are what the generator actually resolves, and a pin absent from `ADC3_map` cannot be written as `ADC3` in a hwdef at all.
 *   **Pin Alternates:** Verify alternate functions are available on the specific package.
-*   **Reference:** MCU datasheet "Pinouts and pin descriptions" chapter.
+*   **Reference:** MCU datasheet "Pinouts and pin descriptions" chapter, and its footnotes - cite the note number you actually read.
 
 ### 12.6. REVIEW.md Best Practices
 *   **Verify all external links:** Before finalizing a REVIEW.md, verify that all datasheet URLs are accessible. Manufacturer websites frequently reorganize and break links.
