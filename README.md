@@ -52,6 +52,8 @@ The install script places the following files:
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 | `.claude/skills/log-analyze/flow_cal_check.py` | Verifies optical-flow scale/orientation against GPS truth (per-axis scaler check) used by `/log-analyze` |
+| `.claude/skills/log-analyze/log_health.py` | Memory, stacks, internal errors, log-buffer and end-of-log sweep -- did the autopilot die or the vehicle? used by `/log-analyze` |
+| `.claude/skills/log-analyze/thrust_check.py` | Measured throttle-to-thrust map against the vehicle's own calibration, mixer-clip filtered, used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |

@@ -38,6 +38,59 @@ Key interpretation rules (these are why the helper exists - each was a real misd
 - A scale calibration that "keeps the same values" can mean the flight was **one-directional in the body frame** - yawing the nose to face the direction of travel puts ground left/right onto the forward axis. Strafe (hold heading, translate sideways at >1.5 m/s) to exercise the X axis.
 - Comparing the *EKF velocity* (`XKF1.VN/VE`) to GPS overstates the scale error vs the raw flow because of EKF filtering; this helper's body-axis `flow/ideal` is the honest number.
 
+## Did the autopilot die, or did the vehicle? (`log_health.py`)
+
+When a log **stops mid-flight**, the first question is whether the flight controller failed
+(out of memory, deadlock, watchdog, hard fault) or whether it simply lost power with the
+vehicle still airborne. Do not infer this from the shape of the ending -- gather the evidence:
+
+```bash
+python3 .claude/skills/log-analyze/log_health.py <log.bin> [--tail N] [--stacks-all]
+```
+
+It reports, in one pass: the **time base** (raw `TimeUS` vs the normalised times
+`log_extract.py` prints -- confusing the two makes a log look empty in the window you asked
+for); **free memory over time** (flat rules out a leak); **internal errors** (`PM.InE/ErrL/ErC`);
+**per-thread stacks** (a scripting deadlock or overflow shows here); the **dataflash buffer**
+(if it was starving, the ending is a logging failure, not a controller one -- and it bounds how
+much data the stop cost); the **last timestamp per message type**; and the final statustexts.
+
+Reading it:
+
+- Every type stopping within a few ms of the others is a **whole-system stop** -- power or
+  fault. Slow types trailing off first is a logging problem instead.
+- A clean sweep plus an abrupt stop while airborne points at **power**, but "the FC had power"
+  is only provable from the *next* boot. Check for a following log, for a zero-length
+  `crash_dump.bin` (no hard fault was captured), and for `STAT_BOOTCNT`.
+- Startup is not steady state, so the first 10 s are excluded from the trend verdicts: the
+  first `PM` carries a boot-transient `MaxT` of hundreds of ms and the first `DSF` samples are
+  taken while the buffer is still filling with format headers. Judging a flight on either
+  reports a fault that is not there.
+
+## Thrust map: is the calibration wrong, or is the vehicle not delivering? (`thrust_check.py`)
+
+```bash
+python3 .claude/skills/log-analyze/thrust_check.py <log.bin> [--spin-max-pwm 1950] [--from S --to S]
+```
+
+Specific force along body -z **is** thrust: there is no gravity in an accelerometer reading, so
+`IMU.AccZ / -g` is thrust in g at whatever `CTUN.ThO` was commanding, at any attitude. The tool
+buckets that by throttle across the whole flight and compares it to the thrust line the vehicle
+believed (parsed from a `ThrustCal` statustext when present).
+
+Two filters make it honest, and both matter:
+
+- **Reject samples with a motor at `MOT_SPIN_MAX`.** The mixer has clipped, so the commanded
+  throttle is not what was flown, and including them makes a healthy map look short.
+- **Read the per-bucket errors, not the least-squares line.** Hover has thousands of samples
+  and the high end a handful, so a naive fit is dominated by the end that matters least.
+
+The **hover row is the anchor**: a hovering vehicle makes 1.00 g by definition, so whatever the
+map predicts there is its low-end error. Distinguishing the two failure modes is the whole
+point -- a map can be accurate across the range the vehicle actually works in while the vehicle
+still under-delivers because the *pack* is failing. A slope error and a delivery shortfall look
+identical if you only measure at one throttle.
+
 ## Standard Workflow
 
 ### Step 1: Overview (ALWAYS do this first)
