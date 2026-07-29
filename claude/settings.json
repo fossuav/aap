@@ -47,7 +47,8 @@
       "Bash(tail:*)",
       "Bash(awk:*)",
       "Bash(mkdir:*)",
-      "Bash(mktemp:*)"
+      "Bash(mktemp:*)",
+      "Bash(python3 .claude/skills/prepare-for-push/grant_push.py:*)"
     ]
   },
   "hooks": {

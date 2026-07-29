@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+git pre-push hook - refuse to push unless the user has explicitly authorised it.
+
+Git runs this itself on every push, so unlike a Claude Code PreToolUse hook it
+cannot be sidestepped by wrapping "git push" in a shell script. The only in-band
+escape is "git push --no-verify", which pre_bash_check.py blocks separately.
+
+Authorisation is a short-lived token written by
+.claude/skills/prepare-for-push/grant_push.py, which the user triggers by typing
+/prepare-for-push. The token is branch- and remote-scoped and expires, so a grant
+for one push does not silently authorise later unrelated ones.
+
+The token is only required for pushes that originate inside a Claude Code
+session. A human pushing from their own terminal authorised it by typing it, so
+the hook stays out of the way; it still asks for confirmation before rewriting
+history on master/main, which a human can wave through with --no-verify.
+
+Force-pushing or deleting a protected branch (master/main) is refused
+unconditionally for Claude - no token overrides it.
+
+stdin lines are "<local ref> <local sha> <remote ref> <remote sha>".
+argv is (remote name, remote URL).
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+ZERO = "0" * 40
+PROTECTED_BRANCHES = {"master", "main"}
+TOKEN_BASENAME = "push-authorization"
+
+# Set by Claude Code in the environment of every command it runs. Used only as a
+# fallback where /proc is unavailable, since a wrapper script can strip them.
+CLAUDE_ENV_MARKERS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_PID",
+                      "CLAUDE_CODE_SESSION_ID")
+
+
+def git(*args):
+    """Run a git command, returning stripped stdout ('' on failure)."""
+    try:
+        r = subprocess.run(["git"] + list(args), capture_output=True, text=True)
+    except OSError:
+        return ""
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def token_path():
+    # --git-common-dir so linked worktrees share the main repo's token
+    d = git("rev-parse", "--git-common-dir") or ".git"
+    return os.path.abspath(os.path.join(d, TOKEN_BASENAME))
+
+
+def is_ancestor(older, newer):
+    try:
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", older, newer],
+                           capture_output=True)
+    except OSError:
+        return False
+    return r.returncode == 0
+
+
+def branch_of(ref):
+    return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+
+
+def claude_ancestor(proc="/proc", max_depth=40):
+    """True when a process named 'claude' is an ancestor of this one.
+
+    Preferred over the environment: a wrapper script can unset a variable but
+    cannot disown its own parentage, so this survives "env -u CLAUDECODE git
+    push". Returns False on anything unreadable, which hands the decision to
+    the environment fallback rather than guessing.
+    """
+    pid = os.getpid()
+    for _ in range(max_depth):
+        try:
+            with open("%s/%d/comm" % (proc, pid)) as f:
+                if f.read().strip() == "claude":
+                    return True
+            with open("%s/%d/status" % (proc, pid)) as f:
+                ppid = next(ln.split()[1] for ln in f if ln.startswith("PPid:"))
+            pid = int(ppid)
+        except (OSError, ValueError, StopIteration, IndexError):
+            return False
+        if pid <= 1:
+            return False
+    return False
+
+
+def running_under_claude():
+    """True when this push originates inside a Claude Code session."""
+    if claude_ancestor():
+        return True
+    return any(os.environ.get(v) for v in CLAUDE_ENV_MARKERS)
+
+
+HUMAN_FOOTER = [
+    "You are pushing by hand, so this guard only questions history",
+    "rewrites on master/main. If you really mean it, re-run with:",
+    "    git push --no-verify ...",
+]
+
+CLAUDE_FOOTER = [
+    "To authorise, the user (not Claude) types:",
+    "    /prepare-for-push <branch> [more branches...]",
+]
+
+
+def deny(lines, footer=None):
+    print("", file=sys.stderr)
+    print("PUSH REFUSED by .claude/githooks/pre-push", file=sys.stderr)
+    for ln in lines:
+        print("  " + ln, file=sys.stderr)
+    print("", file=sys.stderr)
+    for ln in (footer or CLAUDE_FOOTER):
+        print("  " + ln, file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def load_token():
+    """Return (token_dict, error_message). token_dict is None when unusable."""
+    path = token_path()
+    if not os.path.exists(path):
+        return None, "no push authorisation token present"
+    try:
+        with open(path) as f:
+            tok = json.load(f)
+    except (OSError, ValueError) as e:
+        return None, "push authorisation token is unreadable (%s)" % e
+    expires = tok.get("expires_at", 0)
+    try:
+        expires = float(expires)
+    except (TypeError, ValueError):
+        return None, "push authorisation token has a malformed expiry"
+    if time.time() > expires:
+        age = int(time.time() - expires)
+        return None, "push authorisation expired %ds ago" % age
+    return tok, None
+
+
+def main():
+    remote_name = sys.argv[1] if len(sys.argv) > 1 else ""
+
+    updates = []
+    for line in sys.stdin:
+        parts = line.split()
+        if len(parts) == 4:
+            updates.append(parts)
+
+    if not updates:
+        return 0
+
+    # Classify every ref first, so an unconditional refusal wins over the token.
+    classified = []
+    for local_ref, local_sha, remote_ref, remote_sha in updates:
+        branch = branch_of(remote_ref)
+        deleting = set(local_sha) == {"0"}
+        creating = set(remote_sha) == {"0"}
+        # A non-fast-forward update rewrites published history. If the old tip is
+        # not reachable from the new one - including when we simply do not have
+        # the object - treat it as a force and fail closed.
+        forced = not deleting and not creating and not is_ancestor(remote_sha, local_sha)
+        classified.append((branch, deleting, forced))
+
+    under_claude = running_under_claude()
+
+    for branch, deleting, forced in classified:
+        if branch in PROTECTED_BRANCHES and (deleting or forced):
+            what = "delete" if deleting else "force-push"
+            if not under_claude:
+                return deny([
+                    "this would %s '%s' on remote '%s'."
+                    % (what, branch, remote_name),
+                ], HUMAN_FOOTER)
+            return deny([
+                "refusing to %s protected branch '%s' on remote '%s'."
+                % (what, branch, remote_name),
+                "This is unconditional - no authorisation token overrides it.",
+            ])
+
+    # Everything below constrains Claude. A human already authorised this push
+    # by typing it, and should never have to mint a token to work in their own
+    # repository.
+    if not under_claude:
+        return 0
+
+    tok, err = load_token()
+    if tok is None:
+        return deny([
+            err + ".",
+            "Refusing to push: " + ", ".join(sorted({b for b, _, _ in classified})),
+        ])
+
+    tok_remote = tok.get("remote", "")
+    if tok_remote and remote_name and tok_remote != remote_name:
+        return deny([
+            "authorisation is for remote '%s' but this push targets '%s'."
+            % (tok_remote, remote_name),
+        ])
+
+    allowed = tok.get("branches", [])
+    allow_any = "*" in allowed
+    allow_force = bool(tok.get("allow_force", False))
+
+    for branch, deleting, forced in classified:
+        if not allow_any and branch not in allowed:
+            return deny([
+                "branch '%s' is not covered by the current authorisation." % branch,
+                "Authorised: " + (", ".join(allowed) if allowed else "(none)"),
+            ])
+        if forced and not allow_force:
+            return deny([
+                "'%s' would be a force-push (non-fast-forward)," % branch,
+                "and the current authorisation does not permit force.",
+                "Re-run /prepare-for-push with --force to allow it.",
+            ])
+        if deleting:
+            return deny([
+                "refusing to delete remote branch '%s'." % branch,
+                "Delete it from the GitHub UI if that is really intended.",
+            ])
+
+    remaining = int(tok.get("expires_at", 0) - time.time())
+    print("pre-push: authorised (%s; %ds left)"
+          % (", ".join(sorted({b for b, _, _ in classified})), remaining),
+          file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

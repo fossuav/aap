@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.4.3
+**Playbook version:** 1.5.1
 
 ## Available Skills
 
@@ -28,6 +28,7 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/log-analyze <logfile>` | Analyzing DataFlash .bin flight logs |
 | `/pr-checks [PR]` | Downloading a PR's failing CI checks and identifying the failing tests/build errors |
 | `/aap-update` | Checking the local playbook version against GitHub and updating |
+| `/prepare-for-push` | **User-invoked only.** Authorising Claude to push named branches; pushes are blocked by a git pre-push hook until this is run |
 
 ## Tooling and Permissions
 
@@ -394,6 +395,44 @@ When modifying existing files:
     - `ardupilotwaf: add library to vehicle dependent list`
 
 ## Git Safety
+
+### Pushing requires an explicit grant
+
+`.claude/githooks/pre-push` refuses every push from a Claude Code session unless
+the user has authorised it by typing `/prepare-for-push <branch>`, which mints a
+short-lived, branch- and remote-scoped token. Git runs that hook itself, so unlike
+the `PreToolUse` Bash hook it cannot be sidestepped by hiding `git push` inside a
+shell script. Force-pushing or deleting `master`/`main` is refused
+unconditionally, token or not.
+
+The hook identifies a Claude push by walking the process tree for a `claude`
+ancestor, falling back to the `CLAUDE*` environment markers where `/proc` is
+unavailable. The user's own pushes from their own terminal are not gated and never
+need a grant, so never suggest a grant to explain a push of theirs that failed.
+Clearing those markers to pass as the user is itself blocked.
+
+`pre_bash_check.py` gates `push`, `rebase`, `reset` and `amend` on the same token,
+so it refuses early with a message naming the command to ask for, and lets the
+operation through once a matching grant exists.
+
+Consequences for how you work:
+
+- **Never run `grant_push.py` on your own initiative.** It is the authorisation
+  itself. Ask the user for `/prepare-for-push` and wait; do not mint your own
+  permission. A broad `python3` permission is not licence to do so.
+- Rebasing a PR does **not** imply permission to push it. Ask separately.
+- Never use `git push --no-verify`, and never touch `core.hooksPath` or the
+  `push-authorization` token file. `pre_bash_check.py` blocks all three, including
+  when they are buried inside a script passed to an interpreter. Wrapping a
+  guarded command in a helper script does not get it past the hook.
+- The hook needs `core.hooksPath` pointed at it once per clone or sibling checkout:
+  `git config core.hooksPath .claude/githooks`. It is local git config, so a clone
+  does not carry it. Verify with `git rev-parse --git-path hooks`.
+- Check the current state any time with
+  `python3 .claude/skills/prepare-for-push/grant_push.py --status`, and hand
+  permission back early with `--revoke` once the pushes are done.
+
+### General
 
 - **NEVER run `git clean` without explicit permission** - this removes untracked files which may include important local configuration or notes
 - If git clean is absolutely necessary, first backup untracked files to a safe location
