@@ -56,8 +56,10 @@ The install script places the following files:
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
 | `.claude/skills/pr-checks/ci_failures.py` | Helper used by `/pr-checks` to download a PR's failed CI job logs and extract the failing tests/build errors |
-| `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules |
+| `.claude/skills/prepare-for-push/grant_push.py` | Mints the short-lived push authorisation the git pre-push hook requires — run for you when *you* type `/prepare-for-push`, never on Claude's initiative |
+| `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules, gates push/rebase/reset/amend on an authorisation token, and scans scripts passed to an interpreter so a guarded command cannot be hidden in a wrapper |
 | `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
+| `.claude/githooks/pre-push` | Git-level hook (via `core.hooksPath`) — refuses any push without a grant, and always refuses force-pushing or deleting `master`/`main`. Git runs it itself, so wrapping `git push` in a script does not evade it |
 
 ### Skills (Slash Commands)
 
@@ -91,16 +93,35 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/autotest <vehicle> [test]` | Run SITL integration/behavior tests |
 | `/sitl <vehicle> [options]` | Launch interactive SITL simulator |
 
+**Authorisation skill** (you invoke this — Claude cannot):
+
+| Command | Description |
+|---------|-------------|
+| `/prepare-for-push <branch> [--force] [--allow ops]` | Grant Claude a short-lived, branch-scoped permission to push. Without it every push is refused. `--status` shows the current grant, `--revoke` cancels it |
+
 ### Hooks (Rule Enforcement)
 
-Hooks automatically enforce key CLAUDE.md rules that Claude might otherwise ignore. They run as PreToolUse/PostToolUse checks configured in `.claude/settings.json`.
+Hooks automatically enforce key CLAUDE.md rules that Claude might otherwise ignore. They run as PreToolUse/PostToolUse checks configured in `.claude/settings.json`, plus one hook that git itself runs.
 
 | Hook | Event | Enforces |
 |------|-------|----------|
-| `pre_bash_check.py` | PreToolUse (Bash) | No `git clean`, no force push to main/master, no Claude co-author in commits, commit messages must have subsystem prefix |
+| `pre_bash_check.py` | PreToolUse (Bash) | No `git clean`, no Claude co-author in commits, commit messages must have subsystem prefix. Gates `push`/`rebase`/`reset`/`amend` on a `/prepare-for-push` grant, blocks `--no-verify` and `core.hooksPath` tampering, and scans scripts passed to an interpreter so a guarded command cannot hide in a wrapper |
 | `post_edit_check.py` | PostToolUse (Edit/Write) | No `printf()` in C++ flight code (use `gcs().send_text()`) |
+| `githooks/pre-push` | git `pre-push` | Refuses any push not covered by an unexpired, branch- and remote-scoped grant. Always refuses force-pushing or deleting `master`/`main` |
 
 Hooks that **block** (exit code 2) provide feedback to Claude explaining the rule violation, so it can fix the issue and retry.
+
+#### Why there is a git-level hook as well
+
+A Claude Code `PreToolUse` hook only ever sees the command string, so a guarded command hidden inside a helper script (`bash helper.sh`) slips straight past it — this happened in practice. `githooks/pre-push` is run by git itself and cannot be wrapped around, which makes it the real enforcement point for pushes; `pre_bash_check.py` now also reads the contents of scripts handed to an interpreter, closing the wrapper route for the other guarded operations.
+
+The hook only gates pushes that come from a Claude Code session, which it detects by looking for a `claude` process among its own ancestors (with the `CLAUDE*` environment variables as a fallback where `/proc` is not readable). Pushing by hand from your own terminal is unaffected and needs no token. The single exception is a force-push or delete of `master`/`main`, which the hook questions even for a human — pass `--no-verify` if you really mean it. For Claude that case is refused outright. A push started in-session with the `!` prefix counts as a Claude push, since it really is a child of the `claude` process.
+
+This is a guardrail against unrequested and accidental pushes, not a security boundary: an agent with a broad `python3` permission could still run `grant_push.py` itself. Keep `settings.json` narrow (the shipped one has no blanket `python3` grant), and if you want a grant to be unambiguously yours, run it in-session with the `!` prefix rather than letting Claude run it:
+
+```
+! python3 .claude/skills/prepare-for-push/grant_push.py my-branch --force
+```
 
 ### Uninstalling
 
