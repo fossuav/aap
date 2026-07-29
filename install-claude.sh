@@ -142,6 +142,13 @@ for file in SKILL.md ci_failures.py; do
 done
 chmod +x .claude/skills/pr-checks/ci_failures.py
 
+# prepare-for-push skill (has the authorisation minter used by the git pre-push hook)
+mkdir -p .claude/skills/prepare-for-push
+for file in SKILL.md grant_push.py; do
+    install_file "$SKILLS_URL/prepare-for-push/$file" ".claude/skills/prepare-for-push/$file"
+done
+chmod +x .claude/skills/prepare-for-push/grant_push.py
+
 # Install Claude Code hooks (rule enforcement)
 echo ""
 echo "Installing Claude Code hooks..."
@@ -153,6 +160,36 @@ for hook in pre_bash_check.py post_edit_check.py; do
     install_file "$HOOKS_URL/$hook" ".claude/hooks/$hook"
     chmod +x ".claude/hooks/$hook"
 done
+
+# Install the git-level pre-push hook. A Claude Code PreToolUse hook only sees the
+# command string, so wrapping "git push" in a script defeats it; git runs this one
+# itself, so it cannot be sidestepped that way. It refuses every push until the
+# user authorises one with /prepare-for-push.
+echo ""
+echo "Installing git pre-push hook..."
+
+mkdir -p .claude/githooks
+install_file "$REPO_URL/githooks/pre-push" ".claude/githooks/pre-push"
+chmod +x .claude/githooks/pre-push
+
+# core.hooksPath is local git config, so it is per-clone and not carried by a
+# clone or a fresh worktree - point it at the playbook's hooks directory here.
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    existing=$(git config --get core.hooksPath || true)
+    if [[ -z "$existing" ]]; then
+        git config core.hooksPath .claude/githooks
+        echo "  Set core.hooksPath = .claude/githooks"
+    elif [[ "$existing" == ".claude/githooks" ]]; then
+        echo "  core.hooksPath already set to .claude/githooks"
+    else
+        echo "  WARNING: core.hooksPath is already set to '$existing', leaving it alone."
+        echo "           The pre-push guard will NOT run until you either move"
+        echo "           .claude/githooks/pre-push into '$existing', or run:"
+        echo "               git config core.hooksPath .claude/githooks"
+    fi
+else
+    echo "  Note: not a git repository, skipping core.hooksPath setup"
+fi
 
 echo ""
 echo "Installation complete!"
@@ -187,10 +224,17 @@ echo "  - /lua-vehicle     - Lua vehicle control and movement commands"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
 echo "  - /pr-checks      - Download a PR's failing CI checks and identify failing tests"
 echo "  - /aap-update     - Check for and install playbook updates"
+echo "  - /prepare-for-push - Authorise Claude to push named branches (you invoke this)"
 echo ""
 echo "  Hooks (rule enforcement):"
-echo "  - pre_bash_check  - Blocks git clean, force push, bad commit messages"
+echo "  - pre_bash_check  - Blocks git clean, bad commit messages, and unauthorised"
+echo "                      push/rebase/reset/amend, including inside helper scripts"
 echo "  - post_edit_check - Warns about printf() in C++ code"
+echo "  - githooks/pre-push - Git-level guard: refuses any push without a grant from"
+echo "                      /prepare-for-push, and always refuses force-push to master"
+echo ""
+echo "Pushes are now blocked by default. When Claude needs to push, it will ask you"
+echo "to run:  /prepare-for-push <branch> [--force]"
 echo ""
 echo "NOTE: Each skill will ask for approval on first use. Select"
 echo "  'Yes, and don't ask again' to permanently approve it."

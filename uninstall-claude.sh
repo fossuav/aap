@@ -94,8 +94,31 @@ if [[ -d ".claude/hooks" ]] && [[ -z "$(ls -A .claude/hooks 2>/dev/null)" ]]; th
     rmdir .claude/hooks
 fi
 
+# Remove the git pre-push hook and stop git pointing at the playbook hooks dir.
+# Do this before deleting the file so a half-removed install cannot leave git
+# looking at a hooks path that no longer exists.
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    if [[ "$(git config --get core.hooksPath || true)" == ".claude/githooks" ]]; then
+        git config --unset core.hooksPath
+        echo "  Unset core.hooksPath (pushes are no longer gated)"
+    fi
+fi
+if [[ -f ".claude/githooks/pre-push" ]]; then
+    rm ".claude/githooks/pre-push"
+    echo "  Removed: .claude/githooks/pre-push"
+fi
+if [[ -d ".claude/githooks" ]] && [[ -z "$(ls -A .claude/githooks 2>/dev/null)" ]]; then
+    rmdir .claude/githooks
+fi
+# The authorisation token lives in .git and is machine-local state, not an
+# installed file, so drop it too.
+if [[ -f "$(git rev-parse --git-common-dir 2>/dev/null)/push-authorization" ]]; then
+    rm "$(git rev-parse --git-common-dir)/push-authorization"
+    echo "  Removed: stale push authorisation token"
+fi
+
 # Remove Claude Code skills
-for skill in boards find-code find-param build-options style-check hwdef-info hwdef-check explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze pr-checks aap-update; do
+for skill in boards find-code find-param build-options style-check hwdef-info hwdef-check explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze pr-checks aap-update prepare-for-push; do
     if [[ -d ".claude/skills/$skill" ]]; then
         rm -rf ".claude/skills/$skill"
         echo "  Removed: .claude/skills/$skill/"
