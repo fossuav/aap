@@ -91,6 +91,92 @@ point -- a map can be accurate across the range the vehicle actually works in wh
 still under-delivers because the *pack* is failing. A slope error and a delivery shortfall look
 identical if you only measure at one throttle.
 
+## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`)
+
+These three answer the question a tuning session actually turns on: **is the vehicle noisy, or
+is it over-filtered?** Those demand opposite changes, and a `VIBE` number cannot tell them
+apart. Run them in this order -- each one's answer decides whether the next matters.
+
+### 1. What did the filters remove? (`gyro_fft.py`)
+
+```bash
+python3 .claude/skills/log-analyze/gyro_fft.py <log.bin> --from-time S --to-time S [--axis roll]
+```
+
+Needs `INS_RAW_LOG_OPT` bit 3 (value 8, e.g. `9` = primary gyro pre and post). The backend then
+logs raw samples at instance `I` and filtered samples at `I + gyro_count`, so the difference
+between the two spectra **is** the filter chain -- measured, not modelled. It prints per-band
+attenuation, decodes the notch configuration, and flags the two config faults below.
+
+- **The 0-10 Hz band is the vehicle moving and must pass through.** Low attenuation there is
+  correct. Judge the filters on the motor bands only.
+- **Compare a hover window against a loaded window.** A notch that only covers the fundamental
+  at one throttle shows up as attenuation that falls off under load.
+- **If post-filter noise above 5 Hz is a few tenths of a dps and the controller output above
+  10 Hz is under ~0.1% of authority, there is no noise problem.** Filtering harder from there
+  buys nothing and costs phase. Say so instead of tightening.
+
+Two faults it detects automatically, both seen together on a 2026-08-04 spray quad:
+
+- `INS_HNTCH_HMNCS` is a bitmask where bit *n* selects harmonic *n+1*, so `10` (`0b1010`) is the
+  2nd and 4th **and skips the fundamental**. That left the fundamental the worst-filtered band
+  on the aircraft (-20 dB) while the harmonics were superb (-51 to -64 dB).
+- `INS_HNTC2_REF=0` with `INS_HNTC2_MODE=1`. `AP_Vehicle::update_dynamic_notch` returns early on
+  a zero reference, so **the notch does not track** -- it is a fixed notch at `FREQ` whatever the
+  mode claims. It covered the fundamental at hover and lost it as the tank filled.
+
+### 2. Under-damped, under-gained, or saturated? (`rate_response.py`)
+
+```bash
+python3 .claude/skills/log-analyze/rate_response.py <log.bin> --from-time S --to-time S
+```
+
+Turns `RATE.*Des` -> `RATE.*` into a closed-loop transfer function per axis. A large rate error
+has three causes with three different fixes, identical in a standard deviation and obvious here:
+
+| signature | meaning | fix |
+|---|---|---|
+| peak above 0 dB | under-damped; damping ratio is printed | more D (or less P) |
+| below 0 dB from the bottom, no peak | under-gained, never catches up | more P |
+| output RMS concentrated above 10 Hz | noise reaching the motors | filter, do not tune |
+
+Target damping ratio is ~0.5; ~0.2 is ringy, above ~0.7 sluggish.
+
+**Do not believe anything above ~10 Hz.** `RATE.*Des` comes from the angle controller acting on
+AHRS attitude, which is integrated from the same filtered gyro that produces `RATE.*` -- demand
+and response share a noise source, so where both are noise the coherence goes high and the gain
+reports the ratio of two noise floors. That manufactured +15 to +29 dB "resonances" at 34-37 Hz
+on all three axes of a quad with no mode near there. The peak search is capped for this reason;
+corroborate any high-frequency peak in `gyro_fft.py`'s post-filter spectrum, where there is no
+shared-source problem.
+
+### 3. What is the filtering costing? (`filter_phase.py`)
+
+```bash
+python3 .claude/skills/log-analyze/filter_phase.py <log.bin> [--at-freq 41.6] \
+    [--set INS_GYRO_FILTER=40 --set INS_HNTC2_ENABLE=0]
+```
+
+Rebuilds the chain from the log's own parameters using ArduPilot's exact coefficient formulas
+and reports gain and phase across the control band. `--set` overrides parameters and prints a
+side-by-side comparison, so a proposed change can be priced in degrees of phase before flying.
+
+**Validate the model before quoting its phase numbers**: compare its gain column against
+`gyro_fft.py`'s measured per-band attenuation on the same window. Agreement to ~1 dB is what
+makes the phase column credible.
+
+The usual finding is that `INS_GYRO_FILTER` and `ATC_RAT_*_FLTD` have been walked down to quiet
+an axis that was never noisy, and are now the reason it will not damp. Note the ArduCopter
+default for `FLTT`/`FLTD` is 20 Hz (`AC_AttitudeControl_Multi.h`); the common guidance to set
+`FLTD = INS_GYRO_FILTER / 2` only makes sense when `INS_GYRO_FILTER` is itself at the
+noise-driven limit, which the first tool tells you.
+
+### Order of operations when the notch is wrong
+
+Fix the notch **first and alone**, then re-measure. Only once the fundamental is genuinely
+attenuated can the low-pass cutoffs come back up, and only then is it worth touching gains --
+otherwise each change is being judged against a moving noise floor.
+
 ## Standard Workflow
 
 ### Step 1: Overview (ALWAYS do this first)
@@ -610,16 +696,21 @@ The root cause was a **frame/yaw build asymmetry** leaving M3 at saturation. Rec
 When investigating oscillation or tuning issues:
 
 1. **Overview** — check ATC_RAT_* gains, SMAX, filter cutoffs, notch config
-2. **Stats** — `--sources "CTRL.RMSRollD,CTRL.RMSPitchD,CTRL.RMSYaw"` to identify which axis
-3. **PID plot** — `--recipe pid_yaw` (or roll/pitch) to see P/I/D/FF components
-4. **Rate tracking** — `--recipe rate_yaw` to check desired vs actual tracking quality
-5. **Zoom in** — use `--from-time`/`--to-time` on plots to examine specific maneuvers
+2. **Is it noise or damping?** — `gyro_fft.py` then `rate_response.py` (see the tuning section
+   above). This decides the whole investigation and everything below is detail; do not start
+   recommending gains before it is answered.
+3. **Stats** — `--sources "CTRL.RMSRollD,CTRL.RMSPitchD,CTRL.RMSYaw"` to identify which axis
+4. **PID plot** — `--recipe pid_yaw` (or roll/pitch) to see P/I/D/FF components
+5. **Rate tracking** — `--recipe rate_yaw` to check desired vs actual tracking quality
+6. **Zoom in** — use `--from-time`/`--to-time` on plots to examine specific maneuvers
 
 ## Vibration and Harmonic-Notch Analysis (FFT from a log)
 
 When `VIBE.VibeX/Y/Z` is high (over ~15 m/s² sustained / ~30 peak) or you suspect the notch is mistuned, you can FFT the batch-sampled IMU and read the spectrum directly. `VIBE` gives you the magnitude; the FFT gives you the frequency.
 
-**Source data: ISBH/ISBD batch samples.** When `INS_LOG_BAT_MASK` is set, the IMU logs raw blocks of 2048 samples at the sensor rate (often ~4 kHz) — far above the 400 Hz `IMU` message and the only data fast enough to FFT the motor fundamental. `log_extract.py` has no FFT subcommand, so write a one-off script using `pymavlink` to read `ISBH` (header) + `ISBD` (data arrays), assemble each 2048-sample window, and average per-window PSDs (Welch-style). Pitfalls that will bite you:
+**Prefer `gyro_fft.py` (see the tuning section above).** When `INS_RAW_LOG_OPT` bit 3 is set, `GYR` carries every raw *and* filtered gyro sample at the gyro rate, which is both easier to work with than the batch sampler and the only source that gives a true pre-against-post comparison. Use the ISBH/ISBD route below only when the log predates that setting or has batch data only.
+
+**Fallback source: ISBH/ISBD batch samples.** When `INS_LOG_BAT_MASK` is set, the IMU logs raw blocks of 2048 samples at the sensor rate (often ~4 kHz) — far above the 400 Hz `IMU` message and fast enough to FFT the motor fundamental. `log_extract.py` has no FFT subcommand and `gyro_fft.py` reads `GYR` rather than `ISBD`, so for a batch-only log write a one-off script using `pymavlink` to read `ISBH` (header) + `ISBD` (data arrays), assemble each 2048-sample window, and average per-window PSDs (Welch-style). Pitfalls that will bite you:
 
 - **Time filter on `TimeUS`, not `_timestamp`.** `_timestamp` is unix epoch; the log-relative seconds you want are `msg.TimeUS / 1e6`.
 - **`ISBH.instance` encodes pre/post-filter.** Pre-filter blocks use instance `0..N-1`; post-filter blocks (only present with `INS_LOG_BAT_OPT` bit for post/pre-post) use `instance + imu_count`. With a 2-IMU mask: 0,1 = pre-filter IMU0/IMU1; 2,3 = post-filter. If only 0,1 appear, you have **pre-filter only** and cannot measure notch residual — re-fly with `INS_LOG_BAT_OPT=2` (post-filter) to get it.
