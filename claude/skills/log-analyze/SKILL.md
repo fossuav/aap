@@ -579,10 +579,54 @@ The EKF cannot distinguish a wrong heading from a wrong GPS fix from inside the 
 | `GPS.NSats` stable, `GPS.HDop` stable, both GPS instances agree on position | **Compass** |
 | `GPS.NSats` drops, `GPS.HDop` spikes, or two GPS instances disagree on position | **GPS** |
 | `ATT.Yaw` differs from `GPS.GCrs` by ~90°/180°/270° during forward flight | **Compass** |
-| Post-event `"EKF Yaw inconsistent N deg"` with N near 90 or 180 | **Compass** (N is the actual error) |
+| Post-event `"EKF Yaw inconsistent N deg"` with N near 90 or 180 | **Compass**, but only once you have checked the cores actually agree — the message is a core-vs-core comparison, not compass-vs-EKF. See the next section. |
 | uBlox `MON-HW` `agcCnt` drops at the same instant | **GPS** (interference — see uBlox section below) |
 
 **Pre-arm limitation:** the GPS-course/compass consistency check requires forward motion. A stationary vehicle cannot trigger it. Catching this on the ground requires either an external reference (sun compass, known landmark bearing) or a brief taxi/walk-forward step before takeoff to confirm `XKF1.Yaw` matches `GPS.GCrs`.
+
+## "EKF3 Yaw inconsistent N deg" — a core-vs-core check, not a compass check
+
+`AP_AHRS::attitudes_consistent()` compares the **primary EKF core's quaternion against every other core of the same estimator** (`AP_AHRS.cpp`, the `EKF3` branch around line 2757). It never looks at the compass. So `"PreArm: AHRS: EKF3 Yaw inconsistent N deg"` says your lanes disagree by N degrees; it says nothing directly about heading accuracy. Reading it as "the compass is N degrees out" is the standard misdiagnosis — it is only true when one lane happens to be right.
+
+Get the actual numbers before theorising. `--condition` on an instance field is unreliable in `log_extract.py` for some message types, so pull both cores and compare them yourself:
+
+```bash
+python3 .claude/skills/log-analyze/log_extract.py extract <log> \
+    --types XKF1 --fields C,Yaw,GZ --from-time <t-10> --to-time <t+10> --limit 0
+```
+
+The two `XKF1.Yaw` values at the failure timestamp must differ by roughly N. If they do, the compass is a *suspect*, not the answer.
+
+**Two independent references settle it.** Neither depends on the EKF:
+
+- **Tilt-compensated compass heading**, recomputed from `MAG.MagX/Y/Z` (already offset- and scale-corrected in the log) plus `ATT.Roll/Pitch`. Use ArduPilot's own formula from `Compass::calculate_heading()` — `headY = fy*cz - fz*cy`, `headX = fx*(1-cx²) - cx*(fy*cy + fz*cz)`, `hdg = atan2(-headY, headX) + declination`, with `cx = -sin(pitch)`, `cy = sin(roll)cos(pitch)`, `cz = cos(roll)cos(pitch)`. A hand-rolled variant will be tens of degrees off and you will blame the wrong thing. `DCM.Yaw` is a serviceable cross-check on the result.
+- **GSF yaw** (`XKY0.YC`) — derived from IMU plus GPS velocity with no compass input at all. Valid only while actually moving.
+
+If those two agree with each other but *both* EKF cores have left them, the compass is fine and the filter is at fault.
+
+**The filter-at-fault mechanism: 3-axis mag fusion on a stationary vehicle is degenerate.** Mode 2 fusion (`XKFS.MAG_FUSION == 2`) estimates yaw, a 3-axis earth field and a 3-axis body-field bias simultaneously. Rotating the yaw estimate and rotating the learned body bias by the compensating amount predict *identical* measurements, so on a vehicle that is not manoeuvring there is nothing in the data to separate them and the yaw is free to wander along that null direction. `AP_NavEKF3_Control.cpp` (the `magCalDenied` line, ~125) blocks field learning on the ground for every `EK3_MAG_CAL` value **except `4` (ALWAYS) and `7` (GROUND_AND_INFLIGHT, a SmallFastDrone-fork value)**. Set either of those and the runaway starts before the props turn.
+
+Measured on a MatekH743 octaquad, disarmed and motionless for 35 s (gyro Z std 0.001 rad/s), with the raw compass field flat at 530 mGauss and `DCM.Yaw` flat at 53.4°:
+
+| | t=20-27s | t=48-55s |
+|---|---|---|
+| EKF core 0 yaw | 53.8° | **126.7°** |
+| learned body-field bias `\|XKF2.MX,MY,MZ\|` | 6 mGauss | **239 mGauss** |
+
+73° of yaw error and a fabricated body bias half the size of the Earth's field, on the ground, with no physical stimulus.
+
+**Fingerprints, in order of how decisive they are:**
+
+1. `XKF2.MX/MY/MZ` magnitude growing steadily to a large fraction of the measured `MAG` field magnitude, while the measured field itself is steady. The filter is explaining a rotation as a bias. Anything past ~30% of Earth field is not a real airframe bias.
+2. `XKF1.Yaw` drifting on a **stationary, disarmed** vehicle while `DCM.Yaw` and the raw compass hold. Check the pre-arm and post-disarm windows explicitly; the on-ground drift is usually where the error is born and it is the easiest place to see it.
+3. `XKF1.GZ` (gyro-Z bias, deg/s) walking to a value the hardware does not have. Verify against the truth: mean raw `IMU.GyrZ` over a genuinely stationary window (require std < 0.002 rad/s — a vehicle being carried around post-disarm is not stationary). A core claiming -2 deg/s against a measured -0.01 deg/s has dumped its yaw error into the bias state. That also predicts the post-disarm yaw drift rate, so the prearm failure *grows* rather than settling and "Wait or reboot" never clears.
+4. Divergence accelerating during any GPS-less phase (optical-flow source set, indoor, jamming). GPS velocity is what makes yaw observable independently of the compass; remove it and only the compass is left, and mode 2 fusion is free to ignore it.
+
+**Do not** recommend a compass recalibration, a `COMPASS_MOT` run, or a new compass off this message alone. Establish first whether the compass and the GSF agree; if they do, the fix is fusion configuration, not hardware.
+
+**Fix:** `EK3_MAG_CAL=3` (the copter default — heading fusion on the ground, 3-axis only after the first in-air yaw and field reset). If `4` or `7` was chosen deliberately, e.g. to learn a battery's magnetic signature before takeoff, this failure is its cost. `EK3_MAG_MASK` is **not** a workaround: the test is `frontend->_magMask & core_index` (`AP_NavEKF3_Control.cpp:45`), so core 0 has `core_index == 0` and can never be masked.
+
+Also check whether anything blocked the EKF from abandoning the sick lane. On the SmallFastDrone fork, `EK3_OPTIONS` bit 1 (`ManualLaneSwitch`) disables automatic lane switching *and* the lane health checks, so the vehicle will fly a diverged core to the ground. Confirm `XKF4.PI` actually moved, or explain why it could not.
 
 ## Reversed Yaw / Wrong FRAME_TYPE (Props-In vs Props-Out)
 
@@ -673,6 +717,7 @@ Do NOT send a diagnosis or recommendation to the user until you have independent
 | "GPS glitch caused failsafe" | GPS.Spd and GPS.Alt at the instant of the ERR, plus GPS.NSats and HDop to show it wasn't a coverage issue. Show the innovation spike (XKF3.IVE/IVN/IPE/IPN), not just the ERR message. |
 | "GPS receiver dropped fix / RTK lost" | uBlox `MON-HW` `agcCnt` and `MON-HW2` `magI`/`magQ` on **both** receivers during the dropout window; the *other* GPS instance's status; the EKF's `NKF4.GPS` (or `XKF4.GPS`) source field; and `aPower`. Distinguish interference (AGC drops) from multipath (no AGC drop) from antenna fault (`aPower=0`) before recommending action. See "GPS Receiver Health Diagnostics" above. |
 | "Compass / heading is wrong" | `ATT.Yaw` vs `GPS.GCrs` during steady forward flight at >2 m/s — must agree to ~10°. A flat persistent ~90°/180°/270° offset is direct evidence; "EKF Yaw inconsistent N deg" post-event is the numerical confirmation. Innovation spikes alone are not enough — they only show that *something* disagrees with GPS, not that compass is the wrong something. See "Compass Yaw Sanity Check" above. |
+| "EKF Yaw inconsistent N deg" | Both cores' `XKF1.Yaw` at the failure timestamp (the message is core-vs-core, not compass-vs-EKF), **plus** two compass-independent references: a tilt-compensated heading recomputed from `MAG` + `ATT`, and `XKY0.YC` (GSF). If those two agree and both cores have left them, it is fusion config, not the compass. Then `XKF2.MX/MY/MZ` vs the measured field magnitude, and `XKF1.GZ` vs mean raw `IMU.GyrZ` over a stationary window. See "EKF3 Yaw inconsistent N deg" above. |
 | "Uncontrolled yaw spin / reversed FRAME_TYPE" | A steady-demand window of `RATE.YDes`/`YOut` vs `RATE.Y` (and raw `IMU.GyrZ`): sustained one-sign `YOut` driving yaw acceleration the *same* sign is inverted yaw, not weak authority (which coasts). Confirm `RATE.R`/`RATE.P` track normally (roll/pitch healthy) and read `FRAME_TYPE`. See "Reversed Yaw / Wrong FRAME_TYPE" above. |
 | "Source-set / failover recommendation" | See EKF source-set playbook note in `libraries/AP_NavEKF3/CLAUDE.md` — source sets are manually switched, not automatic failover. Do not recommend `EK3_SRC2_*` as a "fallback" for glitch response. |
 | "Fence action caused the crash" | MODE changes AND fence ERR codes AND aircraft state (alt/speed) at fence breach time. |

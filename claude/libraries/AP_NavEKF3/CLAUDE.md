@@ -596,6 +596,54 @@ After landing with ground effect, the EKF accumulates position/velocity errors t
 
 **Key code:** `AP_NavEKF3_VehicleStatus.cpp` (onGround detection), `AP_NavEKF3_PosVelFusion.cpp` (zero velocity fusion, innovation flooring), `ArduCopter/baro_ground_effect.cpp` (flag control)
 
+## Magnetometer Fusion Mode Selection (EK3_MAG_CAL)
+
+### Two Models, Very Different Observability
+
+`magFusionSel` (logged as `XKFS.MAG_FUSION`) picks between:
+
+| Mode | Name | States estimated |
+|------|------|------------------|
+| 0 | not fusing | — |
+| 1 | simple heading fusion | yaw only, taken directly from the compass |
+| 2 | 3-axis fusion | yaw **plus** 3-axis earth field (`XKF2.MN/ME/MD`) **plus** 3-axis body-field bias (`XKF2.MX/MY/MZ`) |
+
+Mode 2 is the more capable model and the more dangerous one. Yaw and body-field bias are **not independently observable without motion**: rotating the yaw estimate and rotating the learned body bias by the compensating amount produce identical predicted measurements. On a stationary or non-manoeuvring vehicle the filter has no information to split them, so the yaw state wanders freely along that null direction while the bias state absorbs the difference. The residual then lands in the gyro bias states, giving a `XKF1.GZ` that the hardware does not have.
+
+### The On-Ground Guard, and What Removes It
+
+`NavEKF3_core::setAidingMode()` in `AP_NavEKF3_Control.cpp` (~lines 115-128) builds `magCalRequested` and `magCalDenied`. The denial line is the important one:
+
+```cpp
+bool magCalDenied = !use_compass() || (effectiveMagCal == MagCal::NEVER) ||
+    (onGround && effectiveMagCal != MagCal::ALWAYS && effectiveMagCal != MagCal::GROUND_AND_INFLIGHT);
+```
+
+Every `EK3_MAG_CAL` value blocks field-state learning on the ground **except**:
+
+- `4` (`ALWAYS`) — upstream ArduPilot
+- `7` (`GROUND_AND_INFLIGHT`) — SmallFastDrone-fork only, added so a battery's magnetic signature can be learned before takeoff
+
+With either, mode 2 runs while disarmed and motionless, and the degeneracy above has free rein. Measured on a MatekH743 octaquad with `EK3_MAG_CAL=7`: 73° of yaw error and a 239 mGauss learned body bias (roughly half the Earth field) accumulated over 35 s on the ground, with the raw compass flat at 530 mGauss and the gyro registering std 0.001 rad/s. The vehicle took off already 73° wrong.
+
+`3` (`AFTER_FIRST_CLIMB`, the copter default) is the safe choice: simple heading fusion on the ground pins yaw to the compass, and mode 2 only starts once the first in-air yaw and field reset has given the filter enough motion to separate the states.
+
+### EK3_MAG_MASK Cannot Mask Core 0
+
+`NavEKF3_core::effective_magCal()` (`AP_NavEKF3_Control.cpp:45`) tests:
+
+```cpp
+if (frontend->_magMask & core_index) {
+    return MagCal::NEVER;
+}
+```
+
+That is `& core_index`, not `& (1 << core_index)`. Core 0 has `core_index == 0`, so the test is always false and **core 0 can never be forced to simple heading fusion**. Do not recommend `EK3_MAG_MASK` as a way to make the primary lane use heading-only fusion; change `EK3_MAG_CAL` instead.
+
+### Diagnosing It From a Log
+
+The tell is `XKF2.MX/MY/MZ` magnitude growing to a large fraction of the measured `MAG` field magnitude while the measured field itself is steady — the filter is explaining a rotation as a bias. Cross-check yaw against two compass-independent references (a tilt-compensated heading recomputed from `MAG` + `ATT`, and `XKY0.YC` from the GSF) before concluding anything about the compass. Full workflow in the `/log-analyze` skill under "EKF3 Yaw inconsistent N deg".
+
 ## Lane Switching
 
 ### How It Works
@@ -605,7 +653,9 @@ EKF3 runs one core per IMU (controlled by `EK3_IMU_MASK`). When armed, each core
 - Primary is unhealthy, OR
 - Alternative has a substantially lower accumulated relative error
 
-Decision logic is in `NavEKF3::UpdateFilter()` (`AP_NavEKF3.cpp:932-998`). There is no parameter to disable lane switching — it always runs when armed.
+Decision logic is in `NavEKF3::UpdateFilter()` (`AP_NavEKF3.cpp:932-998`). On stock ArduPilot there is no parameter to disable lane switching — it always runs when armed.
+
+**Fork exception:** SmallFastDrone adds `EK3_OPTIONS` bit 1 (`Option::ManualLaneSwitch`), checked in `NavEKF3::UpdateFilter()` and `NavEKF3::checkLaneSwitch()`. When set, automatic lane switching **and the lane health checks** are both disabled; the primary only moves via `EK3_PRIMARY`. A core whose yaw or bias states have diverged will then be flown to the ground with nothing to escape to. Before blaming a diverged lane for a flight outcome, check whether this bit was set — and when reading `XKF4.PI` pinned at one value, do not read that as "no lane ever went unhealthy".
 
 ### Key Parameters
 
