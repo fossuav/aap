@@ -26,11 +26,27 @@ authorisation token exists. This skill mints that token. **The user types
 If no branch is named, default to the current branch and say so.
 
 `--allow` takes any of `push`, `rebase`, `reset`, `amend` and defaults to `push`
-alone. `pre_bash_check.py` blocks each of those operations until a grant covers
+alone. Squashing `/pr-review` fixes back into the commits that introduced them is
+the common reason to need more than `push`, and it wants `--allow push,rebase,amend`. `pre_bash_check.py` blocks each of those operations until a grant covers
 it, so a task that rebases a stack and then pushes it wants
 `--allow push,rebase,amend`. Grant the narrowest set that does the job.
 
 ## Workflow
+
+### Step 0: Has the branch been reviewed?
+
+If the push would publish a branch that is about to become a PR - or update one
+that is already under review - check whether `/pr-review` has run at this head:
+
+```bash
+python3 .claude/skills/pr-review/pr_review.py state diff
+```
+
+Exit 0 means the branch was reviewed at exactly this commit. Anything else means
+it was not, and Claude should say so and offer to run `/pr-review` first. This is a
+prompt, not a gate: the user may well be pushing work in progress, a checkpoint, or
+a branch nobody is going to review, and none of those need a review pass. Mint the
+token if they want it minted.
 
 ### Step 1: Show what the push would actually do
 

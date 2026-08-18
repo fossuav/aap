@@ -20,6 +20,7 @@
       "Bash(python3 .claude/skills/log-analyze/rate_response.py:*)",
       "Bash(python3 .claude/skills/log-analyze/filter_phase.py:*)",
       "Bash(python3 .claude/skills/pr-checks/ci_failures.py:*)",
+      "Bash(python3 .claude/skills/pr-review/pr_review.py:*)",
       "Bash(python3 .claude/skills/hwdef-check/hwdef_check.py:*)",
       "Bash(astyle:*)",
       "Bash(luacheck:*)",
