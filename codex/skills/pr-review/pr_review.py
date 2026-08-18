@@ -304,13 +304,11 @@ def build_scope(args):
     rev_range = "%s..HEAD" % merge_base
     files = changed_files(rev_range)
     commits = commit_records(rev_range)
+    porcelain = git("status", "--porcelain").split("\n")
     dirty = [
-        l[3:] for l in git("status", "--porcelain").split("\n")
-        if l.strip() and not l.startswith("??")
+        s[3:] for s in porcelain if s.strip() and not s.startswith("??")
     ]
-    untracked = len([
-        l for l in git("status", "--porcelain").split("\n") if l.startswith("??")
-    ])
+    untracked = len([s for s in porcelain if s.startswith("??")])
     # A PR target names metadata; the diff always comes from the local HEAD.
     # If they are not the same commit, every finding below is scoped to code
     # that is not what the PR contains, so say so rather than quietly mixing
@@ -543,7 +541,7 @@ def check_commits(scope):
                 commit=ref, detail=c["subject"][:100],
             ))
         body_lines = c["body"].split("\n")[1:]
-        long_body = [l for l in body_lines if len(l) > 80 and " " in l]
+        long_body = [b for b in body_lines if len(b) > 80 and " " in b]
         if long_body:
             out.append(finding(
                 "commit-body-wrap", "note",
