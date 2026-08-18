@@ -77,7 +77,7 @@ for bak in AGENTS.override.md.bak \
 done
 
 # Remove Codex skills
-for skill in boards find-code find-param build-options style-check hwdef-info hwdef-check explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze pr-checks aap-update; do
+for skill in boards find-code find-param build-options style-check hwdef-info hwdef-check explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze pr-checks pr-review aap-update; do
     if [[ -d ".codex/skills/$skill" ]]; then
         rm -rf ".codex/skills/$skill"
         echo "  Removed: .codex/skills/$skill/"

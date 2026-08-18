@@ -129,6 +129,13 @@ for file in SKILL.md ci_failures.py; do
 done
 chmod +x .codex/skills/pr-checks/ci_failures.py
 
+# pr-review skill (has the scope/checks/codex-pool helper)
+mkdir -p .codex/skills/pr-review
+for file in SKILL.md pr_review.py; do
+    install_file "$SKILLS_URL/pr-review/$file" ".codex/skills/pr-review/$file"
+done
+chmod +x .codex/skills/pr-review/pr_review.py
+
 echo ""
 echo "Installation complete!"
 echo ""

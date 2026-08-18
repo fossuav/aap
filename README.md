@@ -89,7 +89,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/pr-checks [PR]` | Download a PR's failing CI checks and identify the failing tests/build errors |
 | `/aap-update` | Compare local playbook version with GitHub and install updates |
 
-**Write skills** (local only — compile, run tests, launch simulator):
+**Write skills** (local only — compile, run tests, launch simulator, edit code):
 
 | Command | Description |
 |---------|-------------|
@@ -97,6 +97,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/check [test_name]` | Build and run unit tests (Google Test) |
 | `/autotest <vehicle> [test]` | Run SITL integration/behavior tests |
 | `/sitl <vehicle> [options]` | Launch interactive SITL simulator |
+| `/pr-review [PR]` | Review your own PR the way a maintainer will, then fix what it finds - CI gates, parallel review, Codex cross-check, bounded fix loop |
 
 **Authorisation skill** (you invoke this — Claude cannot):
 
@@ -303,6 +304,9 @@ aap/
 │       ├── hwdef-check/             # /hwdef-check - review an hwdef PR
 │       │   ├── SKILL.md
 │       │   └── hwdef_check.py
+│       ├── pr-review/               # /pr-review - review and fix your own PR
+│       │   ├── SKILL.md
+│       │   └── pr_review.py
 │       └── log-analyze/             # /log-analyze - analyze flight logs
 │           ├── SKILL.md
 │           └── log_extract.py

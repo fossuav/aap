@@ -118,7 +118,7 @@ if [[ -f "$(git rev-parse --git-common-dir 2>/dev/null)/push-authorization" ]]; 
 fi
 
 # Remove Claude Code skills
-for skill in boards find-code find-param build-options style-check hwdef-info hwdef-check explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze pr-checks aap-update prepare-for-push; do
+for skill in boards find-code find-param build-options style-check hwdef-info hwdef-check explain build check autotest sitl lua lua-crsf lua-vehicle log-analyze pr-checks pr-review aap-update prepare-for-push; do
     if [[ -d ".claude/skills/$skill" ]]; then
         rm -rf ".claude/skills/$skill"
         echo "  Removed: .claude/skills/$skill/"

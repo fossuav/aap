@@ -146,6 +146,13 @@ for file in SKILL.md ci_failures.py; do
 done
 chmod +x .claude/skills/pr-checks/ci_failures.py
 
+# pr-review skill (has the scope/checks/codex-pool helper)
+mkdir -p .claude/skills/pr-review
+for file in SKILL.md pr_review.py; do
+    install_file "$SKILLS_URL/pr-review/$file" ".claude/skills/pr-review/$file"
+done
+chmod +x .claude/skills/pr-review/pr_review.py
+
 # prepare-for-push skill (has the authorisation minter used by the git pre-push hook)
 mkdir -p .claude/skills/prepare-for-push
 for file in SKILL.md grant_push.py; do
@@ -227,6 +234,7 @@ echo "  - /lua-crsf        - Write CRSF transmitter menu scripts"
 echo "  - /lua-vehicle     - Lua vehicle control and movement commands"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
 echo "  - /pr-checks      - Download a PR's failing CI checks and identify failing tests"
+echo "  - /pr-review      - Review your own PR before a maintainer does, and fix it"
 echo "  - /aap-update     - Check for and install playbook updates"
 echo "  - /prepare-for-push - Authorise Claude to push named branches (you invoke this)"
 echo ""
