@@ -9,11 +9,12 @@ allowed-tools: Bash(python3 *pr_review.py*), Bash(gh pr view:*), Bash(gh pr diff
 
 This is the ArduPilot review pipeline turned around: instead of reviewing other
 people's PRs, it reviews **yours**, at the point where fixing something is still
-free. It is adapted from Andrew Tridgell's `/reviewprs` dev-call workflow
-(`tridge/junkcode/AI/claude/reviewprs`), which sweeps every PR carrying a label and
-cross-checks each one with a second AI reviewer. The pipeline is the same; the
-target and the ending differ - one PR instead of a batch, and it ends in **fixes
-applied to your tree** rather than comments posted to someone else's PR.
+free. It is adapted from Andrew Tridgell's `/reviewprs` dev-call workflow at
+<https://github.com/tridge/junkcode/tree/master/AI/claude/reviewprs>, which sweeps
+every PR carrying a label and cross-checks each one with a second AI reviewer. The
+pipeline, the head-hash skip and most of the review rules below are his; the target
+and the ending differ - one PR instead of a batch, and it ends in **fixes applied
+to your tree** rather than comments posted to someone else's PR.
 
 **Self-review is the anchored case.** You already believe the diff is correct - you
 wrote it. Every mechanism below that costs extra effort exists because of that:

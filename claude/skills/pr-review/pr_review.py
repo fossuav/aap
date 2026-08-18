@@ -2,6 +2,16 @@
 """
 Pre-submission PR review helper for the /pr-review skill.
 
+The review workflow this supports is adapted from Andrew Tridgell's /reviewprs
+dev-call command:
+
+    https://github.com/tridge/junkcode/tree/master/AI/claude/reviewprs
+
+The dual-reviewer pipeline, the head-hash skip, the detached-pool-with-sentinel
+handling of parallel codex agents, and most of the review rules stated in
+SKILL.md come from there. The code in this file is an independent
+implementation of that design rather than a port of it.
+
 Folds the deterministic half of an ArduPilot PR review into one process:
 working out what the PR actually changes, running the mechanical checks a
 reviewer bounces PRs for, and driving a parallel `codex exec` pool as an

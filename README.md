@@ -350,6 +350,10 @@ aap/
 └── README.md
 ```
 
+## **Credits**
+
+The `/pr-review` skill is adapted from Andrew Tridgell's [`/reviewprs`](https://github.com/tridge/junkcode/tree/master/AI/claude/reviewprs) dev-call review command. The dual-reviewer pipeline, the head-hash skip, the parallel-agent handling and most of the review rules it applies come from there; the implementation in this repository is our own.
+
 ## **License**
 
 This project is licensed under the GNU General Public License v3.0. See `COPYING.txt` for details.
