@@ -154,6 +154,13 @@ These three answer the question a tuning session actually turns on: **is the veh
 is it over-filtered?** Those demand opposite changes, and a `VIBE` number cannot tell them
 apart. Run them in this order -- each one's answer decides whether the next matters.
 
+All three take `--from-time/--to-time` on the same clock as `log_extract.py` (the first
+message of the log is zero, so effectively `TimeUS/1e6`). Check the sample count each one
+prints against window length x log rate: a short count means the window ran off the end of
+the log, and the numbers are from the wrong flight segment. An earlier version zeroed the
+clock at the first *data* message instead, which put every window 25-30 s late on an
+arm-triggered log and analysed the landing when asked for the hover.
+
 ### 1. What did the filters remove? (`gyro_fft.py`)
 
 ```bash

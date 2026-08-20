@@ -54,14 +54,15 @@ REPORT_HZ = (0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20)
 
 
 def time_base(path):
-    """Match log_extract.py's normalisation so time windows mean the same in both tools."""
+    """Match log_extract.py's normalisation so time windows mean the same in both tools.
+
+    log_extract.get_time_base() takes the very first message of any type (the first FMT),
+    whose timestamp is the log's clock origin, so its time_s is effectively TimeUS/1e6.
+    Skipping the metadata messages here put the origin at the first data message instead
+    (~25-30 s later on an arm-triggered log) and silently shifted every window."""
     mlog = mavutil.mavlink_connection(path)
-    while True:
-        m = mlog.recv_match()
-        if m is None:
-            return 0.0
-        if m.get_type() not in ('FMT', 'FMTU', 'UNIT', 'MULT', 'PARM', 'FILE'):
-            return m._timestamp
+    m = mlog.recv_msg()
+    return m._timestamp if m is not None else 0.0
 
 
 def collect(path, t0, t1):

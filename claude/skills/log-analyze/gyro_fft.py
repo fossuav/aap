@@ -62,15 +62,13 @@ PARAMS_OF_INTEREST = (
 
 
 def time_base(path):
-    """log_extract.py normalises to the first non-metadata message; match it exactly so
-    --from-time/--to-time mean the same thing in both tools."""
+    """log_extract.get_time_base() takes the very first message of any type (the first FMT),
+    whose timestamp is the log's clock origin; match it exactly so --from-time/--to-time mean
+    the same thing in both tools. Skipping metadata here put the origin at the first data
+    message (~25-30 s later on an arm-triggered log) and silently shifted every window."""
     mlog = mavutil.mavlink_connection(path)
-    while True:
-        m = mlog.recv_match()
-        if m is None:
-            return 0.0
-        if m.get_type() not in ('FMT', 'FMTU', 'UNIT', 'MULT', 'PARM', 'FILE'):
-            return m._timestamp
+    m = mlog.recv_msg()
+    return m._timestamp if m is not None else 0.0
 
 
 def collect(path, t0, t1):

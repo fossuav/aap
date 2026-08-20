@@ -153,7 +153,13 @@ def main():
     args = ap.parse_args()
 
     mlog = mavutil.mavlink_connection(args.log)
-    p, rpm, base = {}, [], None
+    # same origin as log_extract.get_time_base(): the first message of any type, so
+    # --from-time/--to-time mean the same thing in both tools (basing on the first ESC
+    # message put the origin ~25-30 s late on an arm-triggered log)
+    first = mlog.recv_msg()
+    base = first._timestamp if first is not None else 0.0
+    mlog._rewind()
+    p, rpm = {}, []
     while True:
         m = mlog.recv_match(type=['PARM', 'ESC', 'RPM'])
         if m is None:
@@ -162,8 +168,6 @@ def main():
             if m.Name in PARAMS:
                 p[m.Name] = m.Value
             continue
-        if base is None:
-            base = m._timestamp
         t = m._timestamp - base
         if t < args.from_time:
             continue
