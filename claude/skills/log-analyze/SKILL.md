@@ -99,6 +99,55 @@ point -- a map can be accurate across the range the vehicle actually works in wh
 still under-delivers because the *pack* is failing. A slope error and a delivery shortfall look
 identical if you only measure at one throttle.
 
+## Baro thrust compensation: what should BARO1_THST_SCALE be? (`baro_thst_cal.py`)
+
+```bash
+python3 .claude/skills/log-analyze/baro_thst_cal.py <log.bin> [--filt HZ] [--from S --to S] [--plot out.png]
+```
+
+The firmware subtracts `BARO1_THST_SCALE * lpf(throttle_out, BARO_THST_FILT)` from the raw
+pressure (`AP_Baro.cpp`, `thrust_pressure_correction`). Calibrate it from a log where the
+airframe was **physically fixed** -- clamped, or held nose-down so the wash goes sideways and
+nothing lifts -- while the throttle was ramped in ACRO. With the vehicle not moving, every
+Pascal the baro moves is the thrust effect, so SCALE is the slope of `BARO.Press - P0` against
+the filtered `MOTB.ThrOut`. No altitude truth is needed, which is why this is the method: a
+real hover has none (the baro *is* the EKF height source) unless a trusted down-facing
+rangefinder is available, and the tool does not implement that variant.
+
+What it does, and why each step matters:
+
+- Fits `BARO.Press` (raw; `CPress` is the compensated one), so the answer is the total value
+  to set whatever the log already had. Throttle is `MOTB.ThrOut`, the exact signal the firmware
+  filters; `CTUN.ThO` differs under mixer limiting.
+- Replicates the firmware low-pass and scans cutoffs, so the same run says whether
+  `BARO_THST_FILT` is right. A small quad's baro followed throttle with ~0.1 s delay, so
+  1-1.5 Hz won and the 1 Hz default was left alone.
+- Fits through the origin on settled samples only; mid-step the model error is filter lag,
+  not scale information.
+- **Read the bucket column and set the hover-band value.** The response is usually mildly
+  convex (-180 Pa/thr at idle to -300 at 0.28 throttle on a 4" quad) and a linear parameter
+  cannot follow it. The recommendation is the slope inside `MOT_THST_HOVER +- 0.03`; that
+  leaves low throttle slightly over-compensated and the top end under, which is the right
+  trade for altitude hold.
+
+Traps:
+
+- The accelerometer cannot tell a clamped vehicle from a free hover (|acc| = g in both). The
+  tool prints attitude, |acc| and gyro and warns when the throttle history looks like a hover,
+  but only the operator knows how the run was done. If the vehicle moved, the fit is
+  meaningless.
+- Baseline P0 is taken armed, just before throttle-up, in the run's own attitude. Leave 2-3 s
+  armed at idle before ramping.
+- Ambient drift aliases straight into the slope because a ramp is monotonic in time. Keep
+  runs under a minute and look at the printed baseline std.
+- Only sensor 0 has a `THST_SCALE` parameter; BARO2 is fitted for information. Check that
+  `BARO_PRIMARY` stays 0.
+
+Reference: FPV-4C-J3, 2026-08-20 -- two nose-down ramps gave -260 and -274 Pa/thr
+(BARO2 about -200), hover band -271, recommendation -270. The raw error at hover throttle was
+3.7 m, which is what an unexplained climb in a baro-only altitude mode on a small quad
+looks like.
+
 ## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`)
 
 These three answer the question a tuning session actually turns on: **is the vehicle noisy, or

@@ -57,6 +57,7 @@ The install script places the following files:
 | `.claude/skills/log-analyze/gyro_fft.py` | Pre- against post-filter gyro spectra, per-band attenuation and notch coverage -- is the filtering working? used by `/log-analyze` |
 | `.claude/skills/log-analyze/rate_response.py` | Closed-loop rate response per axis: under-damped, under-gained or saturated, used by `/log-analyze` |
 | `.claude/skills/log-analyze/filter_phase.py` | Phase cost of the configured filter chain, and what a proposed change buys, used by `/log-analyze` |
+| `.claude/skills/log-analyze/baro_thst_cal.py` | Fits BARO1_THST_SCALE (and checks BARO_THST_FILT) from a fixed-vehicle throttle ramp, used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
