@@ -306,7 +306,8 @@ def plot(runs, out):
     fig, ax = plt.subplots(2, 2, figsize=(12, 7), sharex=True)
     fmax = max(80.0, runs[0]['hi'] * 2.0)
     for r in runs:
-        lab = f"{r['path'].split('/')[-1]} {r['t0']:g}-{r['t1']:g}s"
+        name = r['path'].split('/')[-1]
+        lab = f"{name if len(name) <= 40 else '...' + name[-37:]} {r['t0']:g}-{r['t1']:g}s"
         for i, (k, title) in enumerate((('R', 'roll rate (dps)'), ('P', 'pitch rate (dps)'),
                                         ('ROut', 'roll output'), ('POut', 'pitch output'))):
             f, p = r['spec'][k]
@@ -317,7 +318,7 @@ def plot(runs, out):
             a.grid(True, alpha=.3)
     for a in ax[1]:
         a.set_xlabel('Hz')
-    ax[0][0].legend(fontsize=8)
+    ax[0][0].legend(fontsize=7, loc='upper right')
     ax[0][0].set_ylabel('ASD')
     ax[1][0].set_ylabel('ASD')
     fig.tight_layout()
