@@ -154,9 +154,11 @@ def hover_window(D, t_to, t_end):
     return (best, best + 20) if best is not None else (c[0, 0], c[-1, 0])
 
 
-def spoolup_table(D, t_arm, t_to, t_end):
+def spoolup_table(D, t_arm, t_to, t_end, t_prev_land=None):
     print('  spool-up / lift-off, 1 s bins (ThO against baro-minus-EKF; EKF alt; ESC rpm; VibeZ):')
     t0 = max(t_arm, t_to - 20)
+    if t_prev_land is not None:
+        t0 = max(t0, t_prev_land)
     for ws in np.arange(np.floor(t0), min(t_to + 8, t_end), 1.0):
         c = win(D['CTUN'], ws, ws + 1)
         if len(c) < 1:
@@ -264,6 +266,7 @@ def main():
         segs = segments(D)
         if not segs:
             sys.exit('no armed+airborne segment found; use --from-time/--to-time')
+    prev_land = None
     for n, (t_arm, t_dis, t_to, t_land, t_estop) in enumerate(segs, 1):
         t_end = t_land if t_land else t_dis
         estop = (f', MOTOR E-STOP at {t_estop:.1f} s'
@@ -271,7 +274,8 @@ def main():
         print(f'\n=== segment {n}: armed {t_arm:.1f} s, airborne {t_to:.1f}-{t_end:.1f} s'
               f'{estop}')
         if args.from_time is None:
-            spoolup_table(D, t_arm, t_to, t_end)
+            spoolup_table(D, t_arm, t_to, t_end, prev_land)
+        prev_land = t_end
         if args.hover_from is not None and args.hover_to is not None:
             h0, h1 = args.hover_from, args.hover_to
         else:
