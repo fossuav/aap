@@ -148,13 +148,15 @@ Reference: FPV-4C-J3, 2026-08-20 -- two nose-down ramps gave -260 and -274 Pa/th
 3.7 m, which is what an unexplained climb in a baro-only altitude mode on a small quad
 looks like.
 
-## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`)
+## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`, `rate_band.py`, `batch_fft.py`)
 
-These three answer the question a tuning session actually turns on: **is the vehicle noisy, or
-is it over-filtered?** Those demand opposite changes, and a `VIBE` number cannot tell them
-apart. Run them in this order -- each one's answer decides whether the next matters.
+The first three answer the question a tuning session actually turns on: **is the vehicle noisy,
+or is it over-filtered?** Those demand opposite changes, and a `VIBE` number cannot tell them
+apart. Run them in this order -- each one's answer decides whether the next matters. The last
+two are for the band above 10 Hz that `rate_response.py` cannot judge, and for logs that carry
+batch-sampler blocks instead of raw gyro logging.
 
-All three take `--from-time/--to-time` on the same clock as `log_extract.py` (the first
+All of them take `--from-time/--to-time` on the same clock as `log_extract.py` (the first
 message of the log is zero, so effectively `TimeUS/1e6`). Check the sample count each one
 prints against window length x log rate: a short count means the window ran off the end of
 the log, and the numbers are from the wrong flight segment. An earlier version zeroed the
@@ -234,6 +236,54 @@ an axis that was never noisy, and are now the reason it will not damp. Note the 
 default for `FLTT`/`FLTD` is 20 Hz (`AC_AttitudeControl_Multi.h`); the common guidance to set
 `FLTD = INS_GYRO_FILTER / 2` only makes sense when `INS_GYRO_FILTER` is itself at the
 noise-driven limit, which the first tool tells you.
+
+### 4. Where is the band, which axis owns it, and is the loop driving it? (`rate_band.py`)
+
+```bash
+python3 .claude/skills/log-analyze/rate_band.py <log.bin> --from-time S --to-time S [--band 15 40] \
+    [--vs <log2.bin> --vs-from S --vs-to S] [--png out.png]
+```
+
+`rate_response.py` stops at ~10 Hz. For a hump above that -- 15-40 Hz on a small quad -- this
+reads RATE/PIDR/PIDP/PIDY and prints, for the band: rate, output and demand RMS per axis and at
+the dominant peak, the P-against-D split of the output, coherence and phase rate -> output and
+axis -> axis, a per-second trend, and with `--vs` the same for a second log plus the deltas.
+Two mechanisms live in this band, look alike in a PSD, and need opposite fixes:
+
+| signature | meaning | fix |
+|---|---|---|
+| one axis dominates; rate -> out coherence ~1 with output lagging 130-150 deg; D term > P term; broad, bursty, no harmonic; frequency moves with gain | that axis's rate-loop crossover with thin phase margin | lower that axis's D (and P with it, to hold the P/D corner), or buy phase (INS_GYRO_FILTER, FLTD up). Not a notch: it moves the crossover and costs phase below it |
+| same frequency on roll, pitch and yaw, in phase across axes, pre-filter on every IMU, sharp, often a harmonic; frequency fixed | structural / vibration | static notch (INS_HNTC2) or mechanical |
+
+**Measure a gain change with three numbers that move in different directions if it is wrong:**
+in-band rate and output RMS from here, the closed-loop damping at the low-frequency peak from
+`rate_response.py` (must not fall), and the rate error RMS it prints (must not rise). On
+2026-08-21 an FPV quad flying equal roll and pitch gains had a 25 Hz roll-only band; cutting
+roll P/I 12% and D 16% took it down 44% at the peak and 29% across 15-40 Hz with the 9 Hz
+damping unchanged (zeta 0.45 -> 0.44), rate error down, and the peak moved 26 -> 24 Hz -- the
+loop-mode signature. Roll had less inertia than pitch, so equal gains made roll the hot axis.
+ANG_P and P-only cuts barely touch a D-dominated band; read the D/P column before picking the
+knob.
+
+### 5. Spectrum per IMU, pre- and post-filter, from the batch sampler (`batch_fft.py`)
+
+```bash
+python3 .claude/skills/log-analyze/batch_fft.py <log.bin> --from-time S --to-time S [--type gyro|accel] \
+    [--fmax 1000] [--band 15 40]
+```
+
+The fallback when a log has `INS_LOG_BAT_MASK` blocks but not `INS_RAW_LOG_OPT` bit 3 (most
+logs). Assembles ISBH/ISBD blocks per instance and prints per-band RMS and peaks per axis in
+physical units (`ISBH.mul` is the int16 scale factor: `sample / mul` is rad/s or m/s^2), and
+where pre- and post-filter blocks both exist the attenuation per band. Use it to:
+
+- see the motor fundamental and harmonics at the sensor rate and check the notch covers them
+  on **every** IMU -- `INS_HNTCH_OPTS` without EnableOnAllIMUs (8) notches the primary only,
+  and the other IMUs' post-filter spectra still carry the motor line;
+- confirm a band `rate_band.py` found is physical: present pre-filter, on more than one IMU.
+
+Blocks are not simultaneous across instances and a 20 s window holds only 2-4 per instance, so
+read attenuation as a trend and do not quote narrow-band differences of a few percent.
 
 ### Order of operations when the notch is wrong
 
@@ -808,10 +858,13 @@ When investigating oscillation or tuning issues:
 2. **Is it noise or damping?** — `gyro_fft.py` then `rate_response.py` (see the tuning section
    above). This decides the whole investigation and everything below is detail; do not start
    recommending gains before it is answered.
-3. **Stats** — `--sources "CTRL.RMSRollD,CTRL.RMSPitchD,CTRL.RMSYaw"` to identify which axis
-4. **PID plot** — `--recipe pid_yaw` (or roll/pitch) to see P/I/D/FF components
-5. **Rate tracking** — `--recipe rate_yaw` to check desired vs actual tracking quality
-6. **Zoom in** — use `--from-time`/`--to-time` on plots to examine specific maneuvers
+3. **A hump above 10 Hz?** — `rate_band.py` (tuning section, tool 4): which axis owns it,
+   whether D is carrying it, whether it is common-mode across axes. Confirm it is physical
+   with `batch_fft.py` (pre-filter, more than one IMU) before calling it a loop mode.
+4. **Stats** — `--sources "CTRL.RMSRollD,CTRL.RMSPitchD,CTRL.RMSYaw"` to identify which axis
+5. **PID plot** — `--recipe pid_yaw` (or roll/pitch) to see P/I/D/FF components
+6. **Rate tracking** — `--recipe rate_yaw` to check desired vs actual tracking quality
+7. **Zoom in** — use `--from-time`/`--to-time` on plots to examine specific maneuvers
 
 ## Vibration and Harmonic-Notch Analysis (FFT from a log)
 
@@ -819,12 +872,12 @@ When `VIBE.VibeX/Y/Z` is high (over ~15 m/s² sustained / ~30 peak) or you suspe
 
 **Prefer `gyro_fft.py` (see the tuning section above).** When `INS_RAW_LOG_OPT` bit 3 is set, `GYR` carries every raw *and* filtered gyro sample at the gyro rate, which is both easier to work with than the batch sampler and the only source that gives a true pre-against-post comparison. Use the ISBH/ISBD route below only when the log predates that setting or has batch data only.
 
-**Fallback source: ISBH/ISBD batch samples.** When `INS_LOG_BAT_MASK` is set, the IMU logs raw blocks of 2048 samples at the sensor rate (often ~4 kHz) — far above the 400 Hz `IMU` message and fast enough to FFT the motor fundamental. `log_extract.py` has no FFT subcommand and `gyro_fft.py` reads `GYR` rather than `ISBD`, so for a batch-only log write a one-off script using `pymavlink` to read `ISBH` (header) + `ISBD` (data arrays), assemble each 2048-sample window, and average per-window PSDs (Welch-style). Pitfalls that will bite you:
+**Fallback source: ISBH/ISBD batch samples -- `batch_fft.py`.** When `INS_LOG_BAT_MASK` is set, the IMU logs raw blocks of 2048 samples at the sensor rate (often ~4 kHz) — far above the 400 Hz `IMU` message and fast enough to FFT the motor fundamental. `gyro_fft.py` reads `GYR`, not `ISBD`; for a batch-only log run `batch_fft.py` (tuning section, tool 5), which assembles the blocks and prints per-IMU, pre- and post-filter band RMS, peaks and attenuation in physical units. Do not write a one-off for this. What it handles, so you do not have to:
 
-- **Time filter on `TimeUS`, not `_timestamp`.** `_timestamp` is unix epoch; the log-relative seconds you want are `msg.TimeUS / 1e6`.
-- **`ISBH.instance` encodes pre/post-filter.** Pre-filter blocks use instance `0..N-1`; post-filter blocks (only present with `INS_LOG_BAT_OPT` bit for post/pre-post) use `instance + imu_count`. With a 2-IMU mask: 0,1 = pre-filter IMU0/IMU1; 2,3 = post-filter. If only 0,1 appear, you have **pre-filter only** and cannot measure notch residual — re-fly with `INS_LOG_BAT_OPT=2` (post-filter) to get it.
+- **`ISBH.instance` encodes pre/post-filter.** Pre-filter blocks are instance `0..N-1`; with `INS_LOG_BAT_OPT` pre+post (4) the post-filter blocks of the same IMUs are `N..2N-1` (`BatchSampler::Write_ISBH`). With a 2-IMU mask: 0,1 = pre-filter IMU0/IMU1; 2,3 = post-filter. If only `0..N-1` appear and no post bit is set you have **pre-filter only** and cannot measure notch residual — re-fly with `INS_LOG_BAT_OPT=4`.
 - **`ISBH.type`**: 0 = accel, 1 = gyro.
-- **`ISBH.mul` is a MULT-table index, not a scale factor.** Peak *frequencies* are scale-invariant so they're valid regardless; do not quote PSD *magnitudes* without resolving `mul` against the `MULT` messages — use the calibrated `VIBE` values for magnitude instead.
+- **`ISBH.mul` is the int16 scale factor the sampler applied, not a MULT-table index.** `sample / mul` is rad/s or m/s^2 (938 = INT16_MAX/radians(2000) for gyro; for accel 209 = INT16_MAX/(16 g), or the backend's own value for a wider range, e.g. 104 on a 32 g part). ISBD magnitudes are physical once divided by `mul`.
+- **Blocks are not simultaneous across instances**, and a 20 s window holds only 2-4 per instance: attenuation per band is statistical and narrow-band amplitudes vary block to block.
 
 **Reading the spectrum.** The dominant copter peak is almost always the motor/prop fundamental: `f_fund_Hz = mean(ESC.RPM) / 60` (e.g. 15,000 RPM → 250 Hz), with harmonics at 2x/3x. Four motors at slightly different RPM spread the fundamental into a band tens of Hz wide. Overlay `f_fund` and `INS_HNTCH_FREQ` on the plot.
 
