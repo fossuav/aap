@@ -60,6 +60,7 @@ The install script places the following files:
 | `.claude/skills/log-analyze/baro_thst_cal.py` | Fits BARO1_THST_SCALE (and checks BARO_THST_FILT) from a fixed-vehicle throttle ramp, used by `/log-analyze` |
 | `.claude/skills/log-analyze/rate_band.py` | Which axis owns an oscillation band above 10 Hz, whether D is driving it, and an A/B between two logs, used by `/log-analyze` |
 | `.claude/skills/log-analyze/batch_fft.py` | ISBH/ISBD batch-sampler spectrum per IMU, pre- and post-filter, in physical units, used by `/log-analyze` |
+| `.claude/skills/log-analyze/baro_health.py` | Baro against EKF through spool-up, lift-off and hover, vibration/clipping and vertical-loop state -- is the altitude chain usable? used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_env.py` | Per-clone autotest environment shared by the two scripts below — own log tree, own port slot, so two clones can run autotests at once |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout, lock pre-check and per-clone isolation |

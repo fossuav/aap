@@ -148,6 +148,45 @@ Reference: FPV-4C-J3, 2026-08-20 -- two nose-down ramps gave -260 and -274 Pa/th
 3.7 m, which is what an unexplained climb in a baro-only altitude mode on a small quad
 looks like.
 
+## Is the baro usable for altitude control, and is the vertical chain ready? (`baro_health.py`)
+
+```bash
+python3 .claude/skills/log-analyze/baro_health.py <log.bin> [--from-time S --to-time S] [--table] \
+    [--hover-from S --hover-to S]
+```
+
+Run this before judging ALT_HOLD/VALT behaviour, or any time an altitude mode was rough. Per
+flight segment (NOT_LANDED..LAND_COMPLETE, motor e-stops flagged) it prints a spool-up table
+of throttle against baro-minus-EKF while still landed and through lift-off, then a hover
+block: baro-EKF mean/std/min/max, baro high-pass noise and climb-rate std, EKF height test
+ratio and height source, GPS fix and VZ noise (and whether EK3_SRC1_VELZ is leaning on it),
+VIBE and clip count, accel Z std, throttle against the learned hover throttle, and PSCD/PIDA
+tracking with PSC_D_ACC_P against the hover-throttle rule of thumb. `--table` gives a 1 s
+trace over each segment.
+
+What it separates, which a CTUN plot does not:
+
+- **Ground effect / prop wash on the static port:** the baro falls metres while the vehicle
+  has not moved, snaps back within 2 s of lift-off, and dips again whenever below ~2 m AGL.
+  neros 2026-08-21: -3.6 m at ThO 0.06 and -10.3 m at 0.14 still on the ground, EKF dragged
+  to -5 m on a slow spool-up, +-2.5 m bounces on the way down, which ALT_HOLD answered with a
+  throttle cut, an e-stop and a 4 g impact. The fix is shielding/relocation and a downward
+  rangefinder for the last metres. BARO1_THST_SCALE is the wrong tool: it compensates a
+  free-air, thrust-proportional error and would put the same metres into free-air altitude.
+- **Free-air thrust error:** a baro-EKF offset that scales with throttle away from the
+  ground; fit it with `baro_thst_cal.py` (previous section).
+- **Vibration-limited vertical loop:** VIBE above ~30 m/s2 or a climbing clip count with PIDA
+  Act std >> Tar std means the accel feedback is noise, and PSC_D_ACC_P/I will have been cut
+  to keep the throttle quiet (neros: 0.01/0.02 against a 0.155 hover). Nothing is tunable
+  vertically until the vibration is fixed; `batch_fft.py --type accel` shows where it is
+  (neros: 40 m/s2 RMS at the 133 Hz motor fundamental).
+- **What the EKF is surviving on:** GPS VZ aiding (EK3_SRC1_VELZ=3) carries an outdoor hover
+  through baro bounces; indoors or without a fix the same setup falls over.
+
+Segments come from EV ARMED/DISARMED and NOT_LANDED/LAND_COMPLETE; a log that starts armed
+(rotated mid-flight) still gets one. The hover window is the quietest 20 s of throttle;
+override it with `--hover-from/--hover-to` when the quiet part is not the part you care about.
+
 ## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`, `rate_band.py`, `batch_fft.py`)
 
 The first three answer the question a tuning session actually turns on: **is the vehicle noisy,
