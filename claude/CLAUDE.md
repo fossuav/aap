@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.5.9
+**Playbook version:** 1.6.0
 
 ## Available Skills
 
@@ -192,6 +192,16 @@ AP_Periph firmware runs on dedicated CAN nodes (GPS, airspeed sensors, etc.). Ke
 - Modular build flags: `AP_PERIPH_GPS_ENABLED`, `AP_PERIPH_BARO_ENABLED`, etc.
 - Each subsystem can be independently enabled for minimal firmware size.
 - Peripheral boards defined in `libraries/AP_HAL_ChibiOS/hwdef/` with `-periph` suffix.
+
+### Subsystem Playbooks
+
+The root playbook carries the general rules. Where a subsystem has its own playbook, read it before touching that code and hold reviews of that code against it:
+
+- `libraries/AP_NavEKF3/CLAUDE.md` - EKF3 state vector, DAL and Replay rules, bias inhibition, yaw source handling, log analysis method. Some sections are flagged as branch-specific; confirm a mechanism exists on the base branch before citing it.
+- `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` - board porting, hwdef review rules (applied by `/hwdef-check`)
+- `Tools/autotest/CLAUDE.md` - autotest authoring, harness gotchas, before/after A/B runs
+- `libraries/AP_Scripting/CLAUDE.md` - Lua applets (with companions for CRSF menus and vehicle control)
+- `ArduPlane/CLAUDE.md` - Plane modes, log messages, QuadPlane transitions, GPS-denied flight
 
 ## C++ Development Guidelines
 
@@ -455,7 +465,12 @@ Consequences for how you work:
   - items still outstanding that need to land before merge / approval (leave as `[ ]`).
   Drop checklist items that don't apply to the change. If the template has nothing left to include after trimming, omit the checklist section entirely.
 - **Keep the rest of the template intact:** Summary / description / testing sections from the template should still be filled in, even when the checklist is short or removed.
-- **Before/after SITL plots for behavior changes:** When a PR changes runtime behavior (control loops, EKF, flight modes, sensors, autotune, mixers, etc.), attempt to include before/after plots from SITL logs to show the effect. Reviewers respond well to side-by-side comparisons — they communicate impact in seconds where prose can't. Skip this for PRs with no runtime effect (build system, docs, pure refactors with verified no-op behavior). Use `/log-analyze` to extract and plot the relevant fields from a baseline SITL run (pre-change branch) and a post-change run. GitHub does not accept image uploads via the `gh` CLI, so save plots as PNGs locally and either attach them via the GitHub web UI to embed in the description, or post them in a follow-up PR comment.
+- **Before/after SITL plots for behavior changes:** When a PR changes runtime behavior (control loops, EKF, flight modes, sensors, autotune, mixers, etc.), attempt to include before/after plots from SITL logs to show the effect. Reviewers respond well to side-by-side comparisons — they communicate impact in seconds where prose can't. Skip this for PRs with no runtime effect (build system, docs, pure refactors with verified no-op behavior). Use `/log-analyze` to extract and plot the relevant fields from a baseline SITL run (pre-change branch) and a post-change run. GitHub does not accept image uploads via the `gh` CLI, so save plots as PNGs locally and either attach them via the GitHub web UI to embed in the description, or post them in a follow-up PR comment. The runnable recipe for the baseline run (merge-base build in a scratch worktree, throwaway harness, logs moved aside between runs) is under "Before/after A/B runs" in `Tools/autotest/CLAUDE.md`.
+- **Editing an existing PR from the CLI:** `gh pr edit` fails against ArduPilot/ardupilot with a "Projects (classic) is being deprecated" GraphQL error and leaves the PR untouched. Patch title and body through the REST endpoint instead, then read back:
+  ```bash
+  gh api -X PATCH repos/ArduPilot/ardupilot/pulls/<N> -f title="..." -F body=@body.md
+  gh pr view <N> --json title,body
+  ```
 
 ## Writing for Reviewers
 

@@ -219,6 +219,8 @@ This ensures the vehicle must be above the altitude threshold AND have been flyi
 
 ## Z-Axis Accel Bias Learning Inhibition
 
+**Branch-specific.** The ground-effect `zAxisInhibit` gate below, the hover Z-bias learning section after it and their parameters (`ACC_ZBIAS_LEARN`, `INS_ACC_VRFB_Z`) live on the SmallFastDrone-4.6 branches (`origin/pr-vrf-core`, `origin/pr-acro-bias-inhibit`), not on upstream master. On master the only accel-bias inhibition is the tilt/ground `dvelBiasAxisInhibit` gate in `AP_NavEKF3_core.cpp` (set around line 1176-1198, covariance row and column zeroed around 1794-1803); the stationary zero-velocity fusion is on master. Before a commit message, PR body or code comment cites any mechanism from this file, confirm the symbol exists on the base branch (`git grep zAxisInhibit upstream/master`). The self-review of PR #33498 caught a commit that claimed to "mirror the accel-Z bias inhibition under optical flow" on the strength of this section, plus two `setAccelBiasZ` / `accelBiasLearningInhibited` declarations that had leaked from the same branch.
+
 ### Problem
 
 Without Z velocity measurements (no GPS indoors), the Z-axis accelerometer bias is poorly observable. Motor thrust/vibration creates a DC offset in AccZ (~+0.08-0.15 m/s²) that the EKF would incorrectly learn as bias. Multiple scenarios cause problems:
@@ -268,6 +270,8 @@ This is critical for optical flow configurations where `PV_AidingMode == AID_REL
 The existing `dvelBiasAxisInhibit` mechanism (`AP_NavEKF3_core.cpp`) only handles **geometric** observability — once airborne, all axes are considered observable. It does NOT account for **measurement** observability (whether we have sensors that can observe the bias). The ground effect inhibition handles the measurement case.
 
 ## Hover Z-Bias Learning (Vibration Rectification Compensation)
+
+**Branch-specific** (see the note at the top of the previous section): none of the symbols, parameters or files listed here exist on upstream master.
 
 ### What It Does
 
@@ -345,6 +349,45 @@ Safety: frozen correction clamped to +/-0.3 m/s^2. If `ACC_ZBIAS_LEARN=0`, corre
 **AP_InertialSensor (parameter storage):**
 - `AP_InertialSensor.cpp` — Parameter definitions: `INS_ACC_VRFB_Z`, `INS_ACC2_VRFB_Z`, etc.
 - `AP_InertialSensor.h` — `_accel_vrf_bias_z[INS_MAX_INSTANCES]` array and accessors
+
+## Gyro Bias Observability Without a Yaw Reference
+
+State 12 (Z gyro bias) is only observable through something that observes heading. Optical flow gives body-frame velocity, so with flow as the only horizontal aiding source and no usable yaw reference, a flow-velocity error (scale, misalignment) can be reconciled either by rotating yaw or by moving the Z gyro bias, and the filter does some of each. The phantom bias then integrates into a continuous yaw drift that walks the dead-reckoned position.
+
+### The "no usable yaw reference" predicate
+
+EKF3 has one test for this, used in two places; reuse it rather than checking `yaw_source_last == NONE`, which misses a compass that is configured but unhealthy or excluded, and GSF with no GPS velocity to converge on:
+
+```cpp
+// AP_NavEKF3_Control.cpp checkGyroCalStatus(), AP_NavEKF3_MagFusion.cpp SelectMagFusion()
+!use_compass() &&
+yaw_source_last != AP_NavEKF_Source::SourceYaw::GPS &&
+yaw_source_last != AP_NavEKF_Source::SourceYaw::GPS_COMPASS_FALLBACK &&
+yaw_source_last != AP_NavEKF_Source::SourceYaw::EXTNAV
+```
+
+`use_compass()` is false for every yaw source other than COMPASS / GPS_COMPASS_FALLBACK, and for those two when `use_for_yaw()` is false or all mags have failed.
+
+### What still learns state 12 in that configuration
+
+- On the ground and not moving, `SelectMagFusion()` fuses a STATIC synthetic yaw (`fuseEulerYaw(yawFusionMethod::STATIC)`, unmasked gains), which legitimately calibrates the Z bias because the true heading is constant. This is why the bias can be "frozen at its ground-learned value" in flight.
+- In flight, PREDICTED zero-innovation yaw fusion runs only when on ground, in AID_NONE, or when the attitude variance sum exceeds 0.01; it bounds P[12][12] without moving the state.
+- Zero-velocity fusion, baro and rangefinder do not observe it (their H has no heading component for a level, stationary vehicle).
+- `FuseVelPosNED` already masks the Kalman gain of a gyro bias axis within 45 deg of vertical when `PV_AidingMode == AID_NONE` (the `poorObservability` block in `AP_NavEKF3_PosVelFusion.cpp`). That K-only mask is the precedent for masking state 12 in `FuseOptFlow` (PR #33498, `flowYawGyroBiasInhibited()`).
+
+### K-only mask vs full inhibition
+
+A K-only mask (zero `Kfusion[12]`) leaves P[12][12] and its cross-covariances alive. `FinishFusion()` averages `P - KHP` with its transpose, so the masked state's cross-covariances are reduced by half the full amount; this is second order and is how the existing AID_NONE mask already behaves. It is not the wind-truth case of commit e004e792ff, where a variance forced to zero with live cross-covariances lost positive-definiteness. Full inhibition in the style of `dvelBiasAxisInhibit` (zero row and column in `CovariancePrediction`, restore the diagonal) would be wrong here because the on-ground STATIC yaw fusion must still be able to learn the state.
+
+Process noise on state 12 is negligible: with `EK3_GBIAS_P_NSE` at its 1e-3 default and dt 12 ms the variance grows about 1.7e-12 per second against an initial 2.7e-7 (2.5 deg/s IMU default) and a cap of 4.4e-6, so an unobserved bias state does not run its variance up within a flight.
+
+### checkGyroCalStatus and tilt
+
+`checkGyroCalStatus()` gates `readyToUseOptFlow()` through `delAngBiasLearned`. In the no-yaw-reference branch it rotates the vector of the three bias variances by `prevTnb` and tests only the horizontal components, but rotating variances as a vector leaks P[12][12] into the horizontal terms at first order in tilt (`Tnb.a.z = -sin(pitch)`), not the second order a proper R P R^T would give. Against a threshold of `sq(radians(0.15 * dtEkfAvg))` this only passes because the STATIC yaw fusion has already shrunk P[12][12] on the ground; if something stops that learning, flow aiding will refuse to engage on any vehicle more than about a degree off level.
+
+### Measured effect (SITL, PR #33498)
+
+Flow-only Loiter box pattern, no yaw source, 20 percent flow scale error, four laps: the merge-base learns a 0.34 deg/s phantom Z bias from a bias-free simulated gyro and the branch holds zero; with a real 1 deg/s gyro bias and `INS_GYR_CAL=0` the merge-base overshoots to 1.38 deg/s and the branch holds the 0.93 deg/s learned on the ground. Yaw drift at 240 s fell from 57 to 39 deg and 68 to 46 deg. The remaining drift is the direct yaw correction from the flow innovation and is inherent to having no yaw reference; the phantom bias is roughly a third of the drift, not all of it, so do not describe the mask as curing yaw drift.
 
 ## Vibration Rectification
 

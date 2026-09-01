@@ -26,7 +26,7 @@ The full set of `wait_*` helpers lives on the `TestSuite` base class in `Tools/a
 
 **Only fall back to a fixed delay when there is genuinely no observable event** (e.g., a known sensor warm-up that emits nothing). When you do, leave a comment explaining why no event-based wait is possible — this pre-empts the obvious review comment.
 
-**Never use `time.sleep()` directly in autotests** — use `self.delay_sim_time(N)` if a delay is unavoidable, so it scales with SITL speedup.
+**Never use `time.sleep()` directly in autotests** — use `self.delay_sim_time(N, "why")` if a delay is unavoidable, so it scales with SITL speedup. The `reason` string is a required positional argument: a call without it raises `TypeError` at runtime, after SITL has booted and the test is under way, so a throwaway harness that never runs under CI fails on its first flight.
 
 ### Reuse helpers; avoid copy-paste
 
@@ -97,7 +97,20 @@ If you add a test method but forget to register it on one of the `tests1*` lists
 Tests run at high speedup (commonly ~10–100x), so time-based logic in scripts and tests completes very fast in wall-clock terms. Two consequences:
 
 - Data collection that expects "real flight time" may get insufficient samples — relax requirements or use sample counts rather than time durations (e.g. `total_samples >= 50`).
-- Use `self.delay_sim_time(N)` rather than wall-clock sleeps so timeouts scale with the speedup.
+- Use `self.delay_sim_time(N, "why")` rather than wall-clock sleeps so timeouts scale with the speedup.
+
+### Before/after A/B runs with a throwaway harness
+
+When a change alters runtime behaviour, the root playbook asks for a measured A/B, not an argument. The cheapest reliable shape:
+
+1. Build the baseline in a scratch worktree so the working tree stays on the branch: `git worktree add --detach <scratch>/base <merge-base>`, then `git submodule update --init --recursive`, `./waf configure --board sitl` and `./waf --targets bin/arducopter` in it. Copy the binary aside as `arducopter.base`.
+2. Write the harness as a test method in the **worktree's** `Tools/autotest/arducopter.py`, registered on a `tests1*` list there, never in the real tree. Start from the nearest existing test for the configuration (`LoiterNoCompassYaw` for optical flow without a yaw source) and add the provocation the change keys on: a flow scale error via `FLOW_FXSCALER`/`FLOW_FYSCALER` (the SITL flow backend applies it), a real gyro bias via `SIM_GYR1_BIAS_Z` with `INS_GYR_CAL=0`, and so on. Fly a pattern with `set_rc` in Loiter long enough for slow states to move; wrap it in `try/finally` around `land_and_disarm()` so a failed run still lands and logs.
+3. Run the same harness twice from the worktree, swapping `build/sitl/bin/arducopter` between the baseline and the branch binary. Set `BUILDLOGS` per run.
+4. **The autotest deletes the SITL `logs/` directory at the start of every run** (`vehicle_test_suite.py` calls `shutil.rmtree` on it), so the first run's dataflash logs are gone once the second starts. Move `logs/` aside after each run; `BUILDLOGS` only holds the text transcript. The flight is the largest `.BIN` in the set; boot and reboot produce small ones.
+5. Extract the compared fields with `/log-analyze` or a scratch `pymavlink` script and re-zero time at the ARM event, not at boot. Measure drift before landing: the disarm-time yaw and position resets put a step at the end of every run that swamps a "final value" metric.
+6. Keep `arducopter.base`, the harness diff (`git -C <worktree> diff`) and the plots in the scratch area, then `git worktree remove --force` so the real repository is not left with a registered worktree.
+
+A result that shows no difference is a result: it means the provocation is too weak or the mechanism is not what was claimed, and either way the PR text must not claim more than the plot shows.
 
 ## Lua Applet Autotest Patterns
 
