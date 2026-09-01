@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.14
+**Playbook version:** 1.3.15
 
 ## Available Skills
 
@@ -382,14 +382,15 @@ When modifying existing files:
     - `Tools/AP_Bootloader/` uses `AP_Bootloader:` (e.g., board ID additions to `board_types.txt`)
     - `Tools/bootloaders/` uses `bootloaders:` (e.g., bootloader binary additions)
     - `Tools/autotest/` uses `autotest:` for autotest changes
-  - `libraries/AP_HAL_ChibiOS/hwdef/` uses `AP_HAL_ChibiOS:` for hwdef additions
+  - `libraries/AP_HAL_ChibiOS/hwdef/` uses `hwdef:` for board definition changes
+  - `libraries/AP_HAL_ChibiOS/` outside `hwdef/` uses `AP_HAL_ChibiOS:`
   - Examples:
     - `AP_AHRS: Refactor loiter controller`
     - `autotest: Add test for new NAV_CMD`
     - `Copter: Fix altitude hold in mode_althold.cpp`
     - `AP_Bootloader: add board ID for NewBoard`
     - `bootloaders: add NewBoard bootloader binaries`
-    - `AP_HAL_ChibiOS: add NewBoard hwdef`
+    - `hwdef: add NewBoard hwdef`
     - `scripts: add build option for new feature`
     - `ardupilotwaf: add library to vehicle dependent list`
 
