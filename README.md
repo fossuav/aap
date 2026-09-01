@@ -62,7 +62,7 @@ The install script places the following files:
 | `.claude/skills/log-analyze/batch_fft.py` | ISBH/ISBD batch-sampler spectrum per IMU, pre- and post-filter, in physical units, used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
-| `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, and commit-structure checks on a new-board PR |
+| `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, BIDIR/bdshot, and commit-structure checks on a new-board PR |
 | `.claude/skills/pr-checks/ci_failures.py` | Helper used by `/pr-checks` to download a PR's failed CI job logs and extract the failing tests/build errors |
 | `.claude/skills/prepare-for-push/grant_push.py` | Mints the short-lived push authorisation the git pre-push hook requires — run for you when *you* type `/prepare-for-push`, never on Claude's initiative |
 | `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules, gates push/rebase/reset/amend on an authorisation token, and scans scripts passed to an interpreter so a guarded command cannot be hidden in a wrapper |
@@ -83,7 +83,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/build-options [search]` | Search compile-time feature flags (`AP_*_ENABLED` defines) |
 | `/style-check [files]` | Check code style with astyle dry-run and whitespace checks |
 | `/hwdef-info <board>` | Show board hardware definition (MCU, UARTs, pins, sensors) |
-| `/hwdef-check <PR>` | Review an hwdef PR — worktree checkout, DMA/board-ID/file/commit checks, playbook pass, draft review comment |
+| `/hwdef-check <PR>` | Review an hwdef PR — worktree checkout, DMA/board-ID/file/commit/BIDIR checks, playbook pass, draft review comment |
 | `/explain <topic>` | Explain ArduPilot code, architecture, or subsystems |
 | `/lua <task>` | Write or modify Lua applets (loads playbook + API docs) |
 | `/lua-crsf <menu>` | Write CRSF transmitter menu scripts with crsf_helper |
