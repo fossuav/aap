@@ -42,7 +42,7 @@ BOARD_TYPES = Path("Tools/AP_Bootloader/board_types.txt")
 BOOTLOADER_DIR = Path("Tools/bootloaders")
 STATE_FILE = Path(".git/hwdef-check-state.json")
 
-REQUIRED_COMMIT_PREFIXES = ("AP_Bootloader", "bootloaders", "AP_HAL_ChibiOS")
+REQUIRED_COMMIT_PREFIXES = ("AP_Bootloader", "bootloaders", "hwdef")
 
 # Defines that should NOT appear in hwdef.dat because they only restate the
 # default. From AP_HAL_ChibiOS/hwdef CLAUDE.md section 7.7. Each entry maps
@@ -111,21 +111,80 @@ def detect_new_boards(base):
     return sorted(set(boards))
 
 
+# ---------- variant boards ----------
+
+INCLUDE_RE = re.compile(r"^include\s+(\S+)", re.MULTILINE)
+BOOTLOADER_FROM_RE = re.compile(r"^USE_BOOTLOADER_FROM_BOARD\s+(\S+)", re.MULTILINE)
+
+
+def resolve_hwdef(path, _depth=0):
+    """Read a hwdef and inline its ``include`` directives.
+
+    Variant targets (``-bdshot``) and AP_Periph families keep the real content
+    in a parent ``hwdef.dat``/``hwdef.inc`` and carry only an ``include`` plus
+    their own overrides. Static checks run against the thin file would silently
+    check nothing at all.
+    """
+    if _depth > 8 or not path.exists():
+        return ""
+    out = []
+    for line in path.read_text(errors="replace").splitlines():
+        m = INCLUDE_RE.match(line.strip())
+        if m:
+            out.append(resolve_hwdef(path.parent / m.group(1), _depth + 1))
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def variant_parent(board):
+    """Return the board this one inherits from, or None if it is standalone.
+
+    Only a cross-directory ``include ../Other/...`` or an explicit
+    ``USE_BOOTLOADER_FROM_BOARD`` makes a board a variant. A same-directory
+    ``include hwdef.inc`` is just file layout, not inheritance.
+    """
+    hwdef = HWDEF_DIR / board / "hwdef.dat"
+    if not hwdef.exists():
+        return None
+    text = hwdef.read_text(errors="replace")
+    m = BOOTLOADER_FROM_RE.search(text)
+    if m:
+        return m.group(1)
+    for inc in INCLUDE_RE.findall(text):
+        m2 = re.match(r"^\.\./([^/]+)/", inc)
+        if m2:
+            return m2.group(1)
+    return None
+
+
 # ---------- individual checks ----------
 
 def check_files(board):
     issues = []
     bdir = HWDEF_DIR / board
-    required = [
-        bdir / "hwdef.dat",
-        bdir / "hwdef-bl.dat",
-        bdir / "README.md",
-        BOOTLOADER_DIR / f"{board}_bl.bin",
-        BOOTLOADER_DIR / f"{board}_bl.hex",
-    ]
+    parent = variant_parent(board)
+    required = [bdir / "hwdef.dat"]
+    if parent is None:
+        required += [
+            bdir / "hwdef-bl.dat",
+            bdir / "README.md",
+            BOOTLOADER_DIR / f"{board}_bl.bin",
+            BOOTLOADER_DIR / f"{board}_bl.hex",
+        ]
     for f in required:
         if not f.exists():
             issues.append(f"Missing required file: `{f}`")
+    if parent is not None:
+        # A variant reuses the parent's bootloader by design -- 24 in-tree
+        # boards do this. Only check that the parent actually has one. Most
+        # variants ship no README either (32 of 35 -bdshot targets), so a
+        # pointer back to the parent is enough.
+        if not (BOOTLOADER_DIR / f"{parent}_bl.bin").exists():
+            issues.append(
+                f"`{board}` inherits its bootloader from `{parent}`, but "
+                f"`{BOOTLOADER_DIR}/{parent}_bl.bin` is missing"
+            )
     # ELF file should NOT be committed
     elf = BOOTLOADER_DIR / f"{board}_bl.elf"
     if elf.exists():
@@ -138,9 +197,13 @@ def check_board_id(board):
     hwdef = HWDEF_DIR / board / "hwdef.dat"
     if not hwdef.exists():
         return [f"`{hwdef}` not found"]
-    text = hwdef.read_text()
+    text = resolve_hwdef(hwdef)
     m = re.search(r"^APJ_BOARD_ID\s+(\S+)", text, re.MULTILINE)
     if not m:
+        if variant_parent(board):
+            # Inherited from the parent board, which carries the real ID. A
+            # shared ID is required by USE_BOOTLOADER_FROM_BOARD, not a bug.
+            return []
         return [f"`{hwdef}`: no APJ_BOARD_ID directive"]
 
     token = m.group(1)
@@ -303,6 +366,117 @@ def check_highres_sampling(text):
     return []
 
 
+# Bi-directional DShot is driven per timer channel-pair: CH1/CH2 and CH3/CH4.
+BIDIR_PAIR = {"1": "1/2", "2": "1/2", "3": "3/4", "4": "3/4"}
+
+# Timers with no independent DMA request generation. Per the STM32H743
+# datasheet (DS12110 Rev 8) Table 5 "Timer feature comparison", TIM12/13/14 are
+# the only PWM-capable timers whose "DMA request generation" column reads No --
+# TIM15/16/17 read Yes and do produce a working input-capture config (verified:
+# AnyleafH7 generates HAL_IC15_CH1_DMA_CONFIG as true). Without a DMA request
+# there is no input capture, so bi-directional DShot cannot work at all.
+NO_DMA_TIMERS = {"TIM12", "TIM13", "TIM14"}
+
+PWM_CHANNEL_RE = re.compile(
+    r"^(P\S+)\s+(TIM(\d+)_CH(\d+)(N?))\s+TIM\d+\b.*?\bPWM\((\d+)\)(.*)$"
+)
+
+
+def pwm_channels(hwdef_text):
+    """Return the PWM output lines as dicts, with their BIDIR flag."""
+    out = []
+    for line in hwdef_text.splitlines():
+        line = re.sub(r"#.*", "", line).strip()
+        if not line:
+            continue
+        m = PWM_CHANNEL_RE.match(line)
+        if m:
+            out.append({
+                "pin": m.group(1),
+                "timer": f"TIM{m.group(3)}",
+                "chan": m.group(4),
+                "complementary": m.group(5) == "N",
+                "pwm": int(m.group(6)),
+                "bidir": bool(re.search(r"\bBIDIR\b", m.group(7))),
+            })
+    return out
+
+
+def check_bidir(hwdef_text):
+    """BIDIR placement rules (§3.5).
+
+    Bi-directional DShot needs the timer's input-capture DMA, which is
+    allocated per channel *pair* (CH1/CH2, CH3/CH4). One BIDIR tag per pair is
+    what the driver acts on; tagging both channels of a pair adds nothing.
+    """
+    issues = []
+    for c in [c for c in pwm_channels(hwdef_text) if c["bidir"]]:
+        where = f"`{c['timer']}_CH{c['chan']}{'N' if c['complementary'] else ''}` ({c['pin']}, PWM{c['pwm']})"
+        if c["timer"] in NO_DMA_TIMERS:
+            issues.append(
+                f"`BIDIR` on {where} -- {c['timer']} has no independent DMA "
+                f"request generation (H743 datasheet Table 5), so there is no "
+                f"input capture and bi-directional DShot cannot work. Move "
+                f"these motors to TIM1-TIM8 or TIM15 (§3.5)."
+            )
+        if c["timer"] == "TIM4" and c["chan"] == "4":
+            issues.append(
+                f"`BIDIR` on {where} -- never valid on `TIM4_CH4`, it has a DMA "
+                f"conflict (§3.5)."
+            )
+        if c["complementary"]:
+            issues.append(
+                f"`BIDIR` on {where} -- complementary (`CHxN`) outputs cannot do "
+                f"bi-directional DShot (§3.5)."
+            )
+
+    pairs = {}
+    for c in [c for c in pwm_channels(hwdef_text) if c["bidir"]]:
+        pair = BIDIR_PAIR.get(c["chan"])
+        if pair:
+            pairs.setdefault((c["timer"], pair), []).append(c)
+    for (timer, pair), members in sorted(pairs.items()):
+        if len(members) > 1:
+            names = ", ".join(
+                f"`{m['timer']}_CH{m['chan']}` (PWM{m['pwm']})" for m in members
+            )
+            issues.append(
+                f"`BIDIR` set on both channels of the {timer} CH{pair} pair: "
+                f"{names}. One tag per pair is what the driver uses -- configure "
+                f"BIDIR on channel pairs, not on every channel (§3.5)."
+            )
+    return issues
+
+
+def check_bdshot_target(board, hwdef_text):
+    """H7 flight controllers are expected to offer bi-directional DShot (§3.5).
+
+    Scoped to boards that actually drive motors: AP_Periph nodes, CAN adapters
+    and eval boards have no use for it.
+    """
+    if parse_mcu_family(hwdef_text) != "H7":
+        return []
+    if board.endswith("-bdshot") or re.search(r"\bBIDIR\b", hwdef_text):
+        return []
+    if (HWDEF_DIR / f"{board}-bdshot").exists():
+        return []
+    if variant_parent(board):
+        # A variant (-ODID, -SimOnHardWare, ...) inherits its parent's motor
+        # layout; the finding belongs to the parent, not here.
+        return []
+    if re.search(r"AP_PERIPH|HAL_PERIPH", hwdef_text):
+        return []
+    if len(pwm_channels(hwdef_text)) < 4:
+        return []
+    return [
+        f"`{board}` is an H7 board with no `BIDIR` outputs and no "
+        f"`{board}-bdshot` target. H7 boards are expected to offer "
+        f"bi-directional DShot -- either tag the motor channel pairs `BIDIR` "
+        f"here, or add a separate `-bdshot` variant that remaps the timers "
+        f"(§3.5)."
+    ]
+
+
 def check_hwdef_patterns(board):
     """Static checks against hwdef.dat for things the playbook flags."""
     issues = []
@@ -310,7 +484,23 @@ def check_hwdef_patterns(board):
     bl_hwdef = HWDEF_DIR / board / "hwdef-bl.dat"
     if not hwdef.exists():
         return [f"`{hwdef}` not found"]
-    text = hwdef.read_text()
+    parent = variant_parent(board)
+    own_text = hwdef.read_text()
+    # Inline `include` directives so families keeping their content in a shared
+    # hwdef.inc are actually checked rather than silently skipped.
+    text = resolve_hwdef(hwdef)
+    # A -bdshot variant redefines the whole motor block, so check its own
+    # outputs rather than the parent's superseded ones.
+    pwm_text = own_text if (parent and re.search(r"\bPWM\(", own_text)) else text
+
+    issues.extend(check_bidir(pwm_text))
+    issues.extend(check_bdshot_target(board, text))
+
+    if parent is not None:
+        # Everything below belongs to `parent`; checking it here would just
+        # duplicate findings already reported against that board.
+        return issues
+
     bl_text = bl_hwdef.read_text() if bl_hwdef.exists() else ""
 
     # 16-bit system timer without ChibiOS 16-bit tick mode enabled.
@@ -351,17 +541,21 @@ def check_hwdef_patterns(board):
                     f"PWM assignment(s) — system tick and PWM cannot share a timer."
                 )
 
-    # Bootloader timer match (§7.2 — both files must agree when overridden).
+    # Bootloader timer agreement (§7.2). The bootloader runs no PWM, so it has
+    # no reason to override the system tick: 176 in-tree boards set
+    # STM32_ST_USE_TIMER in hwdef.dat and leave hwdef-bl.dat alone, against a
+    # single genuine disagreement. Only flag when both files set it to
+    # different values.
     if bl_text:
         m_main = re.search(r"^(?:define\s+)?STM32_ST_USE_TIMER\s+(\S+)", text, re.MULTILINE)
         m_bl   = re.search(r"^(?:define\s+)?STM32_ST_USE_TIMER\s+(\S+)", bl_text, re.MULTILINE)
         main_val = m_main.group(1) if m_main else None
         bl_val   = m_bl.group(1)   if m_bl   else None
-        if (main_val or bl_val) and main_val != bl_val:
+        if main_val and bl_val and main_val != bl_val:
             issues.append(
-                f"`STM32_ST_USE_TIMER` mismatch between `hwdef.dat` "
-                f"(`{main_val or '(unset)'}`) and `hwdef-bl.dat` "
-                f"(`{bl_val or '(unset)'}`) — they must agree (§7.2)."
+                f"`STM32_ST_USE_TIMER` disagrees between `hwdef.dat` "
+                f"(`{main_val}`) and `hwdef-bl.dat` (`{bl_val}`) — when both "
+                f"files set it they must match (§7.2)."
             )
 
     # Redundant defines — value-aware so we don't flag legitimate non-default uses.
@@ -474,7 +668,9 @@ def parse_dma_section(hwdef_h):
     for i, line in enumerate(lines):
         if DMA_NO_RE.search(line):
             no_dma.append(line.strip())
-        elif DMA_SHARE_RE.search(line):
+        elif DMA_SHARE_RE.search(line) and line.lstrip().startswith("#define"):
+            # Only #define lines are real allocations; the block header
+            # "// Mask of DMA streams which are shared" is not an entry.
             shared.append(line.strip())
     return (no_dma, shared), []
 
