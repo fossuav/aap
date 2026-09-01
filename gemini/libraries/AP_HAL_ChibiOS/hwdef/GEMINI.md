@@ -73,9 +73,11 @@ If a vendor provides a draft `hwdef.dat`, use it as a base but treat it as poten
     *   Use `TIMx_CH1` through `TIMx_CH4`.
     *   **Avoid** complimentary channels (`TIMx_CH1N`) for DShot motors as they do not support bi-directional communication.
     *   **BIDIR Constraints:**
-        *   Only supported on **TIM1 through TIM8**.
+        *   **TIM12, TIM13 and TIM14 cannot do it at all** - per the H743 datasheet Table 5 these are the only PWM-capable timers with no DMA request generation, so there is no input capture. TIM15/16/17 *are* capable; the boundary is TIM12/13/14, not "anything above TIM8".
         *   **NEVER** apply `BIDIR` to `TIM4_CH4` (DMA conflict).
-    *   **BIDIR Tag:** Apply `BIDIR` to at least one channel in a timer pair (CH1/CH2 or CH3/CH4).
+        *   `BIDIR` on a complementary channel (`TIMx_CHnN`) is silently dropped by the generator - it does nothing. Remap to a normal channel.
+    *   **BIDIR Tag:** Apply `BIDIR` to exactly one channel in each timer pair (CH1/CH2 or CH3/CH4) that uses it - tagging both channels of a pair achieves nothing.
+    *   **H7 boards are expected to offer bi-directional DShot**, either with `BIDIR` here or as a separate `<Board>-bdshot` target. Boards with no motor outputs are exempt.
         *   *Example:* `PA0 TIM5_CH1 TIM5 PWM(1) GPIO(50) BIDIR`
         *   *Note:* On F4/F7, the channel with the `BIDIR` tag determines which DMA channel is used for input capture. On H7, it is less critical but still good practice.
 *   **Alternative Mappings:** If the default assignment is a complimentary channel (e.g., `TIM1_CH1N`), check the MCU definition script (e.g., `libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H743xx.py`) for alternative functions (e.g., `TIM3_CH2`) on the same pin that support DShot.

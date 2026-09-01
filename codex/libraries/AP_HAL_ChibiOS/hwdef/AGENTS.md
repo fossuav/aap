@@ -70,12 +70,16 @@ If a vendor provides a draft `hwdef.dat`, use it as a base but treat it as poten
 
 ### 3.5. PWM & Timer Optimization
 *   **DShot Priority:** Prioritize bi-directional DShot support for the first 4-8 motor outputs.
+*   **H7 flight controllers are expected to offer bi-directional DShot.** A new H7 board should either tag its motor channel pairs `BIDIR` directly, or ship a separate `<Board>-bdshot` target that remaps the timers (§3.6). Boards with no motor outputs - AP_Periph nodes, CAN adapters, carrier and eval boards - are exempt.
 *   **Timer Selection:**
     *   Use `TIMx_CH1` through `TIMx_CH4`.
     *   **Avoid** complimentary channels (`TIMx_CH1N`) for DShot motors as they do not support bi-directional communication.
     *   **BIDIR Constraints:**
-        *   Only supported on **TIM1 through TIM8**.
+        *   **TIM12, TIM13 and TIM14 cannot do it at all.** Per the STM32H743 datasheet (DS12110 Rev 8, Table 5 "Timer feature comparison") these are the only PWM-capable timers whose *DMA request generation* column reads **No**. No DMA request means no input capture, so bi-directional DShot is impossible - and plain DShot is too, which is why every in-tree board using TIM12 for PWM marks it `NODMA`. Put motors on TIM1-TIM8 or TIM15.
+        *   **TIM15/16/17 *are* capable** - their DMA request generation column reads Yes, and the generator emits a live `HAL_IC15_CHn_DMA_CONFIG` for them (see `AnyleafH7`, which flies BIDIR on `TIM15_CH1`). Do not reject these; the constraint is TIM12/13/14, not "anything above TIM8".
         *   **NEVER** apply `BIDIR` to `TIM4_CH4` (DMA conflict).
+        *   `BIDIR` on a complementary channel (`TIMx_CHnN`) is **silently dropped** by the generator - see the `not compl` guard in `chibios_hwdef.py`. It does nothing. Remap the pin to a normal channel instead.
+        *   Tag **one channel per pair, not every channel.** Tagging both channels of a CH1/CH2 or CH3/CH4 pair achieves nothing and a reviewer will ask you to remove it.
     *   **BIDIR Tag:** Bi-directional DShot works with timer channel **pairs**: CH1/CH2 and CH3/CH4. Apply `BIDIR` to one channel in **each pair** that uses bi-directional DShot.
         *   If using CH1-CH4 on a timer (4 motors), you need BIDIR on **both** pairs: one on CH1 or CH2, AND one on CH3 or CH4.
         *   *Example (4 motors on TIM1):*
@@ -87,6 +91,33 @@ If a vendor provides a draft `hwdef.dat`, use it as a base but treat it as poten
             ```
         *   *Note:* On F4/F7, the channel with the `BIDIR` tag determines which DMA channel is used for input capture. On H7, it is less critical but still good practice.
 *   **Alternative Mappings:** If the default assignment is a complimentary channel (e.g., `TIM1_CH1N`), check the MCU definition script (e.g., `libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H743xx.py`) for alternative functions (e.g., `TIM3_CH2`) on the same pin that support DShot.
+
+### 3.6. `-bdshot` Variant Targets
+
+When the base board's motor pins land on timers that cannot do bi-directional DShot (commonly complementary channels, or a timer already taken by the system tick or the buzzer), ship a second target rather than compromising the standard one. The variant inherits everything and overrides only the motor block:
+
+```bash
+# libraries/AP_HAL_ChibiOS/hwdef/<Board>-bdshot/hwdef.dat
+include ../<Board>/hwdef.dat
+
+USE_BOOTLOADER_FROM_BOARD <Board>
+
+# undefine every pin being remapped before redefining it
+undef PC7 PC6 PB0 PB1 PA0 PA1 PA15
+
+# ... remapped motor outputs, one BIDIR per channel pair ...
+
+DMA_PRIORITY SPI1* SPI4*
+DMA_NOSHARE SPI1* SPI4* TIM3* TIM2* TIM5* TIM4*
+```
+
+A variant target does **not** need its own `hwdef-bl.dat`, bootloader binaries, `APJ_BOARD_ID`, or `README.md`:
+
+*   `USE_BOOTLOADER_FROM_BOARD` makes it reuse the parent's bootloader. This is preferred over duplicating a byte-identical `_bl.bin`/`_bl.hex` pair into `Tools/bootloaders/`, which some older boards do.
+*   The board ID is inherited from the parent, and **must** be shared - that is what lets the same bootloader flash both targets. A separate ID would be the bug.
+*   32 of the 35 `-bdshot` targets in tree ship no README; a short one pointing back at the parent and describing the differences (which outputs gained BIDIR, what the buzzer does now) is welcome but not required.
+
+Reviewers: do not report these as missing files. See §13.4 for the `DMA_NOSHARE` reasoning.
 
 ## 4. Creating `README.md`
 
@@ -384,7 +415,7 @@ git commit -m "bootloaders: add <BoardName>"
 
 # Commit 3: hwdef files
 git add libraries/AP_HAL_ChibiOS/hwdef/<BoardName>/
-git commit -m "AP_HAL_ChibiOS: add <BoardName> board support"
+git commit -m "hwdef: add <BoardName> board support"
 ```
 
 **Commit structure (MANDATORY - one commit per subsystem):**
@@ -394,12 +425,12 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 |-------|--------------|---------------|
 | `Tools/AP_Bootloader/board_types.txt` | `AP_Bootloader` | `AP_Bootloader:` |
 | `Tools/bootloaders/<BoardName>_bl.*` | `bootloaders` | `bootloaders:` |
-| `libraries/AP_HAL_ChibiOS/hwdef/<BoardName>/` | `AP_HAL_ChibiOS` | `AP_HAL_ChibiOS:` |
+| `libraries/AP_HAL_ChibiOS/hwdef/<BoardName>/` | `hwdef` | `hwdef:` |
 
 **Example commits for a board named "FooFC":**
 1. `AP_Bootloader: add FooFC board ID`
 2. `bootloaders: add FooFC`
-3. `AP_HAL_ChibiOS: add FooFC board support`
+3. `hwdef: add FooFC board support`
 
 **PR Description should include:**
 *   Board manufacturer and product page link
@@ -431,7 +462,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   F4 board uses both TIM2 and TIM5 for PWM? → set `STM32_ST_USE_TIMER 4` plus `define CH_CFG_ST_RESOLUTION 16` (or any free 16-bit timer).
     *   H7 board uses TIM5 for PWM? → set `STM32_ST_USE_TIMER 2`.
     *   H7 board uses TIM2 for PWM (TIM5 free)? → no override needed.
-*   **Both `hwdef.dat` and `hwdef-bl.dat` must agree.** If you override the timer (or the resolution) in one, set the same value in the other.
+*   **The bootloader does not need the override.** It runs no PWM, so `hwdef-bl.dat` normally omits `STM32_ST_USE_TIMER` entirely - 176 boards in tree set it in `hwdef.dat` alone, against a single board where the two files disagree. Only when `hwdef-bl.dat` *also* sets it must the values match. A missing bootloader override is not a defect; a *different* one is.
 *   **Clock:** Explicitly set `MCU_CLOCKRATE_MHZ` (e.g., 480 for H7).
 *   **LEDs:** If using standard notifications + external/onboard LEDs, ensure `define DEFAULT_NTF_LED_TYPES 455` is set if needed (sets bits 0,1,2,6,7,8).
 
@@ -507,14 +538,17 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **Allowed:**
     *   `SERVO13_FUNCTION 120` - NeoPixel LED output on dedicated LED pad
     *   `FRAME_TYPE 12` (BetaflightX) on small copter boards whose ESC wiring is fixed to the Betaflight motor order — equivalent to `define HAL_FRAME_TYPE_DEFAULT 12` in `hwdef.dat`, either form is acceptable. `FRAME_CLASS` is still left to the user.
-*   **NOT Allowed (user preferences - do not set):**
+    *   `OSD_TYPE2 5` - MSP DisplayPort on an HD VTX port. There is **no** hwdef define for the second OSD, so `defaults.parm` is the only mechanism; 53 boards in tree do this. It must be backed by a UART defaulting to `SerialProtocol_MSP_DisplayPort`, or it enables a display with nothing driving it.
+    *   `RELAY1_INVERTED` - likewise has no hwdef equivalent; `AP_Relay.cpp` offers only `RELAY1_PIN_DEFAULT` and `RELAY1_DEFAULT`.
+*   **NOT Allowed (user preferences, or settable in `hwdef.dat` instead):**
     *   `MOT_PWM_TYPE`, `SERVO_DSHOT_ESC` - Motor/ESC configuration
     *   `FRAME_CLASS` - Vehicle class is the user's choice
     *   `NTF_LED_TYPES`, `NTF_LED_LEN` - LED configuration
-    *   `OSD_TYPE` - OSD configuration
+    *   `OSD_TYPE` - use `define HAL_OSD_TYPE_DEFAULT` in hwdef.dat (this does **not** apply to `OSD_TYPE2`, which has no such define - see Allowed above)
     *   `BATT_MONITOR` - Use `HAL_BATT_MONITOR_DEFAULT` in hwdef.dat instead
     *   `SERIALn_PROTOCOL` - Use `define DEFAULT_SERIALn_PROTOCOL` in hwdef.dat instead
     *   Any RC, flight mode, or behavior parameters
+*   **Reviewers: check before you call it a violation.** The test is whether a hwdef `define` actually exists for that parameter - `grep` the owning library for `<PARAM>_DEFAULT` / `HAL_<PARAM>_DEFAULT`, and count how many boards already set it in `defaults.parm`. Telling an author to delete a line that has nowhere else to live wastes their time.
 
 ### 7.7. Avoiding Redundant Defines
 **Do NOT add defines that just set the default value.** Only add defines when changing from the default behavior.
