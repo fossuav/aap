@@ -132,6 +132,27 @@ than a generic "review this":
 - **Anything embedded** - flash and RAM cost, stack depth, allocation in flight paths, and whether a new feature needs an `AP_*_ENABLED` guard so small boards can drop it.
 - **Tooling and scripts** - the failure modes, not the happy path.
 
+**Point each agent at the subsystem playbook before the diff.** The root playbook
+carries the general rules; the subsystem playbooks carry the mechanisms a maintainer
+of that code will hold the change against, and an agent that has not read them
+reviews the diff in a vacuum. Tell each agent which one applies to its slice:
+
+| Paths in the commit | Playbook to read first |
+|---------------------|------------------------|
+| `libraries/AP_NavEKF3/`, `libraries/AP_NavEKF/`, `libraries/AP_AHRS/`, `libraries/AP_DAL/` | `libraries/AP_NavEKF3/AGENTS.override.md` - state vector, DAL and Replay rules, bias inhibition, yaw source handling, analysis method |
+| `libraries/AP_HAL_ChibiOS/hwdef/`, `Tools/AP_Bootloader/`, `Tools/bootloaders/` | `libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md`, applied by `/hwdef-check` |
+| `Tools/autotest/` | `Tools/autotest/AGENTS.override.md` - event waits, registration, speedup, harness gotchas |
+| `libraries/AP_Scripting/`, any `.lua` | `libraries/AP_Scripting/AGENTS.override.md` and its CRSF menu / vehicle control companions |
+| `ArduPlane/`, QuadPlane, TECS | `ArduPlane/AGENTS.override.md` |
+
+**A playbook can mislead as well as inform.** Some sections document mechanisms that
+exist only on a feature branch (the EKF3 playbook's `zAxisInhibit` and hover Z-bias
+sections are flagged as branch-specific for this reason). Any mechanism the commit
+message, the PR body or a new comment cites as existing must be confirmed on the base
+branch with `git grep <symbol> <base>`. A description built on a branch-only mechanism
+is a must-fix even when the code itself is right: the reviewer reads the prose and the
+diff together, and the prose is wrong.
+
 The standard every agent reviews against is the playbook itself: the C++ Development
 Guidelines, Development Constraints, Comments and Documentation, the Surgical
 Modification Principle, Commit Conventions, and Writing for Reviewers in the root
@@ -193,6 +214,8 @@ with the conflict of interest. Both directions get checked against the source:
 - **Codex skews to REQUEST CHANGES.** Re-derive the verdict from the findings that survive; never copy its label across.
 - **Know the project's practice before calling something a process violation.** A submodule pointer moving to an unmerged commit is normal in ArduPilot as long as the submodule PR is linked in the description. Verify against the repo, the way the prefix check does, rather than asserting a rule.
 - **Do not accept a refutation of your own finding just because it is convenient.** That is the direction self-review fails in.
+- **Confirm every cited mechanism exists on the base branch.** A commit message or comment that says the change "mirrors X" is a claim about the tree, not about the diff; `git grep X <base>` settles it in a second. In the PR #33498 self-review the cited mechanism lived only on a feature branch, and the same branch had leaked two undefined declarations into the header.
+- **Measure the fix, do not just reason about it.** The Diagnosing from Logs and Data rules in the root playbook apply to the review as much as to the change: a behaviour change gets an A/B in SITL with a number that would go the wrong way if the change were wrong. The recipe (merge-base build in a scratch worktree, throwaway autotest harness, logs moved aside between runs) is under "Before/after A/B runs" in `Tools/autotest/AGENTS.override.md`, and `/log-analyze` plots the result. A finding that is plausible from the code but contradicted by the A/B is refuted; a fix the A/B cannot tell from a no-op needs a stronger provocation before it is called verified, not a softer description.
 
 ## Step 6 - Verdict
 
@@ -219,7 +242,7 @@ python3 .codex/skills/pr-review/pr_review.py state save --verdict REQUEST_CHANGE
 3. **Keep the diff surgical.** The Surgical Modification Principle applies to review fixes as much as to the original change - do not tidy sibling code while you are in there. A fix that grows the diff gives the reviewer more to read, not less.
 4. **Put each fix in the commit that introduced the problem**, not in a trailing "address review comments" commit. ArduPilot reviews history, so a whitespace fix belongs squashed into the commit that added the whitespace. That means a rebase or an amend, which rewrite history: **ask the user before either, and never push without being asked.** Where a rebase is not wanted, say so plainly and use fixup commits instead.
 5. **Re-run the mechanical gate after every round.** It is two seconds and it catches fixes that introduced new problems.
-6. **Build what you touched.** `/build <vehicle>` for the affected target, `/check` when libraries with unit tests changed. A review fix that does not compile is worse than the finding.
+6. **Build what you touched, then exercise it.** `/build <vehicle>` for the affected target, `/check` when libraries with unit tests changed, and rerun the existing autotests that cover the changed path (grep `Tools/autotest/` for the parameters the change keys on: `EK3_SRC1_YAW` finds `LoiterNoCompassYaw` for a no-yaw-source EKF change). Repeat the A/B from step 5 on the fixed tree. The state diff in step 8 proves the content moved, not that it still works. A review fix that does not compile is worse than the finding.
 
 ## Step 8 - Re-review what moved
 
@@ -249,6 +272,7 @@ findings too, and they belong in the same loop.
 
 - Lead with the verdict and the counts: `REQUEST CHANGES - 3 must-fix, 4 should-fix, 2 notes (primary + cold pass, 1 refuted)`.
 - Say which reviewers ran. If `--no-codex` was used, or a Codex task came back empty and was not re-run, say the verdict is single-sourced. Do not present it as cross-checked when it was not.
+- Say which subsystem playbooks the agents were given, and name any playbook section that turned out to describe branch-only code, so it gets fixed at the source rather than rediscovered.
 - Group findings by severity with `file:line`, and name the ones that came from the cold pass - those are the ones your own read missed.
 - After a fix round, report what changed, what was left and why, and the new verdict.
 - Name what you did **not** cover: unbuilt targets, untested behaviour, hardware you cannot exercise. On a self-review the unexamined part is the part most likely to fail review.
