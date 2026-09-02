@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.6.2
+**Playbook version:** 1.6.3
 
 ## Available Skills
 
