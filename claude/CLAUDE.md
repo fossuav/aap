@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.6.1
+**Playbook version:** 1.6.2
 
 ## Available Skills
 
@@ -507,6 +507,10 @@ A mechanism inferred from one log is a **hypothesis, not a diagnosis**. Say so, 
 **A comment that warns against your change is evidence.** If the code you are about to modify explicitly documents the failure your change would re-create, that is a record of someone already hitting it. Reproduce the failure or A/B the change before deleting the comment. Do not assume it is stale.
 
 **Correct the record loudly.** When a claim that reached a commit message, a code comment, or the user turns out to be wrong, say so plainly and revert it. An invented mechanism is worse than no mechanism, because it gets built on.
+
+**A claim marked checked is a hypothesis to the next reader.** A conclusion posted as verified in a note, a PR comment or your own earlier analysis carries no more weight than the evidence behind it, and once it reads as settled every later review inherits it instead of testing it. PR #32768 listed "cannot fire in flight" under things checked, resting on an EKF guard whose flag is the armed state inverted; three review rounds accepted it before an outside review re-read the flag. Re-derive such claims from the source whenever the change touches them.
+
+**Coverage is a trace, not a green run.** A test cited as covering a path has to be shown reaching the changed lines: read its setup for anything that steers around the branch, then confirm from the run (an EV event, a STATUSTEXT, a log field only that branch writes) that it went through. RudderDisarmMidair passed three times while its set_home() locked home and skipped the very branch it was cited for.
 
 ## Testing
 

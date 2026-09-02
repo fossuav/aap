@@ -28,6 +28,10 @@ The full set of `wait_*` helpers lives on the `TestSuite` base class in `Tools/a
 
 **Never use `time.sleep()` directly in autotests** — use `self.delay_sim_time(N, "why")` if a delay is unavoidable, so it scales with SITL speedup. The `reason` string is a required positional argument: a call without it raises `TypeError` at runtime, after SITL has booted and the test is under way, so a throwaway harness that never runs under CI fails on its first flight.
 
+### Measuring a transient across an event
+
+To show that an estimate is continuous across an arm, a mode change or a reset, sample it at a known rate on both sides of the event instead of reading it once afterwards. Raise the stream rate for the message you need (`self.set_message_rate_hz('LOCAL_POSITION_NED', 20)`; Copter's default is 5 Hz), capture the pre-event sample with a `condition=` so the test waits for the state it wants (`condition='LOCAL_POSITION_NED.vz > 5'` for "already falling"), fire the event, then loop for a short `get_sim_time_cached()` window collecting the min and max. Assert on the step the failure would produce (a velocity that drops toward zero, a position that jumps by the whole height) with a bound the physics of the window cannot reach on its own: a copter in free fall covers 20-30 m in a second, so a 20 m bound on position fails a correct build. `HeightDatumKeptOnMidairRearm` in `arducopter.py` is the pattern.
+
 ### Reuse helpers; avoid copy-paste
 
 The `TestSuite` base class in `Tools/autotest/vehicle_test_suite.py` is the shared helper library for every vehicle's test suite. Before writing new test plumbing, grep `vehicle_test_suite.py` for an existing helper that does the same thing — `arm_vehicle`, `takeoff`, `fly_to_location`, `wait_*`, `set_parameters`, `context_*`, `change_mode`, etc. Reusing helpers keeps tests short, consistent, and easy for reviewers to scan.
@@ -52,6 +56,13 @@ Before writing assertions, state the rule the code enforces in one sentence (e.g
 
 A single-phase test that covers only the allowed case is a regression hazard: the guard can rot and the test still passes. If you cannot reach the disallowed case (e.g. it requires hardware state SITL can't reproduce), say so in the test comment so a reader knows the coverage gap is deliberate.
 
+### A green test is not coverage
+
+Citing an existing test as covering a path needs a trace, not a pass count. Read the test's setup for anything that steers around the branch, then confirm from the run that it went through: an EV event or STATUSTEXT the branch emits, or a log field only it writes. Two Copter traps:
+
+- `self.set_home()` sends `DO_SET_HOME`, which the GCS handler applies with `lock=true`. Every `!ahrs.home_is_locked()` branch in the arming code is then skipped, so `RudderDisarmMidair` passed 3/3 without ever reaching the arm-time datum reset it was cited for (PR #32768). A test of the unlocked-home path must let home auto-set at the first arm and never call `set_home()`.
+- Copter believes it is landed after any disarm. `disarm()` forces `land_complete` true and the land detector keeps it true while disarmed, so ALT_HOLD on a re-armed vehicle sits in `Landed_Pre_Takeoff` with the throttle relaxed until the stick asks for a climb. `hover()` after a mid-air re-arm free-falls to the ground at terminal velocity; demand a climb first (`set_rc(3, 1700)`, `wait_climbrate(0.5, 20)`) to bring the controller in, then hover.
+
 ### Don't add `context_push` / `context_pop` manually
 
 Each test method already runs inside an automatically-managed context — the framework calls `context_push()` at the start of the test and `context_pop()` at the end. **Do not** add `self.context_push()` / `self.context_pop()` calls at the top and bottom of a test body; they are redundant, clutter the diff, and will draw a review comment.
@@ -71,6 +82,10 @@ Consequences:
 - A present `autotest.lck` is not necessarily stale — it may be a live lock held by an autotest running in a **different** sibling clone. Never `rm` it to "clear a stale lock" without first confirming no `autotest.py`/`arducopter` process is running (`ps aux | grep -E "autotest|arducopter"`). Deleting a live lock lets two runs collide and corrupt each other.
 - To isolate a repo's autotests (own lock, own log files), set a repo-local `BUILDLOGS`, e.g. `export BUILDLOGS=$PWD/buildlogs`.
 - Isolating `BUILDLOGS` removes the *lock* contention but **not** the network contention: every SITL autotest binds the same default TCP ports (5760/5762/5763), so two concurrent runs still collide with an `EOF`/connection error mid-test. The shared lock exists precisely to serialise that. Repo-local `BUILDLOGS` is for keeping logs and locks separate across clones, not for running two autotests at the same time — still run them serially, or give one a port offset.
+
+### Host stalls look like telemetry timeouts
+
+`NotAchievedException('Did not get GLOBAL_POSITION_INT after 1.1 seconds')` on a test unrelated to the change is usually the host, not SITL. The `assert_receive_message` timeout is wallclock; on a WSL2 VM starved by the Windows host SITL's sim clock crawls (1.8 s of sim in 66 s of wallclock on 2026-09-02) while SITL stays alive and keeps logging, and guest load average shows nothing. Before reading anything into it: copy `logs/*.BIN` aside, because the next run wipes them; confirm in the .BIN that SITL logged the harness's later disarm and reboot commands; then rerun the test alone. Two such stalls in five sessions hit different tests at different points and every test passed on rerun. Do not cite one as evidence about the change, and do not run builds alongside an autotest on that host.
 
 ### Long convergence and fixed-window assertions
 

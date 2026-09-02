@@ -481,6 +481,24 @@ Path 2 keeps the IMU-propagated position, applies a bounded correction toward th
 
 On any vehicle where sustained cruise regularly puts the airframe into a flight regime where GPS processing lag creates metres-scale apparent position error against IMU propagation, **the default `25` is the wrong value**. Seeing `"GPS Glitch"` messages in such a log is not evidence that glitch rejection is needed — it is evidence that the innovation test is doing what it should, and the question is whether you want the reset-to-GPS or bounded-variance path to handle the update. For high-speed platforms, bounded-variance (`<= 0`) is the right answer.
 
+## onGround and inFlight Are Armed-State Flags on Copters
+
+`detectFlight()` in `AP_NavEKF3_VehicleStatus.cpp` has two branches. Fly-forward vehicles infer ground state from ground speed, height change and airspeed. Everything else gets this:
+
+```cpp
+// Non fly forward vehicle, so can only use height and motor arm status
+if (motorsArmed) {
+    onGround = false;
+} else {
+    inFlight = false;
+    onGround = true;
+}
+```
+
+On a copter `onGround` is `!motorsArmed` and nothing more. One EKF cycle after a mid-air disarm the filter reports on-ground, so a guard of the form `if (!onGround) return` gives no in-flight protection to anything that runs at re-arm. Copter's own `ap.land_complete` is no substitute: `AP_Arming_Copter::disarm()` forces it true and the land detector holds it true while disarmed. Only the vehicle knows it was flying, so code that must not run in flight after a disarm needs the vehicle to record that at disarm time. PR #32768 adds `ap.disarmed_in_air` for the arm-time height datum reset (branch-specific until it merges; `resetHeightDatum()` zeroes `velocity.z`, and a re-arm while falling at 15.6 m/s reported 0.4 m/s one sample later).
+
+Review rule: before crediting an `onGround`, `inFlight` or `land_complete` test as protection, read how that flag is set for the vehicle type the code runs on.
+
 ## Known Issues
 
 ### Motor-Induced Baro Noise
