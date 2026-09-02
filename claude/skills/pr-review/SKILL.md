@@ -120,12 +120,20 @@ related) in a single message so they run concurrently. Each one gets its own sli
 of the diff, reads the surrounding source in the checkout, and returns findings
 marked **VERIFIED** or **UNCONFIRMED**.
 
+Add one reviewer that gets the whole PR diff against the base and nothing else,
+because that is what the dev-call reviewer sees. A line an earlier commit of the
+same PR added appears in every later slice only as context, so a defect in it is
+invisible to the per-commit readers. PR #27893 carried a resync gate from a 2024
+commit that its counter could never satisfy; the 2026 commit only prefixed the
+condition, and the whole-diff dev-call review found it where per-commit slices
+would have shown it as context.
+
 Give each agent the angles that actually matter for what it is reviewing rather
 than a generic "review this":
 
 - **hwdef / board PRs** - pin labels, DMA sharing and conflicts, board ID registration and uniqueness, power rail defaults, bootloader/timer agreement. `/hwdef-check` already automates most of this; run it instead of re-deriving it.
 - **Control, EKF, filters** - the maths, the mode dispatch, unit and frame agreement, what happens at the edges the design admits (zero, negative, saturated, NaN). Domain math (`sqrtf`, `logf`, `acosf`, division) gets every reaching value enumerated. A predicate on a configuration enum (`yaw_source_last`, a `_TYPE` parameter, an `AP_NavEKF_Source` getter) says what was asked for, not what is arriving: for each leg of it, ask what the code fuses when that source is configured but absent, and whether a freshness timestamp already exists for it.
-- **Drivers and HAL** - register sequences against the datasheet, timeouts, bus sharing, failure paths, what happens when the device is absent.
+- **Drivers and HAL** - register sequences against the datasheet, timeouts, bus sharing, failure paths, what happens when the device is absent. A counter that one block increments and another resets has an implied meaning: list every write to it, then evaluate any test on it at the rate table's edges (downsample rate 1, the slowest and fastest INS_GYRO_RATE, each sensor family's accel ratio). The gate in PR #27893 compared a count that only the accel block reset against the gyro downsample rate; at 8 kHz that is never true after the first sample. A call that adjusts a periodic callback gets its thread checked against the HAL's own test, since DeviceBus::adjust_timer silently returns false off the bus thread.
 - **Anything embedded** - flash and RAM cost, stack depth, allocation in flight paths, and whether a new feature needs an `AP_*_ENABLED` guard so small boards can drop it.
 - **Tooling and scripts** - the failure modes, not the happy path.
 
@@ -211,7 +219,7 @@ with the conflict of interest. Both directions get checked against the source:
 - **Do not accept a refutation of your own finding just because it is convenient.** That is the direction self-review fails in.
 - **Confirm every cited mechanism exists on the base branch.** A commit message or comment that says the change "mirrors X" is a claim about the tree, not about the diff; `git grep X <base>` settles it in a second. In the PR #33498 self-review the cited mechanism lived only on a feature branch, and the same branch had leaked two undefined declarations into the header.
 - **A fix that adopts an existing predicate inherits its blind spots.** When a finding is closed by switching to a test the codebase already uses, the re-review must ask what that test measures, not whether the new code matches it. Conformance is not sufficiency. In PR #33498 round one found the gate narrower than `checkGyroCalStatus()`, the fix adopted that predicate, and round two verified the match and approved; the predicate is health-aware for the compass leg only, and the dev-call reviewer found the GPS-yaw-lost-in-flight gap on a cold read.
-- **Measure the fix, do not just reason about it.** The Diagnosing from Logs and Data rules in the root playbook apply to the review as much as to the change: a behaviour change gets an A/B in SITL with a number that would go the wrong way if the change were wrong. The recipe (merge-base build in a scratch worktree, throwaway autotest harness, logs moved aside between runs) is under "Before/after A/B runs" in `Tools/autotest/CLAUDE.md`, and `/log-analyze` plots the result. A finding that is plausible from the code but contradicted by the A/B is refuted; a fix the A/B cannot tell from a no-op needs a stronger provocation before it is called verified, not a softer description.
+- **Measure the fix, do not just reason about it.** The Diagnosing from Logs and Data rules in the root playbook apply to the review as much as to the change: a behaviour change gets an A/B in SITL with a number that would go the wrong way if the change were wrong. The recipe (merge-base build in a scratch worktree, throwaway autotest harness, logs moved aside between runs) is under "Before/after A/B runs" in `Tools/autotest/CLAUDE.md`, and `/log-analyze` plots the result. A finding that is plausible from the code but contradicted by the A/B is refuted; a fix the A/B cannot tell from a no-op needs a stronger provocation before it is called verified, not a softer description. When SITL cannot exercise the path, as with a driver's bus timing, a model of the mechanism with the real constants is the measurement, and it has to be able to say the change is worse: the modulo fix for the PR #27893 gate was correct, and the model showed the gate it enabled would add roughly fifty empty beats and fifty double reads a second at 1-4 kHz with an IMU clock 0.1% slow, so the gate was dropped instead.
 
 ## Step 6 - Verdict
 
