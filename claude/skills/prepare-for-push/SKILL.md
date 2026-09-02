@@ -63,6 +63,10 @@ branches are affected, and how many commits move. If the user named a branch
 whose push would rewrite published history and they did not pass `--force`, say
 so rather than quietly adding the flag.
 
+If `--allow` includes `rebase` and the branch is already on the remote, the push
+that follows the rebase will not be a fast-forward either. Say so and ask for
+`--force` before minting, rather than discovering it when the push is refused.
+
 ### Step 2: Mint the token
 
 ```bash

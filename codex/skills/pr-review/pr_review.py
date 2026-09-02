@@ -61,6 +61,25 @@ def git_ok(*args):
     ).returncode == 0
 
 
+def refresh_remote_ref(ref):
+    """Fetch a remote-tracking ref so the merge-base is against today's base.
+
+    A day-stale upstream/master turned a 16-file PR into a 69-file gate run
+    with findings on commits that were not the author's. Best effort: offline
+    or slow remotes leave the local ref as it is.
+    """
+    remote, sep, branch = ref.partition("/")
+    if not sep or remote not in git("remote").split():
+        return
+    try:
+        subprocess.run(
+            ("git", "fetch", "--quiet", remote, branch),
+            capture_output=True, text=True, cwd=REPO_ROOT, timeout=60,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
 def find_repo_root():
     proc = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
@@ -250,6 +269,7 @@ def resolve_base(explicit=None, pr=None):
     candidates += ["upstream/master", "origin/master", "master"]
     for ref in candidates:
         if git_ok("rev-parse", "--verify", "--quiet", ref + "^{commit}"):
+            refresh_remote_ref(ref)
             mb = git("merge-base", ref, "HEAD").strip()
             if mb:
                 return ref, mb
@@ -494,6 +514,13 @@ def check_commits(scope):
                 "commit-merge", "must-fix",
                 "merge commit in the branch - rebase onto %s instead"
                 % scope["base_ref"], commit=ref, detail=c["subject"],
+            ))
+            continue
+        if re.match(r"^(fixup|squash|amend)! ", c["subject"]):
+            out.append(finding(
+                "commit-autosquash", "note",
+                "autosquash marker - fold it with an autosquash rebase before pushing",
+                commit=ref, detail=c["subject"][:100],
             ))
             continue
         if not re.match(r"^[A-Za-z][A-Za-z0-9_]*:", c["subject"]):
