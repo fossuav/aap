@@ -124,7 +124,7 @@ Give each agent the angles that actually matter for what it is reviewing rather
 than a generic "review this":
 
 - **hwdef / board PRs** - pin labels, DMA sharing and conflicts, board ID registration and uniqueness, power rail defaults, bootloader/timer agreement. `/hwdef-check` already automates most of this; run it instead of re-deriving it.
-- **Control, EKF, filters** - the maths, the mode dispatch, unit and frame agreement, what happens at the edges the design admits (zero, negative, saturated, NaN). Domain math (`sqrtf`, `logf`, `acosf`, division) gets every reaching value enumerated.
+- **Control, EKF, filters** - the maths, the mode dispatch, unit and frame agreement, what happens at the edges the design admits (zero, negative, saturated, NaN). Domain math (`sqrtf`, `logf`, `acosf`, division) gets every reaching value enumerated. A predicate on a configuration enum (`yaw_source_last`, a `_TYPE` parameter, an `AP_NavEKF_Source` getter) says what was asked for, not what is arriving: for each leg of it, ask what the code fuses when that source is configured but absent, and whether a freshness timestamp already exists for it.
 - **Drivers and HAL** - register sequences against the datasheet, timeouts, bus sharing, failure paths, what happens when the device is absent.
 - **Anything embedded** - flash and RAM cost, stack depth, allocation in flight paths, and whether a new feature needs an `AP_*_ENABLED` guard so small boards can drop it.
 - **Tooling and scripts** - the failure modes, not the happy path.
@@ -149,6 +149,13 @@ message, the PR body or a new comment cites as existing must be confirmed on the
 branch with `git grep <symbol> <base>`. A description built on a branch-only mechanism
 is a must-fix even when the code itself is right: the reviewer reads the prose and the
 diff together, and the prose is wrong.
+
+A playbook section written during the fix round of the PR under review is the least
+reliable text in the pipeline: it records the fix's own framing, and the re-review
+then holds the fix to it. The EKF3 playbook's "no usable yaw reference" section was
+written while fixing round one of PR #33498 and told round two to reuse a predicate
+that tests the configured source, not whether yaw is fused. Treat playbook text added
+in the current session as a claim under review, not a standard.
 
 The standard every agent reviews against is the playbook itself: the C++ Development
 Guidelines, Development Constraints, Comments and Documentation, the Surgical
@@ -186,7 +193,7 @@ the diff that received no second opinion, and it is invisible unless you count.
 Two kinds of task, kept strictly apart:
 
 - **Verification** - give it one commit's findings inline and ask for **CONFIRM / REFUTE / ADJUST** per finding plus any **NEW** ones. Never point it at your report.
-- **Cold** - give it the diff and nothing else: "review this and report anything wrong". This is the one that matters most on a self-review, because it is the only reader in the pipeline that is not anchored by your intent. Aim it at the parts you cleared, especially new hwdefs, state machines, concurrency, lifetime/ownership, and anything that newly depends on existing shared state.
+- **Cold** - give it the diff and nothing else: "review this and report anything wrong". This is the one that matters most on a self-review, because it is the only reader in the pipeline that is not anchored by your intent. Aim it at the parts you cleared, especially new hwdefs, state machines, concurrency, lifetime/ownership, and anything that newly depends on existing shared state. The task text must not describe the mechanism, restate the commit message, say which existing code the change "matches", or enumerate the cases to check. Each of those is your framing, and a reader handed the framing answers the question it was asked. The PR #33498 second-round cold task said the guard used "the same predicate as checkGyroCalStatus()" and asked for a check of "every SourceYaw value"; it checked the enum values, found them consistent, and approved a guard that tested the configured source rather than whether yaw was being fused.
 
 `codex exec` logs interleave the tool transcript with prose and the final answer is
 not reliably the tail, so extract findings by grepping for the markers you asked
@@ -203,6 +210,7 @@ with the conflict of interest. Both directions get checked against the source:
 - **Know the project's practice before calling something a process violation.** A submodule pointer moving to an unmerged commit is normal in ArduPilot as long as the submodule PR is linked in the description. Verify against the repo, the way the prefix check does, rather than asserting a rule.
 - **Do not accept a refutation of your own finding just because it is convenient.** That is the direction self-review fails in.
 - **Confirm every cited mechanism exists on the base branch.** A commit message or comment that says the change "mirrors X" is a claim about the tree, not about the diff; `git grep X <base>` settles it in a second. In the PR #33498 self-review the cited mechanism lived only on a feature branch, and the same branch had leaked two undefined declarations into the header.
+- **A fix that adopts an existing predicate inherits its blind spots.** When a finding is closed by switching to a test the codebase already uses, the re-review must ask what that test measures, not whether the new code matches it. Conformance is not sufficiency. In PR #33498 round one found the gate narrower than `checkGyroCalStatus()`, the fix adopted that predicate, and round two verified the match and approved; the predicate is health-aware for the compass leg only, and the dev-call reviewer found the GPS-yaw-lost-in-flight gap on a cold read.
 - **Measure the fix, do not just reason about it.** The Diagnosing from Logs and Data rules in the root playbook apply to the review as much as to the change: a behaviour change gets an A/B in SITL with a number that would go the wrong way if the change were wrong. The recipe (merge-base build in a scratch worktree, throwaway autotest harness, logs moved aside between runs) is under "Before/after A/B runs" in `Tools/autotest/CLAUDE.md`, and `/log-analyze` plots the result. A finding that is plausible from the code but contradicted by the A/B is refuted; a fix the A/B cannot tell from a no-op needs a stronger provocation before it is called verified, not a softer description.
 
 ## Step 6 - Verdict
@@ -252,6 +260,11 @@ gone does it say so and start the review over.
 Iterate steps 7-8 until the mechanical gate is clean and no must-fix findings
 survive, or until three rounds have passed without converging - at which point stop
 and tell the user what is not converging rather than churning their tree.
+
+Every round runs the whole pipeline on what moved: the primary reviewers of step 3
+and the cold pass of step 4, with the fix's own framing kept out of both. A round
+that runs only the cold pass on the amended commit, as the PR #33498 second round
+did, gives the fix less scrutiny than the original change had.
 
 Once CI has run on a pushed branch, `/pr-checks` triages the failures; those are
 findings too, and they belong in the same loop.
