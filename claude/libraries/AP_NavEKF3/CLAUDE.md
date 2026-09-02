@@ -228,7 +228,7 @@ Without Z velocity measurements (no GPS indoors), the Z-axis accelerometer bias 
 1. Motor thrust on ground creates AccZ offset
 2. Optical flow provides only XY velocity, leaving Z-bias unobservable
 3. When disarmed with optical flow, bias drifts unchecked
-4. GPS configured but unavailable (indoors) — code must check actual data availability, not just configuration
+4. GPS configured but unavailable (indoors) — code must check actual data availability, not just configuration. The same rule applies to yaw sources; see "Gyro Bias Observability Without a Yaw Reference" below
 
 ### How Inhibition Works
 
@@ -354,9 +354,9 @@ Safety: frozen correction clamped to +/-0.3 m/s^2. If `ACC_ZBIAS_LEARN=0`, corre
 
 State 12 (Z gyro bias) is only observable through something that observes heading. Optical flow gives body-frame velocity, so with flow as the only horizontal aiding source and no usable yaw reference, a flow-velocity error (scale, misalignment) can be reconciled either by rotating yaw or by moving the Z gyro bias, and the filter does some of each. The phantom bias then integrates into a continuous yaw drift that walks the dead-reckoned position.
 
-### The "no usable yaw reference" predicate
+### "No usable yaw reference" is a question about fusion, not configuration
 
-EKF3 has one test for this, used in two places; reuse it rather than checking `yaw_source_last == NONE`, which misses a compass that is configured but unhealthy or excluded, and GSF with no GPS velocity to converge on:
+`yaw_source_last` is the parameter setting (`EK3_SRC*_YAW`, remapped only for compass calibration). A test on it says what the user asked for, not what the filter is getting. `checkGyroCalStatus()` and `SelectMagFusion()` share this predicate for "no yaw sensor of any type":
 
 ```cpp
 // AP_NavEKF3_Control.cpp checkGyroCalStatus(), AP_NavEKF3_MagFusion.cpp SelectMagFusion()
@@ -366,7 +366,21 @@ yaw_source_last != AP_NavEKF_Source::SourceYaw::GPS_COMPASS_FALLBACK &&
 yaw_source_last != AP_NavEKF_Source::SourceYaw::EXTNAV
 ```
 
-`use_compass()` is false for every yaw source other than COMPASS / GPS_COMPASS_FALLBACK, and for those two when `use_for_yaw()` is false or all mags have failed.
+It is availability-aware on exactly one leg. `use_compass()` is false for every yaw source other than COMPASS / GPS_COMPASS_FALLBACK, and for those two when `use_for_yaw()` is false or all mags have failed. The GPS and EXTNAV legs are bare enum compares. With GPS yaw configured, aligned on the ground and then lost in flight, the GPS branch of `SelectMagFusion()` fuses nothing and returns with no fallback, yet the predicate still reports a yaw reference. Same for external nav yaw. This is the yaw-source instance of the accel-bias rule above: GPS configured but unavailable, so check actual data availability, not just configuration.
+
+The fusion-freshness signals are members, and the review of PR #33498 missed them because this file said "reuse the predicate":
+
+| Source | Yaw is being fused if |
+|--------|-----------------------|
+| GPS, GPS_COMPASS_FALLBACK | `recentGpsYawFusion()`: `last_gps_yaw_fuse_ms != 0 && imuSampleTime_ms - last_gps_yaw_fuse_ms < 5000`. Only a successful `fuseEulerYaw(GPS)` or `alignYawAngle()` refreshes it; a geometrically rejected measurement does not |
+| COMPASS | `use_compass() && !magTimeout`. `magTimeout` is set once the compass has failed its innovation checks for `magFailTimeLimit_ms` (10 s) and cleared by the next healthy fusion; `use_compass()` alone only drops when every mag has failed |
+| GPS_COMPASS_FALLBACK after GPS yaw loss | `gps_yaw_mag_fallback_active && use_compass() && !magTimeout`. The fallback engages 10 s after loss, in flight only, and only if the compass agreed with GPS yaw while it was fused |
+| EXTNAV | `last_extnav_yaw_fuse_ms != 0 && imuSampleTime_ms - last_extnav_yaw_fuse_ms < 5000`. Not `last_extnav_yaw_fusion_ms`, despite the name: that one is refreshed whenever a sample arrives, including one the innovation gate rejects, and feeds `using_extnav_for_yaw()` |
+| NONE, GSF | never. GSF fuses yaw only once GPS velocity has converged it, and then GPS velocity observes state 12 through `FuseVelPosNED` anyway |
+
+`flowYawGyroBiasInhibited()` (PR #33498) is built from these. `using_noncompass_for_yaw()` is not usable for the purpose: the synthetic PREDICTED / STATIC fusion refreshes `lastSynthYawTime_ms`, so it returns true with no yaw source at all.
+
+When a mask has to err, err towards inhibiting. Any real yaw fusion learns state 12 through its own unmasked gains, so masking the flow contribution while a reference exists costs a little convergence speed; leaving it unmasked with no reference is the phantom-bias failure the mask exists for.
 
 ### What still learns state 12 in that configuration
 
@@ -388,6 +402,8 @@ Process noise on state 12 is negligible: with `EK3_GBIAS_P_NSE` at its 1e-3 defa
 ### Measured effect (SITL, PR #33498)
 
 Flow-only Loiter box pattern, no yaw source, 20 percent flow scale error, four laps: the merge-base learns a 0.34 deg/s phantom Z bias from a bias-free simulated gyro and the branch holds zero; with a real 1 deg/s gyro bias and `INS_GYR_CAL=0` the merge-base overshoots to 1.38 deg/s and the branch holds the 0.93 deg/s learned on the ground. Yaw drift at 240 s fell from 57 to 39 deg and 68 to 46 deg. The remaining drift is the direct yaw correction from the flow innovation and is inherent to having no yaw reference; the phantom bias is roughly a third of the drift, not all of it, so do not describe the mask as curing yaw drift.
+
+GPS yaw configured (moving baseline, `copter-gps-for-yaw.parm`), aligned on the ground, both receivers dropped 5 s after takeoff, then eight flow-only laps with the same flow scale error: the merge-base and the config-only guard of the PR's first head (629b5959e9) both learn a 0.55 to 0.66 deg/s phantom Z bias and yaw drifts through 150 deg by 420 s, at which point Loiter can no longer hold position and one run failed to land; the fusion-aware guard holds the bias at 0.01 deg/s and the drift at 40 deg. Dropping GPS after a full lap instead barely moves the bias on any arm (0.06 deg/s at 240 s): the extra 50 s of GPS yaw fusion collapses P[12][12] to 6e-11, 400 times below its takeoff value with no yaw source, and the flow gain into state 12 scales with it. A provocation for this mask has to remove the yaw reference while the bias variance is still large, or it measures nothing.
 
 ## Vibration Rectification
 
