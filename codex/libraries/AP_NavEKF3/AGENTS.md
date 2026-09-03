@@ -481,7 +481,7 @@ Path 2 keeps the IMU-propagated position, applies a bounded correction toward th
 
 On any vehicle where sustained cruise regularly puts the airframe into a flight regime where GPS processing lag creates metres-scale apparent position error against IMU propagation, **the default `25` is the wrong value**. Seeing `"GPS Glitch"` messages in such a log is not evidence that glitch rejection is needed — it is evidence that the innovation test is doing what it should, and the question is whether you want the reset-to-GPS or bounded-variance path to handle the update. For high-speed platforms, bounded-variance (`<= 0`) is the right answer.
 
-## onGround and inFlight Are Armed-State Flags on Copters
+## Flight-State Flags: onGround, inFlight, takeOffDetected
 
 `detectFlight()` in `AP_NavEKF3_VehicleStatus.cpp` has two branches. Fly-forward vehicles infer ground state from ground speed, height change and airspeed. Everything else gets this:
 
@@ -497,7 +497,48 @@ if (motorsArmed) {
 
 On a copter `onGround` is `!motorsArmed` and nothing more. One EKF cycle after a mid-air disarm the filter reports on-ground, so a guard of the form `if (!onGround) return` gives no in-flight protection to anything that runs at re-arm. Copter's own `ap.land_complete` is no substitute: `AP_Arming_Copter::disarm()` forces it true and the land detector holds it true while disarmed. Only the vehicle knows it was flying, so code that must not run in flight after a disarm needs the vehicle to record that at disarm time. PR #32768 adds `ap.disarmed_in_air` for the arm-time height datum reset (branch-specific until it merges; `resetHeightDatum()` zeroes `velocity.z`, and a re-arm while falling at 15.6 m/s reported 0.4 m/s one sample later).
 
-Review rule: before crediting an `onGround`, `inFlight` or `land_complete` test as protection, read how that flag is set for the vehicle type the code runs on.
+### `inFlight` is not a portable airborne test
+
+The fly-forward branch of `detectFlight()` sets `inFlight` only when GPS ground speed exceeds 5 m/s (plus the reported speed accuracy) and one of `takeoff_expected`, airspeed over 10 m/s, or 10 m of height change:
+
+```cpp
+if (motorsArmed) {
+    onGround = false;
+    if (highGndSpd && (dal.get_takeoff_expected() || highAirSpd || largeHgtChange)) {
+        inFlight = true;
+    }
+}
+```
+
+`highGndSpd` is computed from `gpsDataNew.vel`, so on a GPS-denied or GPS-jammed plane `inFlight` never becomes true for the whole flight. The height-change, rangefinder and `get_time_flying_ms() > 5000` sources that make `inFlight` dependable belong to the non fly-forward branch only. A Copter-only autotest cannot see the difference - both flags behave on Copter, and the code still ships broken on Plane.
+
+Once set it latches until disarm, and `inFlight` implies `!onGround` (the two are never both true), so `!onGround` is always the weaker and more permissive of the pair.
+
+### `takeOffDetected` is optical flow state, not a flight-state flag
+
+`takeOffDetected` is written in exactly one function, `detectOptFlowTakeoff()`, which is called from exactly one place, `writeOptFlowMeas()`:
+
+```cpp
+// by definition if this function is called, then flow measurements have been provided so we
+// need to run the optical flow takeoff detection
+detectOptFlowTakeoff();
+```
+
+No flow sensor means no call, so the flag holds its initialised false for the whole flight, and it is compiled out entirely under `#if !EK3_FEATURE_OPTFLOW_FUSION`. A condition of the form `takeOffDetected && <something>` is therefore dead on every vehicle without optical flow, and whatever the `<something>` selects between becomes unreachable with it. Its declared meaning is "takeoff for optical flow navigation has been detected", not "airborne".
+
+### Which flag to use for an observability gate
+
+For "is this bias observable now", follow what `CovariancePrediction()` already does for the delta velocity bias axes:
+
+```cpp
+const bool is_bias_observable = (fabsF(prevTnb[index][2]) > 0.8f && onGroundNotMoving) || !onGround;
+```
+
+`onGroundNotMoving` for the stationary case, `!onGround` for the airborne case. `!onGround` is only armed-state on Copter, but it is the one term that means the same thing on every vehicle, and reusing the established idiom keeps a new gate consistent with the axis inhibit running next to it.
+
+Measured (SITL, #32473): a Z accel-bias gate written as `onGroundNotMoving || (takeOffDetected && heightRefGood)` collapsed to `onGroundNotMoving` on a baro/GPS copter, and the bias learned 0.000097 against a 0.15 injected offset. With `!onGround` it learned 0.178. The subtest that learns on the ground before takeoff passed in both cases, so only a subtest that inhibits ground learning exercises the air path at all.
+
+Review rule: before crediting an `onGround`, `inFlight`, `takeOffDetected` or `land_complete` test as protection, read how that flag is set for the vehicle type the code runs on, and check it can be set at all with the sensors that vehicle has. A gate that reads as a clean observability test can quietly reduce to a constant.
 
 ## Known Issues
 
