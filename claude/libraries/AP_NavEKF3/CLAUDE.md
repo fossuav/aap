@@ -158,7 +158,7 @@ If your theory predicts the vehicle is at 2.5m but the rangefinder shows 17cm, y
 
 ### How It Works
 
-The EKF has two mechanisms for ground effect, both controlled by flags set in `ArduCopter/baro_ground_effect.cpp`:
+The EKF has two mechanisms for ground effect, both controlled by flags set in `libraries/AP_GroundEffect/AP_GroundEffect.cpp` (`ArduCopter/baro_ground_effect.cpp` is only the thin wrapper that feeds it):
 
 1. **Innovation flooring:** Limits negative baro corrections during ground effect (`AP_NavEKF3_PosVelFusion.cpp`)
 2. **Noise scaling:** Increases baro noise variance by 4x (`gndEffectBaroScaler = 4.0`)
@@ -168,26 +168,26 @@ Both are ONLY active when `takeoff_expected` OR `touchdown_expected` flags are t
 ### When Flags Are Set
 
 **`takeoff_expected = true`:** Armed AND `land_complete` is true AND mode is not THROW
-**`takeoff_expected = false`:** 5s passed since takeoff OR vehicle above `TKOFF_GNDEFF_ALT`
+**`takeoff_expected = false`:** 5s passed since takeoff OR vehicle above `GNDEFF_ALT`
 
 **`touchdown_expected = true`:** Slow horizontal (XY speed demand ≤125cm/s OR actual ≤125cm/s) AND slow descent demanded
 
 ### The Gap
 
-Hovering at low altitude (not taking off, not descending) has NEITHER flag true, so NO compensation. The `TKOFF_GNDEFF_ALT` parameter addresses this by re-enabling compensation when below the threshold.
+Hovering at low altitude (not taking off, not descending) has NEITHER flag true, so NO compensation. The `GNDEFF_ALT` parameter addresses this by re-enabling compensation when below the threshold.
 
 | Flight Phase | takeoff_expected | touchdown_expected | Compensation |
 |--------------|------------------|--------------------|--------------|
 | On ground, armed | YES | NO | YES |
-| First 5s or below TKOFF_GNDEFF_ALT | YES | NO | YES |
-| Hovering above TKOFF_GNDEFF_ALT | NO | NO | NONE |
+| First 5s or below GNDEFF_ALT | YES | NO | YES |
+| Hovering above GNDEFF_ALT | NO | NO | NONE |
 | Descending slowly for landing | NO | YES | YES |
 
-### TKOFF_GNDEFF_ALT Tuning
+### GNDEFF_ALT Tuning
 
 Set **below** your typical hover altitude to avoid unnecessary compensation during stable hover:
 
-| Hover Altitude | Recommended TKOFF_GNDEFF_ALT |
+| Hover Altitude | Recommended GNDEFF_ALT |
 |----------------|------------------------------|
 | ~0.5m | 0.3m |
 | ~1.0m | 0.5-0.7m |
@@ -199,20 +199,20 @@ Set **below** your typical hover altitude to avoid unnecessary compensation duri
 
 Ground effect causes **positive pressure (negative altitude)** — propwash pushes air down, baro reads lower than actual. Having compensation ON unnecessarily is safer than having it OFF when needed.
 
-### TKOFF_GNDEFF_TMO Parameter
+### GNDEFF_TMO Parameter
 
-**New parameter** that requires BOTH a time delay AND altitude threshold before ground effect compensation is disabled.
+Requires BOTH a time delay AND the altitude threshold before ground effect compensation is disabled.
 
-**Problem it solves:** On vehicles with severe baro ground effect (motor-induced pressure noise), the EKF altitude can falsely cross the TKOFF_GNDEFF_ALT threshold due to baro noise, prematurely disabling ground effect protection. This causes the EKF to trust garbage baro data, leading to altitude estimate runaway and inability to take off in AltHold.
+**Problem it solves:** On vehicles with severe baro ground effect (motor-induced pressure noise), the EKF altitude can falsely cross the GNDEFF_ALT threshold due to baro noise, prematurely disabling ground effect protection. This causes the EKF to trust garbage baro data, leading to altitude estimate runaway and inability to take off in AltHold.
 
 **Logic:**
-- `TKOFF_GNDEFF_TMO = 0` (default): Original behavior — clear when (altitude > threshold) OR (5s elapsed)
-- `TKOFF_GNDEFF_TMO > 0`: Clear when (timeout AND altitude > threshold) OR (5s max elapsed)
+- `GNDEFF_TMO = 0`: only the altitude check is applied - clear when (altitude > threshold) OR (5s elapsed)
+- `GNDEFF_TMO > 0` (default 2): Clear when (timeout AND altitude > threshold) OR (5s max elapsed)
 
 **Recommended settings for vehicles with severe baro ground effect:**
 ```
-TKOFF_GNDEFF_TMO = 2    # or 3 for more protection (seconds)
-TKOFF_GNDEFF_ALT = 0.8  # adjust based on hover altitude (meters)
+GNDEFF_TMO = 2    # or 3 for more protection (seconds); this is the default
+GNDEFF_ALT = 0.8  # adjust based on hover altitude (meters); default 0.5
 ```
 
 This ensures the vehicle must be above the altitude threshold AND have been flying for the specified time before ground effect protection is removed. The 5s maximum timeout is always preserved.
@@ -259,8 +259,8 @@ This is critical for optical flow configurations where `PV_AidingMode == AID_REL
 |----------|-----------------|--------|
 | Stationary on ground, disarmed | **Enabled** via zero velocity fusion | Bias IS observable |
 | Armed on ground (motors spinning) | **Inhibited** | Ground effect flag prevents learning motor thrust offset |
-| Takeoff (below TKOFF_GNDEFF_ALT) | **Inhibited** | Ground effect flag |
-| Hover (above TKOFF_GNDEFF_ALT) | **Enabled** | Weakly observable from baro |
+| Takeoff (below GNDEFF_ALT) | **Inhibited** | Ground effect flag |
+| Hover (above GNDEFF_ALT) | **Enabled** | Weakly observable from baro |
 | Flying with GPS Z velocity | **Enabled** | Strongly observable |
 | Flying with optical flow only | **Enabled** | Weakly observable from baro |
 | Landing (slow descent) | **Inhibited** | Ground effect flag |
@@ -325,7 +325,7 @@ The AHRS and EKF3 setter functions return `bool` for success/failure. The caller
 | `INS_ACC2_VRFB_Z` | Learned hover Z-axis accel bias for IMU1 (m/s^2) |
 | `INS_ACC3_VRFB_Z` | Learned hover Z-axis accel bias for IMU2 (m/s^2) |
 | `ACC_ZBIAS_LEARN` | Learning mode: 0=Disabled, 1=Learn, 2=Learn+Save (Copter parameter) |
-| `TKOFF_GNDEFF_ALT` | Altitude threshold for ground effect (controls when learning is allowed) |
+| `GNDEFF_ALT` | Altitude threshold for ground effect (controls when learning is allowed) |
 
 Safety: frozen correction clamped to +/-0.3 m/s^2. If `ACC_ZBIAS_LEARN=0`, correction is set to 0.
 
@@ -551,8 +551,8 @@ On small drones, motor operation can cause severe baro pressure noise (3-10x wor
 **Mitigations:**
 1. **Hardware:** Relocate baro away from prop wash, add foam isolation
 2. **BARO_FLTR_RNG:** Enable baro filtering
-3. **TKOFF_GNDEFF_ALT:** Increase threshold to keep ground effect protection longer
-4. **TKOFF_GNDEFF_TMO:** Require time delay before ground effect clears
+3. **GNDEFF_ALT:** Increase threshold to keep ground effect protection longer
+4. **GNDEFF_TMO:** Require time delay before ground effect clears
 
 ### Baro Thrust Compensation (BARO1_THST_SCALE)
 
@@ -580,7 +580,7 @@ BARO1_THST_SCALE = -(5 × 12) / 0.39 = -154 Pa
 
 **Alternative approach:** Use rangefinder for height fusion instead:
 - `EK3_RNG_USE_HGT = 70` (use rangefinder below 70% of max range)
-- `TKOFF_GNDEFF_TMO = 3` (keep ground effect active during takeoff transient)
+- `GNDEFF_TMO = 3` (keep ground effect active during takeoff transient)
 - EKF will trust rangefinder over corrupted baro, converging to correct altitude
 
 ### Baro Thrust Filter (BARO1_THST_FILT)
@@ -602,7 +602,7 @@ BARO1_THST_FILT = 0     # Disable filter (original behavior)
 
 The ground effect threshold check uses EKF altitude. If baro noise corrupts EKF altitude, it can falsely cross the threshold, disabling protection too early. This creates a feedback loop: bad baro → wrong altitude → ground effect clears → EKF trusts bad baro.
 
-**Solution:** Use `TKOFF_GNDEFF_TMO` to require BOTH time delay AND altitude threshold.
+**Solution:** Use `GNDEFF_TMO` to require BOTH time delay AND altitude threshold.
 
 ### Frozen Correction + Ground Effect Conflict
 
@@ -694,7 +694,7 @@ EK3_RNG_USE_HGT = -1          # Disable rangefinder height switching (avoids fee
 BARO1_THST_SCALE = -147       # Calibrated thrust compensation (vehicle-specific)
 BARO1_THST_FILT = 1.0         # Filter throttle transients
 INS_ACC_VRFB_Z = 0            # Reset if previously corrupted
-TKOFF_GNDEFF_ALT = 5          # Keep ground effect protection to 5m
+GNDEFF_ALT = 5          # Keep ground effect protection to 5m
 ```
 
 ### Post-Landing EKF Divergence
@@ -712,7 +712,7 @@ After landing with ground effect, the EKF accumulates position/velocity errors t
 - Stronger zero velocity fusion when stationary
 - Extended ground effect protection after landing
 
-**Key code:** `AP_NavEKF3_VehicleStatus.cpp` (onGround detection), `AP_NavEKF3_PosVelFusion.cpp` (zero velocity fusion, innovation flooring), `ArduCopter/baro_ground_effect.cpp` (flag control)
+**Key code:** `AP_NavEKF3_VehicleStatus.cpp` (onGround detection), `AP_NavEKF3_PosVelFusion.cpp` (zero velocity fusion, innovation flooring), `libraries/AP_GroundEffect/AP_GroundEffect.cpp` (flag control)
 
 ## Magnetometer Fusion Mode Selection (EK3_MAG_CAL)
 
@@ -887,7 +887,7 @@ Output log in `logs/` has both original (C=0,1) and replayed (C=100,101) data. U
 
 **What Replay can test:** Any EKF behavior driven by DAL-logged sensor data and EKF parameters. This includes tuning parameter changes (`--parm EK3_VELNE_M_NSE=0.5`).
 
-**What Replay cannot test:** Vehicle-specific behavior not captured in DAL logs — e.g. Copter flight mode logic, ground effect flag timing from `baro_ground_effect.cpp`, hover bias learning lifecycle. For these, use SITL autotest or real flight.
+**What Replay cannot test:** Vehicle-specific behavior not captured in DAL logs — e.g. Copter flight mode logic, ground effect flag timing from `AP_GroundEffect.cpp`, hover bias learning lifecycle. For these, use SITL autotest or real flight.
 
 **Replay and the DAL:** Replay feeds the EKF exclusively through the DAL. If EKF code reads data that bypasses the DAL (e.g. direct `AP::ins()` calls), replay will use stale or default values instead of the flight's actual data. Always access sensor data via `dal.ins()`, `dal.gps()`, etc. See the DAL section above.
 
