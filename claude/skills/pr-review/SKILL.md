@@ -57,6 +57,22 @@ the local branch, so stop and `gh pr checkout <number>` first. The scope command
 prints it rather than refusing, because reviewing a local branch that has drifted
 ahead of its own PR is a legitimate thing to do - but only when you meant to.
 
+**A refresh run starts with a sweep.** When the run is a batch pass over the
+fork's open PRs - after a rebase wave, or after a round of AI reviews and
+fixes - enumerate before reviewing anything:
+
+```bash
+gh pr list --author <fork-owner> --repo ArduPilot/ardupilot --state open \
+    --json number,headRefName,updatedAt,reviewDecision
+```
+
+Reconcile that list against the branch README's PR list and the analysis
+archive (step 2). A PR opened since the last pass is exactly the one with no
+archive entry and no prior review, so it joins the run rather than being
+discovered after it; a PR that merged or closed drops out. Update the
+README's list as part of the sweep - a "not yet submitted" line for a PR
+that is open misleads the next run.
+
 ## Step 1 - Mechanical gate
 
 ```bash
@@ -112,6 +128,18 @@ On your own PR the thread is not background - it *is* the specification for
 - A review comment you already answered in code needs checking against the diff, not re-answering.
 - A review comment you answered *in prose* and never fixed is the most common reason a PR stalls. Surface those explicitly.
 - A claim an earlier comment marked as checked, yours included, is re-derived from the source when the change touches it, not inherited. The "cannot fire in flight" line in PR #32768's thread was the premise every later round built on.
+
+**The analysis archive is part of the thread.** A PR under active work keeps
+its investigation record in the `ardupilot-pr-analysis` sibling repo
+(`../ardupilot-pr-analysis` from the primary checkout - resolve it from
+there, not from a scratch worktree). Check the entry exists and is current
+before reviewing - compare its last commit against the PR's last push - and
+read it before the diff: it records the validated numbers, the rejected
+alternatives and the rounds already argued, which is what stops a fresh
+review from re-litigating settled questions or "improving" a design choice
+the archive shows was measured. A PR in the run with no entry, or an entry
+that predates the latest round of changes, is itself a finding: bring the
+archive up to date as part of the run.
 
 ## Step 3 - Primary review, fanned out
 
@@ -170,6 +198,23 @@ The standard every agent reviews against is the playbook itself: the C++ Develop
 Guidelines, Development Constraints, Comments and Documentation, the Surgical
 Modification Principle, Commit Conventions, and Writing for Reviewers in the root
 `CLAUDE.md`. That is the same document a maintainer's objections tend to reduce to.
+
+**Hold the diff against the flight record, not just the source.** The
+measured behaviour behind these changes lives in the private flight-test
+analysis repos (`../analysis`, `../analysis-private` from the primary
+checkout). Reviews run without that context have asserted wrong conclusions
+with full confidence: reasoning that a mechanism must misbehave when a
+flight log already shows it behaving, or proposing a simplification that
+re-introduces a failure a flight measured. For each PR in the run, find its
+topics in the private repo (the archive entry usually links them), confirm
+the current diff still delivers what the flights established, and vet every
+finding - and every AI-suggested fix already applied - that touches measured
+behaviour against the data before accepting it. A finding contradicted by
+flight data is refuted; a fix that would undo a flight-validated behaviour
+is a bug being introduced, however sound the reasoning reads. The repos are
+private: public-facing text (PR bodies, comments, commit messages, the
+public archive) cites the evidence only as "flight tests show X" with the
+numbers, never the repo, its file names, or any vehicle, person or location.
 
 Tell each agent explicitly that an admitted gap is worth more than a confident
 wrong claim. These findings turn into edits to the user's code.
