@@ -607,7 +607,7 @@ def check_params(scope):
         if os.path.exists(abspath):
             with open(abspath, "r", errors="replace") as fh:
                 full = fh.read()
-        documented = set(re.findall(r"//\s*@Param:\s*(\S+)", full))
+        documented = set(re.findall(r"//\s*@Param(?:\{[^}]*\})?:\s*(\S+)", full))
         for name, lineno in entries:
             if len(name) > 16:
                 out.append(finding(
@@ -632,7 +632,7 @@ def check_params(scope):
             lines = fh.read().split("\n")
         new_here = {n for n, _ in touched.get(path, [])}
         for i, line in enumerate(lines):
-            m = re.match(r"\s*//\s*@Param:\s*(\S+)", line)
+            m = re.match(r"\s*//\s*@Param(?:\{[^}]*\})?:\s*(\S+)", line)
             if not m or m.group(1) not in new_here:
                 continue
             block = []
