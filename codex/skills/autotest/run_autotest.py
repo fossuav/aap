@@ -13,7 +13,10 @@ Examples:
     python3 .codex/skills/autotest/run_autotest.py test.Copter.AltHold
     python3 .codex/skills/autotest/run_autotest.py --timeout 1200 test.Plane.QuadPlane
 
-Exit code is autotest.py's own, or 124 on timeout (matching coreutils `timeout`).
+Exit code is autotest.py's own, 124 on timeout (matching coreutils `timeout`),
+or 125 when another autotest already holds the lock. That last one matters:
+autotest.py exits 0 when it cannot take the lock, so without this a blocked
+run is indistinguishable from a passing one.
 Build first with /build or ./waf - this script only runs tests.
 """
 import os
@@ -22,6 +25,35 @@ import subprocess
 import sys
 
 DEFAULT_TIMEOUT = 900
+
+
+def lock_is_held(path):
+    """True when another process holds autotest.py's lock on path.
+
+    autotest.py takes an fcntl advisory lock and exits 0 when it cannot get it,
+    so a caller that only checks the exit code cannot tell a blocked run from a
+    passing one. The lock is released when its holder dies, so the file existing
+    proves nothing - test-acquire it instead.
+    """
+    if not os.path.exists(path):
+        return False
+    try:
+        import fcntl
+    except ImportError:
+        return False  # not a POSIX host; let autotest.py speak for itself
+    try:
+        f = open(path, "a")
+    except OSError:
+        return False
+    try:
+        fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return True
+    else:
+        fcntl.lockf(f, fcntl.LOCK_UN)
+        return False
+    finally:
+        f.close()
 
 
 def main():
@@ -38,14 +70,14 @@ def main():
         return 2
 
     # The lock lives at $BUILDLOGS/autotest.lck (default ../buildlogs, one level
-    # above the repo root). A present lock may be a live run in a sibling clone,
-    # so warn rather than touch it.
+    # above the repo root), shared with any sibling clone.
     buildlogs = os.environ.get("BUILDLOGS", os.path.join(os.getcwd(), "..", "buildlogs"))
     lock = os.path.normpath(os.path.join(buildlogs, "autotest.lck"))
-    if os.path.exists(lock):
-        print("warning: autotest lock present at %s - another run may be active; "
-              "check `ps aux | grep -E 'autotest|arducopter'` before clearing it"
+    if lock_is_held(lock):
+        print("error: another autotest holds %s - nothing was run.\n"
+              "       find it with `ps aux | grep -E 'autotest|arducopter'` and wait for it."
               % lock, file=sys.stderr)
+        return 125
 
     cmd = [sys.executable, "Tools/autotest/autotest.py"] + args
     print("+ %s  (timeout %ds)" % (" ".join(cmd), timeout), flush=True)
