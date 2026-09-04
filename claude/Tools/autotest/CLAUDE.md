@@ -58,10 +58,13 @@ A single-phase test that covers only the allowed case is a regression hazard: th
 
 ### A green test is not coverage
 
-Citing an existing test as covering a path needs a trace, not a pass count. Read the test's setup for anything that steers around the branch, then confirm from the run that it went through: an EV event or STATUSTEXT the branch emits, or a log field only it writes. Two Copter traps:
+Citing an existing test as covering a path needs a trace, not a pass count. Read the test's setup for anything that steers around the branch, then confirm from the run that it went through: an EV event or STATUSTEXT the branch emits, or a log field only it writes. Three Copter traps:
 
 - `self.set_home()` sends `DO_SET_HOME`, which the GCS handler applies with `lock=true`. Every `!ahrs.home_is_locked()` branch in the arming code is then skipped, so `RudderDisarmMidair` passed 3/3 without ever reaching the arm-time datum reset it was cited for (PR #32768). A test of the unlocked-home path must let home auto-set at the first arm and never call `set_home()`.
 - Copter believes it is landed after any disarm. `disarm()` forces `land_complete` true and the land detector keeps it true while disarmed, so ALT_HOLD on a re-armed vehicle sits in `Landed_Pre_Takeoff` with the throttle relaxed until the stick asks for a climb. `hover()` after a mid-air re-arm free-falls to the ground at terminal velocity; demand a climb first (`set_rc(3, 1700)`, `wait_climbrate(0.5, 20)`) to bring the controller in, then hover.
+- `GLOBAL_POSITION_INT.relative_alt` is not the EKF height. `AP_AHRS::get_relative_position_D_home()` falls back to `-AP::baro().get_altitude()` whenever the EKF vertical position is unhealthy, and an unhealthy vertical position is exactly what a height-failure test sets up, so the assertion quietly reads the raw baro instead of the estimate. The first cut of `BaroGroundEffectResetSuppression` (PR #32972) asserted on it and passed identically with the change compiled out, reading the baro through that fallback and calling it a height reset. Use `LOCAL_POSITION_NED.z`: `send_local_position()` withholds the message when `get_relative_position_NED_origin_float()` fails rather than substituting another source.
+
+The same trace run backwards is what qualifies a *new* test: compile the guard out, re-run, and confirm the test fails. A new test that still passes without the code it was written for is measuring something else, which is how the `relative_alt` trap above was found.
 
 ### Don't add `context_push` / `context_pop` manually
 
