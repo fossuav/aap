@@ -11,8 +11,8 @@ Usage:
     python3 autotest_results.py failure  <test_name> [--buildlogs DIR] [--lines N]
     python3 autotest_results.py logs     [--buildlogs DIR]
 
-Default --buildlogs is $BUILDLOGS or ../buildlogs (matching the autotest
-harness default — see Tools/autotest/autotest.py:buildlogs_dirpath()).
+Default --buildlogs is $BUILDLOGS, else this clone's own log tree (see
+autotest_env.py), which is where run_autotest.py points the harness.
 
 Per-test files are written by run_one_test_attempt() in vehicle_test_suite.py
 and named "<Vehicle>-<TestName>.txt", with retries suffixed "-retry-<N>".
@@ -24,6 +24,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import autotest_env  # noqa: E402
+
 
 PASSED_RE   = re.compile(r'PASSED:\s+"([^"]+)"')
 FAILED_RE   = re.compile(r'FAILED:\s+"([^"]+)":\s*(.*?)\s*(?:\(see\s+(.+?)\))?\s*$')
@@ -34,10 +37,7 @@ FILENAME_RE = re.compile(r'^([A-Za-z][A-Za-z0-9_]*)-(.+?)(?:-retry-(\d+))?\.txt$
 
 
 def default_buildlogs() -> Path:
-    env = os.environ.get('BUILDLOGS')
-    if env:
-        return Path(env)
-    return Path.cwd().parent / 'buildlogs'
+    return Path(autotest_env.buildlogs_dir())
 
 
 def list_test_files(buildlogs: Path, vehicle: str | None = None):

@@ -60,8 +60,9 @@ The install script places the following files:
 | `.claude/skills/log-analyze/baro_thst_cal.py` | Fits BARO1_THST_SCALE (and checks BARO_THST_FILT) from a fixed-vehicle throttle ramp, used by `/log-analyze` |
 | `.claude/skills/log-analyze/rate_band.py` | Which axis owns an oscillation band above 10 Hz, whether D is driving it, and an A/B between two logs, used by `/log-analyze` |
 | `.claude/skills/log-analyze/batch_fft.py` | ISBH/ISBD batch-sampler spectrum per IMU, pre- and post-filter, in physical units, used by `/log-analyze` |
+| `.claude/skills/autotest/autotest_env.py` | Per-clone autotest environment shared by the two scripts below — own log tree, own port slot, so two clones can run autotests at once |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
-| `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout and lock pre-check |
+| `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout, lock pre-check and per-clone isolation |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, BIDIR/bdshot, and commit-structure checks on a new-board PR |
 | `.claude/skills/pr-checks/ci_failures.py` | Helper used by `/pr-checks` to download a PR's failed CI job logs and extract the failing tests/build errors |
 | `.claude/skills/prepare-for-push/grant_push.py` | Mints the short-lived push authorisation the git pre-push hook requires — run for you when *you* type `/prepare-for-push`, never on Claude's initiative |
@@ -175,8 +176,9 @@ The install script places the following files:
 | `.codex/skills/*/SKILL.md` | Codex skills for the same workflows as the Claude slash commands |
 | `.codex/skills/log-analyze/log_extract.py` | Log extraction tool used by the log analysis skill |
 | `.codex/skills/log-analyze/flow_cal_check.py` | Verifies optical-flow scale/orientation against GPS truth (per-axis scaler check) used by the log analysis skill |
+| `.codex/skills/autotest/autotest_env.py` | Per-clone autotest environment shared by the two scripts below — own log tree, own port slot, so two clones can run autotests at once |
 | `.codex/skills/autotest/autotest_results.py` | Autotest result parser used by the autotest skill |
-| `.codex/skills/autotest/run_autotest.py` | Timed autotest runner used by the autotest skill |
+| `.codex/skills/autotest/run_autotest.py` | Timed autotest runner used by the autotest skill — wall-clock timeout, lock pre-check and per-clone isolation |
 | `.codex/skills/hwdef-check/hwdef_check.py` | Helper used by the hwdef review skill |
 | `.codex/skills/pr-checks/ci_failures.py` | Helper used by the PR checks skill |
 

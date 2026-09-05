@@ -60,8 +60,9 @@ python3 Tools/autotest/autotest.py --debug test.Copter.AltHold
 ### Bounding a run that might hang
 
 Use the runner script - it wraps `autotest.py` with a wall-clock timeout, streams
-output, and warns about a stale lock, all under one pre-authorized script (so we
-grant the script, not a blanket `timeout`/`python3`):
+output, warns about a held lock, and isolates the run from other clones, all
+under one pre-authorized script (so we grant the script, not a blanket
+`timeout`/`python3`):
 
 ```bash
 python3 .claude/skills/autotest/run_autotest.py test.Copter.<Test>
@@ -69,6 +70,32 @@ python3 .claude/skills/autotest/run_autotest.py --timeout 1200 test.Plane.QuadPl
 ```
 
 It exits 124 on timeout and kills the SITL children. Build first with `/build`.
+
+### Running alongside another clone
+
+The runner gives each clone its own `BUILDLOGS` (so its own harness lock and
+its own log files) and one of four port slots, held for the life of the run.
+Two clones can therefore run autotests at the same time; a third and fourth
+can too, and the fifth is refused with exit 125 naming what holds each slot.
+It prints the log directory and port range it chose - quote those when
+reporting, since they are no longer the same for every clone.
+
+Slot 0 is SITL instance 0, so a lone run uses exactly the ports it always did.
+`--slot N` pins a slot, `--buildlogs DIR` overrides the log tree, and
+`--no-isolate` restores the old shared-`../buildlogs` behaviour.
+
+Moving the ports needs `autotest.py --sitl-instance`. A checkout without it
+still gets its own log tree and lock, but has to use the default ports, so the
+runner says so and pins the run to slot 0 - two such checkouts still wait for
+each other.
+
+Two caveats. A handful of tests bind literal ports the offset does not reach
+(Rover `NetworkingWebServer` and `ManyMAVLinkConnections`, Copter
+`MountTopotekNetwork` and `PeriphMultiUARTTunnel`'s MAVLink multicast bus,
+`TestLogDownloadMAVProxyNetwork`, `TestLogDownloadMAVProxyCAN`, `IBus`). They
+run at any instance but share those ports, so run them one clone at a time. And
+concurrent runs compete for CPU: on a starved host SITL's sim clock crawls and
+tests fail on wallclock timeouts that say nothing about the code.
 
 Do NOT reach for `&` + `pkill`, `nohup`, launching `build/sitl/bin/arducopter`
 directly, or an env-var prefix like `PYTHONUNBUFFERED=1 python3 ...`. They are the
@@ -110,7 +137,7 @@ python3 .claude/skills/autotest/autotest_results.py failure AltHold --lines 150
 python3 .claude/skills/autotest/autotest_results.py logs
 ```
 
-Default `--buildlogs` is `$BUILDLOGS` or `../buildlogs` (matches the autotest harness default). Override with `--buildlogs <dir>` if needed.
+Default `--buildlogs` is `$BUILDLOGS`, else this clone's own log tree - the same one `run_autotest.py` points the harness at. Override with `--buildlogs <dir>` if needed.
 
 When reporting back to the user:
 

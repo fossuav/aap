@@ -123,7 +123,7 @@ chmod +x .claude/skills/hwdef-check/hwdef_check.py
 
 # autotest skill (has additional Python tools: results parser + timed runner)
 mkdir -p .claude/skills/autotest
-for file in SKILL.md autotest_results.py run_autotest.py; do
+for file in SKILL.md autotest_env.py autotest_results.py run_autotest.py; do
     install_file "$SKILLS_URL/autotest/$file" ".claude/skills/autotest/$file"
 done
 chmod +x .claude/skills/autotest/autotest_results.py .claude/skills/autotest/run_autotest.py
