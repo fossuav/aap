@@ -1058,14 +1058,75 @@ def pool_status(args):
 # ------------------------------------------------------------------ state file
 
 
-def state_path():
+def _git_common_file(name):
     common = subprocess.run(
         ["git", "rev-parse", "--git-common-dir"],
         capture_output=True, text=True, cwd=REPO_ROOT,
     ).stdout.strip() or ".git"
     if not os.path.isabs(common):
         common = os.path.join(REPO_ROOT, common)
-    return os.path.join(common, "pr-review-state.json")
+    return os.path.join(common, name)
+
+
+def state_path():
+    return _git_common_file("pr-review-state.json")
+
+
+def evidence_path():
+    return _git_common_file("pr-review-evidence.json")
+
+
+def evidence_read():
+    path = evidence_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (ValueError, OSError):
+        return None
+
+
+def evidence_summary():
+    """One line for print_scope: what measured record this checkout knows about."""
+    blob = evidence_read()
+    if blob is None:
+        return "not recorded - ask the user once, then `evidence set` or `evidence none`"
+    if blob.get("none"):
+        return "none (user has no separate analysis record)"
+    return ", ".join(blob.get("paths") or []) or "recorded but empty"
+
+
+def evidence_cmd(args):
+    path = evidence_path()
+    if args.action == "clear":
+        if os.path.exists(path):
+            os.remove(path)
+        print("cleared %s" % path)
+        return
+    if args.action == "show":
+        blob = evidence_read()
+        if blob is None:
+            print("no evidence sources recorded for this checkout")
+            print("ask the user once whether they keep analysis or measured data for"
+                  " this work, then record the answer - including a plain no")
+            sys.exit(1)
+        if blob.get("none"):
+            print("none - the user has no separate analysis record (asked %s)"
+                  % time.strftime("%Y-%m-%d", time.localtime(blob.get("when", 0))))
+        else:
+            print("evidence sources (read before the diff, outranks source reasoning):")
+            for item in blob.get("paths") or []:
+                print("  %s" % item)
+        if blob.get("note"):
+            print("note: %s" % blob["note"])
+        return
+    blob = {"when": int(time.time()), "note": args.note,
+            "none": args.action == "none",
+            "paths": [] if args.action == "none" else args.paths}
+    with open(path, "w") as fh:
+        json.dump(blob, fh, indent=2)
+    print("recorded in %s" % path)
 
 
 def state_cmd(args):
@@ -1134,6 +1195,7 @@ def print_scope(scope):
     print("diff:     %d commit(s), %d file(s), +%d/-%d"
           % (t["commits"], t["files"], t["added"], t["deleted"]))
     print("subsystems: %s" % (", ".join(scope["subsystems"]) or "-"))
+    print("evidence: %s" % evidence_summary())
     if scope["dirty"]:
         print("dirty:    %d uncommitted tracked file(s) - excluded from the review"
               % len(scope["dirty"]))
@@ -1212,6 +1274,17 @@ def main():
     cs.add_argument("--dir", required=True)
     cs.add_argument("--json", action="store_true")
 
+    e = sub.add_parser("evidence")
+    esub = e.add_subparsers(dest="action", required=True)
+    eset = esub.add_parser("set")
+    eset.add_argument("paths", nargs="+",
+                      help="where the measured record for this work lives")
+    eset.add_argument("--note", default="")
+    enone = esub.add_parser("none")
+    enone.add_argument("--note", default="")
+    esub.add_parser("show")
+    esub.add_parser("clear")
+
     s = sub.add_parser("state")
     s.add_argument("action", choices=["save", "show", "diff", "clear"])
     s.add_argument("--verdict", default="")
@@ -1222,6 +1295,8 @@ def main():
 
     if args.cmd == "codex":
         return pool_run(args) if args.action == "run" else pool_status(args)
+    if args.cmd == "evidence":
+        return evidence_cmd(args)
     if args.cmd == "state":
         return state_cmd(args)
     if args.cmd == "thread":

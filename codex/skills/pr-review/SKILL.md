@@ -55,6 +55,23 @@ the local branch, so stop and `gh pr checkout <number>` first. The scope command
 prints it rather than refusing, because reviewing a local branch that has drifted
 ahead of its own PR is a legitimate thing to do - but only when you meant to.
 
+**Find the measured evidence before you form an opinion.** Much of what makes a
+change in this codebase right or wrong was measured rather than derived: flight
+logs, SITL A/Bs, bench captures. None of it is in the diff, and a review that
+reads only the source will contradict it confidently. Ask the checkout what it
+knows about:
+
+```bash
+python3 .codex/skills/pr-review/pr_review.py evidence show
+```
+
+- **Sources recorded** - read the parts covering the paths this PR touches, before the diff, and carry what they measured into the review. If such a store keeps its own conventions file, that file governs how you may use and edit it; follow it rather than improvising.
+- **Nothing recorded** - ask the user, once: do they keep analysis, logs or measured data behind this work, and where? Record the answer with `evidence set <path>...`.
+- **They have none** - record that too, with `evidence none`. It is a real answer, and recording it is what stops every later run asking the same question.
+
+Re-ask only when the recorded answer looks stale: a subsystem the sources do not
+cover, or a user who cites data the record does not list.
+
 ## Step 1 - Mechanical gate
 
 ```bash
@@ -225,6 +242,7 @@ for rather than slicing the end of the file.
 Codex is a second opinion, not an authority, and on your own PR you are the one
 with the conflict of interest. Both directions get checked against the source:
 
+- **Measured evidence outranks a code argument, including a good one.** Rank what you actually have: a real-vehicle measurement, then that flight's own log replayed through the change, then a SITL run, then inspection. A finding contradicted by a measurement is **refuted**, not "worth discussing", and a fix that would undo behaviour a measurement established is a defect being introduced however sound it reads. This is the direction this pipeline fails in practice: the changes that keep coming back are the ones whose code argument is genuinely strong, which is exactly why reasoning alone never clears them.
 - **Reproduce every numeric claim** - a magnitude, a timing, a size, a count - before it drives a fix. A ten-line script settles it. In tridge's runs this method confirmed a 57.3x timeout error and refuted a claimed 101 degree phase error that measured 0.06.
 - **Check the diff's own comments before accepting a finding.** A second opinion will happily report a bug in code you changed deliberately with a comment saying why. Acting on one such report has reintroduced the bug it was meant to fix.
 - **Codex skews to REQUEST CHANGES.** Re-derive the verdict from the findings that survive; never copy its label across.
@@ -233,6 +251,21 @@ with the conflict of interest. Both directions get checked against the source:
 - **Confirm every cited mechanism exists on the base branch.** A commit message or comment that says the change "mirrors X" is a claim about the tree, not about the diff; `git grep X <base>` settles it in a second. In the PR #33498 self-review the cited mechanism lived only on a feature branch, and the same branch had leaked two undefined declarations into the header.
 - **A fix that adopts an existing predicate inherits its blind spots.** When a finding is closed by switching to a test the codebase already uses, the re-review must ask what that test measures, not whether the new code matches it. Conformance is not sufficiency. In PR #33498 round one found the gate narrower than `checkGyroCalStatus()`, the fix adopted that predicate, and round two verified the match and approved; the predicate is health-aware for the compass leg only, and the dev-call reviewer found the GPS-yaw-lost-in-flight gap on a cold read.
 - **Measure the fix, do not just reason about it.** The Diagnosing from Logs and Data rules in the root playbook apply to the review as much as to the change: a behaviour change gets an A/B in SITL with a number that would go the wrong way if the change were wrong. The recipe (merge-base build in a scratch worktree, throwaway autotest harness, logs moved aside between runs) is under "Before/after A/B runs" in `Tools/autotest/AGENTS.override.md`, and `/log-analyze` plots the result. A finding that is plausible from the code but contradicted by the A/B is refuted; a fix the A/B cannot tell from a no-op needs a stronger provocation before it is called verified, not a softer description. When SITL cannot exercise the path, as with a driver's bus timing, a model of the mechanism with the real constants is the measurement, and it has to be able to say the change is worse: the modulo fix for the PR #27893 gate was correct, and the model showed the gate it enabled would add roughly fifty empty beats and fifty double reads a second at 1-4 kHz with an IMU clock 0.1% slow, so the gate was dropped instead.
+
+**Write the refutations into the PR.** A finding you refuted with data will be
+raised again - by the next AI pass, by a reviewer, by you in three months -
+because the argument for it is good and the evidence against it is not in the
+repository. The PR description is the one place every later reader can see it.
+Keep a short list there: the change, the argument for it, and the result that
+refuted it. A maintainer suggestion you decline on measured grounds belongs in
+the same list; the playbook's "address obvious-but-wrong alternatives" rule is
+that list with a number attached.
+
+Cite the evidence by its result, never by its source. "Flight tests show the
+bias converges to +0.09 m/s/s" and "SITL A/B: 0.71 m against 0.45 m" are
+publishable. The store it came from, its file names, and any vehicle, operator
+or location are not: the measured record belongs to the user and may be private
+even when the PR is not.
 
 ## Step 6 - Verdict
 
@@ -252,7 +285,11 @@ python3 .codex/skills/pr-review/pr_review.py state save --verdict REQUEST_CHANGE
 ## Step 7 - The fix loop
 
 **Show the findings and get agreement before editing**, unless the user passed
-`--fix` or already said to go ahead. Then work down the list:
+`--fix` or already said to go ahead. Before the first edit, re-read the refuted
+list from step 5 and anything the step 0 sources say about the paths you are
+about to touch: a fix that reintroduces a measured-worse change is the most
+expensive outcome this pipeline produces, because it arrives carrying a review's
+authority. Then work down the list:
 
 1. **Must-fix first**, then should-fix. Leave notes alone unless asked.
 2. **Fix the cause, never the check.** Adding a `# noqa`, widening a `--skip`, or reformatting a vendored file to silence the gate is not a fix.
@@ -294,6 +331,7 @@ findings too, and they belong in the same loop.
 
 - Lead with the verdict and the counts: `REQUEST CHANGES - 3 must-fix, 4 should-fix, 2 notes (primary + cold pass, 1 refuted)`.
 - Say which reviewers ran. If `--no-codex` was used, or a Codex task came back empty and was not re-run, say the verdict is single-sourced. Do not present it as cross-checked when it was not.
+- Say which evidence sources you read, or that none are recorded for this checkout. A verdict reached without them is source-only; label it that way.
 - Say which subsystem playbooks the agents were given, and name any playbook section that turned out to describe branch-only code, so it gets fixed at the source rather than rediscovered.
 - Group findings by severity with `file:line`, and name the ones that came from the cold pass - those are the ones your own read missed.
 - After a fix round, report what changed, what was left and why, and the new verdict.
