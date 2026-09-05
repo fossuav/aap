@@ -38,11 +38,23 @@ import argparse
 from pymavlink import mavutil
 
 
-def interp(t, series, idx):
+# Longest gap in the height series that may be bridged. A rangefinder that
+# is out of range logs nothing valid, so without a bound the height is
+# interpolated straight across the gap: field log 356 flew at 14-53m against
+# a 15m sensor and every sample in between was handed a ~14m height, which
+# inflated the expected flow about threefold and reported flow/ideal 0.37 as
+# [reliable]. Truncation biases a fit without scattering it, so the
+# correlation stays high and nothing looks wrong.
+RANGE_MAX_GAP = 0.5
+
+
+def interp(t, series, idx, max_gap=None):
     ts = [s[0] for s in series]
     k = bisect.bisect_left(ts, t)
     if 0 < k < len(series):
         a, b = series[k - 1], series[k]
+        if max_gap is not None and (b[0] - a[0]) > max_gap:
+            return None
         f = (t - a[0]) / (b[0] - a[0]) if b[0] > a[0] else 0.0
         return a[idx] + f * (b[idx] - a[idx])
     return None
@@ -227,10 +239,13 @@ def main():
     # height even 0.2 s of skew attenuates the fitted slope noticeably.
     def build(shift):
         mx, my, ex, ey, hgts = [], [], [], [], []
+        no_range = 0
         for (t, cfx, cfy, q) in flow:
             if q < args.qual_min:
                 continue
-            r = interp(t, rng, 1)
+            r = interp(t, rng, 1, RANGE_MAX_GAP)
+            if r is None:
+                no_range += 1
             roll = interp(t, att, 1)
             pitch = interp(t, att, 2)
             yaw = interp(t, att, 3)
@@ -256,7 +271,7 @@ def main():
             mx.append(cfx)
             my.append(cfy)
             hgts.append(r)
-        return mx, my, ex, ey, hgts
+        return mx, my, ex, ey, hgts, no_range
 
     def split(ex, ey, n, dom=1.5):
         return ([i for i in range(n) if abs(ey[i]) >= dom * abs(ex[i])],
@@ -264,7 +279,7 @@ def main():
 
     def score(shift):
         # n-weighted mean |corr| over both dominant-motion subsets
-        mx, my, ex, ey, _ = build(shift)
+        mx, my, ex, ey, _, _ = build(shift)
         n = len(mx)
         if n < 30:
             return -1.0
@@ -288,12 +303,17 @@ def main():
             s += 0.05
     else:
         lag = args.gps_lag
-    mx, my, ex, ey, hgts = build(lag)
+    mx, my, ex, ey, hgts, no_range = build(lag)
     print("GPS alignment: flow leads GPS by %.2f s%s\n" %
           (lag, " (auto)" if args.gps_lag is None else " (forced)"))
 
     n = len(mx)
     print("samples (Qual>=%g, speed>=%.1f m/s, valid rng): %d" % (args.qual_min, args.speed_min, n))
+    if no_range:
+        # not a warning about the fit but about the flight: it says how much
+        # of it was flown with no height to scale flow by
+        print("dropped %d flow samples with no height within %.1fs "
+              "(rangefinder out of range or not returning)" % (no_range, RANGE_MAX_GAP))
     if n < 30:
         print("NOT ENOUGH fast-motion samples - fly faster / longer runs.")
         return 1
