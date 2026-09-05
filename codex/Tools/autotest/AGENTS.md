@@ -72,19 +72,23 @@ Each test method already runs inside an automatically-managed context — the fr
 
 Only introduce a nested `context_push()` / `context_pop()` pair when you genuinely need to scope something mid-test that must be unwound before the rest of the test continues — e.g. parameter overrides for a single phase that should be restored before the next phase, or a temporary message subscription. When you do, pair every push with a matching pop and add a brief comment naming what the inner scope is for.
 
-### Never run autotests in parallel
+### One autotest at a time per clone; `/autotest` handles the rest
 
-The autotest harness uses a lock file to prevent concurrent runs — launching two `autotest.py` invocations at once (or a single `test.<Vehicle>.<A>` and `test.<Vehicle>.<B>` in two shells) will fail or interfere with each other. Always run tests serially: complete one invocation before starting the next, even when iterating on multiple test methods. If you need to exercise several tests in one go, pass them as multiple arguments to a single `autotest.py` invocation rather than spawning separate processes.
+Never launch two `autotest.py` invocations in the same clone — the second either fails or interferes with the first. Run tests serially within a clone, and when you want several tests in one go pass them as multiple arguments to a single invocation rather than spawning separate processes.
 
-### The lock file is shared across sibling clones (BUILDLOGS)
+*Across* clones the runner now keeps runs apart, so a second session in a sibling checkout is no longer something to wait for. Two things had to be separated to get there, and both are worth knowing when something goes wrong:
 
-The lock lives at `buildlogs_path('autotest.lck')`, which resolves to `os.getenv("BUILDLOGS", reltopdir("../buildlogs"))` (`Tools/autotest/autotest.py`). The default `../buildlogs` is **one level above the repo root**, so two sibling checkouts (e.g. `~/github/ardupilot-dist` and `~/github/smallfastdrone`) both resolve to the *same* `~/github/buildlogs/autotest.lck` and share one lock and one log output tree.
+- **The lock and the log tree.** `buildlogs_path('autotest.lck')` resolves to `os.getenv("BUILDLOGS", reltopdir("../buildlogs"))`, and that default is **one level above the repo root**, so every sibling checkout under `~/github` shares one `~/github/buildlogs/autotest.lck` and one output tree. `run_autotest.py` sets `BUILDLOGS` to `../buildlogs-<clone name>`, which makes the lock per-clone and stops two runs overwriting each other's per-test transcripts. `autotest_results.py` reads the same default, so a run's results are found without passing anything.
+- **The ports.** Isolating `BUILDLOGS` alone does *not* remove the network contention: without an offset every run binds 5760/5762/5763, 5501 and 8000, and two of them collide with an `EOF`/connection error mid-test. `autotest.py --sitl-instance N` moves the SITL ports (via SITL's own `-I`, which shifts the default ports it takes from its command line by 10 per instance — not every port it binds: `SITL_SERVO_PORT + instance` steps by 1), the harness's `adjust_ardupilot_port`/`sitl_rcin_port`/`spare_network_port`, and the two multicast ports (`SITL_MCAST_STATE_PORT`, `SITL_CAN_MCAST_PORT` — those follow no offset of their own; the state one steps by 100 so it cannot land on a lower instance's servo port). The runner allocates one of four slots and passes the instance.
 
 Consequences:
 
-- A present `autotest.lck` is not necessarily stale — it may be a live lock held by an autotest running in a **different** sibling clone. Never `rm` it to "clear a stale lock" without first confirming no `autotest.py`/`arducopter` process is running (`ps aux | grep -E "autotest|arducopter"`). Deleting a live lock lets two runs collide and corrupt each other.
-- To isolate a repo's autotests (own lock, own log files), set a repo-local `BUILDLOGS`, e.g. `export BUILDLOGS=$PWD/buildlogs`.
-- Isolating `BUILDLOGS` removes the *lock* contention but **not** the network contention: every SITL autotest binds the same default TCP ports (5760/5762/5763), so two concurrent runs still collide with an `EOF`/connection error mid-test. The shared lock exists precisely to serialise that. Repo-local `BUILDLOGS` is for keeping logs and locks separate across clones, not for running two autotests at the same time — still run them serially, or give one a port offset.
+- A present `autotest.lck` in the *shared* `~/github/buildlogs` is a run started before this change, or one launched by hand. It may be live: never `rm` it without first confirming no `autotest.py`/`arducopter` process is running (`ps aux | grep -E "autotest|arducopter"`). Deleting a live lock lets two runs collide and corrupt each other.
+- Slot 0 is instance 0, so a lone run uses exactly the ports it always did. Report the `BUILDLOGS=` and `port slot` lines the runner prints, because they now differ per clone.
+- The offset needs `autotest.py --sitl-instance`, so a checkout that predates it (an older branch, a release branch) gets the log-tree and lock isolation but not the ports: the runner says so and pins the run to slot 0. Two such checkouts still serialise.
+- The allocator also probes a slot's SITL port before handing it out, so a clone still on the old runner, a hand-started `autotest.py`, or a `sim_vehicle.py` parked on 5760 costs a slot rather than producing a half-run that fails on a connection error.
+- Tests that bind literal ports of their own are outside the offset. They work at any instance but share those ports between concurrent runs, so run them one clone at a time: Rover `NetworkingWebServer` (8081) and `ManyMAVLinkConnections` (6700-6703), Copter `MountTopotekNetwork` (15005) and `PeriphMultiUARTTunnel` (its `mcast:` MAVLink bus), `TestLogDownloadMAVProxyNetwork` (16001-16006), `TestLogDownloadMAVProxyCAN` (15550), `IBus` (6735).
+- Concurrency is not free. Two autotests on one host halve the CPU each gets, and a starved SITL fails on wallclock timeouts that say nothing about the code (see "Host stalls look like telemetry timeouts" below). Before reading a failure as a regression, check whether another clone was running.
 
 ### Host stalls look like telemetry timeouts
 
@@ -195,3 +199,4 @@ Scripts that change flight modes (e.g. to `LOITER` on completion) affect subsequ
 ```python
 self.change_mode('GUIDED')  # Ensure correct mode before next test
 ```
+
