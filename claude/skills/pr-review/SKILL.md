@@ -96,6 +96,7 @@ cheapest to clear first and they run in about two seconds:
 | `new-file-license` | new source files with no licence or copyright header |
 | `defensive-init` | zero-initialisers added to class members - redundant given BSS/`new`/`calloc`, and a reliable LLM-tell |
 | `size` | total diff size, and any uncommitted tracked files excluded from the review |
+| `stray-file` | agent playbooks, editor backups and captured output added by the diff - a path-scoped `git add` sweeps them in, and once tracked a later checkout deletes them silently |
 
 Severity is advice, not a verdict: `must-fix` blocks, `should-fix` needs a reason
 if you leave it, `note` is context. `--skip <check>,<check>` drops individual
@@ -302,6 +303,37 @@ list of rewritten commits. That is the useful comparison: an empty diff means th
 rebase moved the branch without changing what it does, which is exactly the check
 the playbook asks for before a force push. Only when the old object has actually
 gone does it say so and start the review over.
+
+### Before a squash, make the old history addressable
+
+The content diff above depends on the pre-rebase commit still existing. Do not
+rely on that: **branch it first**, in the same tool call that asks for the
+grant, so the comparison survives a reflog expiry or a second rebase.
+
+```bash
+git branch pre-squash/<branch>-$(date +%Y%m%d-%H%M) <branch>
+git log --oneline <base>..<branch>          # keep this list
+```
+
+Then verify the squash two ways, because they fail differently:
+
+```bash
+git diff pre-squash/<branch>-<stamp> <branch>       # content: must be empty
+git range-diff <base> pre-squash/<branch>-<stamp> <branch>   # distribution
+```
+
+The flat diff answers "does the tree still do the same thing". It is **empty
+whenever a fix lands in the wrong commit**, which is the failure a fold
+actually has: a hunk squashed into a neighbour leaves the tree identical and
+the history wrong, and a reviewer reading commit by commit sees a commit that
+does not build or a fix that arrives before the bug. `git range-diff` is the
+one that shows it - it pairs old commits with new ones and prints what moved
+between them, so an unpaired commit or a hunk that changed owner is visible.
+
+Keeping the pre-squash `git log --oneline` matters for the same reason: it is
+the map from old SHA to new, and review comments, CI runs and the analysis
+record all cite the old ones. Delete the backup branch only once the push has
+landed and the range-diff was clean.
 
 Iterate steps 7-8 until the mechanical gate is clean and no must-fix findings
 survive, or until three rounds have passed without converging - at which point stop

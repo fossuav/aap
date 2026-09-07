@@ -786,6 +786,39 @@ def check_astyle(scope):
     return out
 
 
+# Agent playbooks, editor backups and captured output are working files. They
+# get swept into a commit by a directory-scoped "git add", and once tracked a
+# later checkout deletes them from the working tree - so the loss is silent.
+STRAY_NAMES = ("CLAUDE.md", "GEMINI.md", "AGENTS.md", ".cursorrules")
+STRAY_SUFFIXES = (".bak", ".orig", ".rej", ".swp", ".pyc", ".log", ".BFL")
+STRAY_DIRS = (".claude/", ".gemini/", "__pycache__/")
+
+
+def check_stray_files(scope):
+    out = []
+    for f in scope["files"]:
+        if f["status"] != "A":
+            continue
+        p = f["path"]
+        base = p.rsplit("/", 1)[-1]
+        why = None
+        if base in STRAY_NAMES:
+            why = "an agent playbook"
+        elif p.endswith(STRAY_SUFFIXES):
+            why = "an editor backup or captured output"
+        elif any(d in p + "/" for d in STRAY_DIRS):
+            why = "agent/tooling state"
+        if why:
+            out.append(finding(
+                "stray-file", "must-fix",
+                "commit adds %s (%s); it is a working file, not a "
+                "contribution - drop it from the commit and keep it untracked"
+                % (p, why),
+                file=p, line=1,
+            ))
+    return out
+
+
 def check_size(scope):
     out = []
     t = scope["totals"]
@@ -815,6 +848,7 @@ CHECKS = {
     "defensive-init": check_defensive_init,
     "astyle": check_astyle,
     "size": check_size,
+    "stray-file": check_stray_files,
 }
 
 SEVERITY_ORDER = {"must-fix": 0, "should-fix": 1, "note": 2}
