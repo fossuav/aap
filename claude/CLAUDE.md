@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.0
+**Playbook version:** 1.7.1
 
 ## Available Skills
 
@@ -195,7 +195,7 @@ AP_Periph firmware runs on dedicated CAN nodes (GPS, airspeed sensors, etc.). Ke
 
 ### Subsystem Playbooks
 
-The root playbook carries the general rules. Where a subsystem has its own playbook, read it before touching that code and hold reviews of that code against it:
+The root playbook carries the general rules. Where a subsystem has its own playbook, read it before touching that code and hold reviews of that code against it. In particular, when a change hinges on a named state flag or term, look that term up there before building on it - the playbooks carry which flags are unreliable and why, and that is exactly the knowledge a fix silently assumes:
 
 - `libraries/AP_NavEKF3/CLAUDE.md` - EKF3 state vector, DAL and Replay rules, bias inhibition, yaw source handling, log analysis method. Some sections are flagged as branch-specific; confirm a mechanism exists on the base branch before citing it.
 - `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` - board porting, hwdef review rules (applied by `/hwdef-check`)
@@ -506,6 +506,8 @@ A mechanism inferred from one log is a **hypothesis, not a diagnosis**. Say so, 
 - **Simulator-only artifacts.** Cross-check any conclusion that rests on one model against another model, or against the real vehicle. A high-fidelity sim is still a model, and its drag/inertia will differ.
 
 **A comment that warns against your change is evidence.** If the code you are about to modify explicitly documents the failure your change would re-create, that is a record of someone already hitting it. Reproduce the failure or A/B the change before deleting the comment. Do not assume it is stale.
+
+**A fix that changes nothing is evidence about the mechanism.** When the change your account of a bug predicts should work leaves the symptom exactly as it was, the account is the first thing to re-derive, not the fix. Two rounds of fix-shaped changes went onto a wrong mechanism for #33585's flat-ground carry-over - the flag was held up by `gndOffsetValid`, not the `flatGroundAssumed()` path being tightened - and the failing fix said so on the first attempt. Treat it as a refutation and go back to the measurement.
 
 **Correct the record loudly.** When a claim that reached a commit message, a code comment, or the user turns out to be wrong, say so plainly and revert it. An invented mechanism is worse than no mechanism, because it gets built on.
 
