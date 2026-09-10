@@ -54,9 +54,23 @@ Any **runtime data** that influences EKF state estimation:
 
 ### How to Add New Data to the DAL
 
-1. **Per-IMU instance data** → add to `log_RISI` struct in `AP_DAL/LogStructure.h`, populate in `AP_DAL_InertialSensor::start_frame()`, expose accessor on `AP_DAL_InertialSensor`
-2. **Global flags/state** → add to `log_RFRN` struct, populate in `AP_DAL::start_frame()` from AHRS, expose accessor on `AP_DAL`
-3. **Per-GPS instance data** → add to `log_RGPI`/`log_RGPJ` structs, similar pattern
+Route the value to the right message first:
+
+1. **Per-IMU instance data** → the `log_RISI` family in `AP_DAL/LogStructure.h`, populated in `AP_DAL_InertialSensor::start_frame()`, accessor on `AP_DAL_InertialSensor`
+2. **Global flags/state** → the `log_RFRN` bitfield, populated in `AP_DAL::start_frame()` from AHRS, accessor on `AP_DAL`
+3. **Per-GPS instance data** → `log_RGPI`/`log_RGPJ`, same pattern
+
+Then obey the on-disk format rules below. Both are silent when broken: the build succeeds, the EKF flies, and only Replay of a log recorded *before* the change gives wrong answers.
+
+**Never grow an existing DAL struct.** `AP_LoggerFileReader::update()` sizes its buffer from the format stored in the log, while `MSG_CREATE` copies `offsetof(log_X, _end)` bytes from the compiled struct. Grow the struct and the copy runs past the record, so every field after the insertion point reads adjacent stack. Measured on a real log after `log_ROFH` grew from 40 bytes to 44: flow quality read a constant 89 where the true per-sample values were 70-102, and the new float read -1.15e14. gcc says so ("reading 41 bytes from a region of size 37") if you are watching. `log_##sname msg{};` does not fix it, because the memcpy overwrites the zeroed bytes; appending after the trailing `uint8_t _end` does not either, since these structs are not PACKED and the padding breaks the format/`RLOG_SIZE` match.
+
+This covers the `log_RFRN` bitfield too. All eight bits are taken - `unused` at bit 1, once `get_compass_is_null`, is the only reusable one - so a ninth flag grows the struct.
+
+**Add a new message instead.** `RISJ` was split out of `RISI` for exactly this reason, and `ROFM` was added beside `ROFH` for the optical flow focus height. A log recorded before the change simply has no such message and replays with the field at whatever the struct was initialised to, so seed the member with the *legacy* value when 0 is not the old behaviour.
+
+**Put the new ID at the end of `LOG_IDS_FROM_DAL`, never in the middle.** Inserting mid-list renumbers every `LOG_*_MSG` after it. Replay copies each `FMT` record from the input log into its output verbatim (`LogReader::handle_log_format_msg`) while its own startup writer emits a `FMT` for every structure in the binary (`LoggerMessageWriter_DFLogStart`, `Stage::FORMATS`), so a shifted ID leaves the replay output carrying two names for one type byte. Keep `LOG_STRUCTURE_FROM_DAL` in the same order as the ID list. This is tridge's rule from PR #34292; ROFM was added after `ROFH` and had to move to the end.
+
+**Write it with `WRITE_REPLAY_BLOCK_IFCHANGED`** and add an `LR_MsgHandler_` for it in `Tools/Replay/LogReader.cpp`. Replay dispatches on the four-character name from the log's own `FMT`, so an older log needs no special handling - it just never calls the handler. Then run `test.Copter.Replay`, which records a flow replay log, replays it and compares EKF output.
 
 ### Common Mistakes
 
