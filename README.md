@@ -48,7 +48,7 @@ The install script places the following files:
 | `libraries/AP_HAL_ChibiOS/hwdef/CLAUDE.md` | ChibiOS board porting and hwdef.dat creation |
 | `ArduPlane/CLAUDE.md` | Plane flight modes, log analysis, QuadPlane operations |
 | `Tools/autotest/CLAUDE.md` | Autotest authoring conventions, event-wait patterns, Lua applet test patterns |
-| `.claude/settings.json` | Project permissions and hooks — auto-allows the skill scripts and a few read-only tools (not blanket `python3`/`git`/`rm`), enforces rules. Machine-specific allows go in `settings.local.json` |
+| `.claude/settings.json` | Project permissions and hooks — auto-allows the skill scripts and a few read-only tools (not blanket `python3`/`git`/`rm`), enforces rules. Also switches off Claude commit/PR attribution via `attribution`. Machine-specific allows go in `settings.local.json` |
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 | `.claude/skills/log-analyze/flow_cal_check.py` | Verifies optical-flow scale/orientation against GPS truth (per-axis scaler check) used by `/log-analyze` |

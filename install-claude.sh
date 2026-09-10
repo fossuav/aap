@@ -92,11 +92,61 @@ install_file "$REPO_URL/Tools/autotest/CLAUDE.md" "Tools/autotest/CLAUDE.md"
 # overwrite an existing settings.json - permissions are the user's call. When the
 # playbook ships permission/hook changes, the user updates it deliberately:
 # compare against the canonical copy and merge what they want.
+#
+# The attribution keys are the one exception: the playbook forbids Claude
+# attribution in commits and PR descriptions, but an older settings.json simply
+# has no opinion on it, so Claude Code keeps adding the trailers. The patch below
+# only ever writes the disabling values, never turns attribution on, and leaves
+# a .bak behind.
 mkdir -p .claude
 dst=".claude/settings.json"
 if [[ -f "$dst" ]]; then
-    echo "  Note: .claude/settings.json already exists, not overwriting (permissions are user-managed)"
+    echo "  Note: .claude/settings.json already exists, not overwriting permissions or hooks (they are user-managed)"
     echo "  To adopt playbook changes, diff it against $REPO_URL/settings.json and merge by hand"
+    if command -v python3 &> /dev/null; then
+        python3 - "$dst" <<'PYEOF' || true
+import json
+import shutil
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        settings = json.load(f)
+except Exception as exc:
+    print("  Note: could not read %s to check attribution (%s)" % (path, exc))
+    sys.exit(0)
+
+if not isinstance(settings, dict):
+    sys.exit(0)
+
+attribution = settings.get("attribution")
+if not isinstance(attribution, dict):
+    attribution = {}
+
+if (attribution.get("commit") == "" and attribution.get("pr") == ""
+        and attribution.get("sessionUrl") is False):
+    print("  Attribution already disabled in %s" % path)
+    sys.exit(0)
+
+if (attribution.get("commit") or attribution.get("pr")
+        or attribution.get("commitTrailers") is True
+        or settings.get("includeCoAuthoredBy") is True):
+    print("  Note: %s asks for Claude attribution, leaving it alone" % path)
+    sys.exit(0)
+
+attribution.update({"commit": "", "pr": "", "sessionUrl": False})
+settings["attribution"] = attribution
+shutil.copyfile(path, path + ".bak")
+with open(path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+print("  Backed up existing %s to %s.bak" % (path, path))
+print("  Disabled Claude commit and PR attribution in %s" % path)
+PYEOF
+    else
+        echo "  Note: python3 not found, cannot check the attribution setting in $dst"
+    fi
 else
     download_file "$REPO_URL/settings.json" "$dst"
     echo "  Installed: $dst"

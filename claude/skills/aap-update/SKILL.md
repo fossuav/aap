@@ -61,4 +61,4 @@ After the installer finishes, re-read `./CLAUDE.md` and confirm the version line
 
 - This skill must be run from the root of an ArduPilot checkout (the same directory layout `install-claude.sh` requires).
 - The version line format is exactly `**Playbook version:** X.Y.Z` near the top of `claude/CLAUDE.md` upstream and `CLAUDE.md` locally.
-- The skill never touches `.claude/settings.json` — the installer leaves that file alone if it already exists.
+- The installer leaves an existing `.claude/settings.json` alone except for the `attribution` keys, which it sets to the disabling values (after a `.bak`) so commits and PRs carry no Claude attribution. Permission and hook changes still have to be merged by hand.
