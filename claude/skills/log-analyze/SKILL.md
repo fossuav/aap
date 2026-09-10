@@ -187,6 +187,46 @@ Segments come from EV ARMED/DISARMED and NOT_LANDED/LAND_COMPLETE; a log that st
 (rotated mid-flight) still gets one. The hover window is the quietest 20 s of throttle;
 override it with `--hover-from/--hover-to` when the quiet part is not the part you care about.
 
+## Did an EKF change move the flight? (`replay_sweep.py`)
+
+Replay re-runs the estimator on the sensor stream a flight actually recorded, so
+for an estimator change it outranks any SITL A/B: the A/B tests the scenario you
+thought of, Replay tests the one that happened. Use it whenever a change touches
+EKF code that a real flight motivated.
+
+```bash
+# before the change, on the current build
+python3 .claude/skills/log-analyze/replay_sweep.py --label before --out before.json \
+    --keep-dir /tmp/sweep logA.bin logB.bin logC.bin
+# ... change the code, ./waf copter ...
+python3 .claude/skills/log-analyze/replay_sweep.py --label after --out after.json \
+    --keep-dir /tmp/sweep logA.bin logB.bin logC.bin
+python3 .claude/skills/log-analyze/replay_sweep.py --compare before.json after.json
+```
+
+It reports, per log, the optical-flow recovery statustexts Replay emitted and the
+peak horizontal excursion per re-run core, and flags any row that moved.
+`--param NAME=VALUE` passes an override through to Replay, `--build` builds the
+tool first.
+
+Two things it handles that cost time every time they are met by hand:
+
+- **Replay logs its re-run cores at `C+100`.** `C<100` in the output BIN is the
+  original flight passed straight through, so reading `XKF1` unfiltered
+  reproduces the flight's own peak excursion exactly and looks like a result.
+  The tool reads only `C>=100`, and says so if there are none.
+- **Counting resets from statustexts is only sound if the source log carries
+  none of its own.** The tool scans the source first and prints a NOTE when it
+  does, rather than letting a contaminated count read as clean.
+
+A flight flown without `LOG_REPLAY` has no `RFRH` records and cannot be replayed
+at all, however good the data is; those logs are reported as skipped.
+
+Name a log by path, or by bare name with `AP_LOG_ROOTS` set. Names collide - there
+are 24 files called `log7.bin` on the primary machine - so an ambiguous name is
+refused rather than guessed, and `ardupilot-pr-analysis/find_log.py` resolves it
+against a fingerprint.
+
 ## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`, `rate_band.py`, `batch_fft.py`)
 
 The first three answer the question a tuning session actually turns on: **is the vehicle noisy,
