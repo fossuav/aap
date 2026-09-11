@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.6
+**Playbook version:** 1.7.7
 
 ## Available Skills
 
@@ -22,6 +22,7 @@ If skills are installed (`.claude/skills/`), prefer using them over manual comma
 | `/hwdef-info <board>` | Showing board hardware definitions |
 | `/hwdef-check <PR>` | Reviewing an hwdef PR — checks out the PR in a worktree, runs DMA/board-ID/file/commit checks plus a playbook pass, drafts a review comment |
 | `/explain <topic>` | Explaining code or architecture |
+| `/swd-debug` | Flashing and debugging a board over SWD when USB/serial is dead |
 | `/lua <task>` | Writing or modifying Lua applets |
 | `/lua-crsf <menu>` | Writing CRSF transmitter menu scripts |
 | `/lua-vehicle <task>` | Lua vehicle control and movement commands |

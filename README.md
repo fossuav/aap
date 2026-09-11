@@ -103,6 +103,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/check [test_name]` | Build and run unit tests (Google Test) |
 | `/autotest <vehicle> [test]` | Run SITL integration/behavior tests |
 | `/sitl <vehicle> [options]` | Launch interactive SITL simulator |
+| `/swd-debug` | Flash and debug a board over SWD with OpenOCD and GDB when USB/serial is dead |
 | `/pr-review [PR]` | Review your own PR the way a maintainer will, then fix what it finds - CI gates, parallel review, Codex cross-check, bounded fix loop |
 
 **Authorisation skill** (you invoke this — Claude cannot):

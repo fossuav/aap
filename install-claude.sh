@@ -159,7 +159,7 @@ echo "Installing Claude Code skills..."
 SKILLS_URL="$REPO_URL/skills"
 
 # Skills with only SKILL.md
-for skill in boards find-code find-param build-options style-check hwdef-info explain build check sitl lua lua-crsf lua-vehicle aap-update; do
+for skill in boards find-code find-param build-options style-check hwdef-info explain build check sitl lua lua-crsf lua-vehicle swd-debug aap-update; do
     mkdir -p ".claude/skills/$skill"
     install_file "$SKILLS_URL/$skill/SKILL.md" ".claude/skills/$skill/SKILL.md"
 done
