@@ -9,8 +9,11 @@ dev-call command:
 
 The dual-reviewer pipeline, the head-hash skip, the detached-pool-with-sentinel
 handling of parallel codex agents, and most of the review rules stated in
-SKILL.md come from there. The code in this file is an independent
-implementation of that design rather than a port of it.
+SKILL.md come from there. The command now lives in ArduPilot/APReview
+(https://github.com/ArduPilot/APReview), which is also where the rebase-aware
+`state diff` (the branch's own patch compared at each head, binaries by blob)
+comes from. The code in this file is an independent implementation of that
+design rather than a port of it.
 
 Folds the deterministic half of an ArduPilot PR review into one process:
 working out what the PR actually changes, running the mechanical checks a
@@ -18,10 +21,13 @@ reviewer bounces PRs for, and driving a parallel `codex exec` pool as an
 independent second reviewer.
 
 Subcommands:
-  scope   - resolve base/head, commits, files, diffstat
-  checks  - run the mechanical gate over the diff
-  codex   - run (detached) or poll a pool of `codex exec` reviewers
-  state   - record/compare the head a review was completed at
+  scope    - resolve base/head, commits, files, diffstat
+  checks   - run the mechanical gate over the diff
+  thread   - the PR's comments and reviews, with the AI review bot's current
+             review picked out
+  codex    - run (detached) or poll a pool of `codex exec` reviewers
+  evidence - record where the measured record for this work lives
+  state    - record/compare the head a review was completed at
 
 Everything here is read-only with respect to the working tree. The one thing
 it writes outside its own scratch directory is the state file under .git/.
@@ -33,6 +39,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -258,7 +265,7 @@ def changed_files(rev_range):
 # -------------------------------------------------------------------- scoping
 
 
-def resolve_base(explicit=None, pr=None):
+def resolve_base(explicit=None, pr=None, refresh=True, head="HEAD"):
     """Pick the ref the PR is against. Returns (base_ref, merge_base_sha)."""
     candidates = []
     if explicit:
@@ -269,8 +276,9 @@ def resolve_base(explicit=None, pr=None):
     candidates += ["upstream/master", "origin/master", "master"]
     for ref in candidates:
         if git_ok("rev-parse", "--verify", "--quiet", ref + "^{commit}"):
-            refresh_remote_ref(ref)
-            mb = git("merge-base", ref, "HEAD").strip()
+            if refresh:
+                refresh_remote_ref(ref)
+            mb = git("merge-base", ref, head).strip()
             if mb:
                 return ref, mb
     raise GitError(
@@ -917,27 +925,138 @@ def fetch_thread(pr):
     return items, counts
 
 
+# ArduPilot's automated reviewer (tridge's /reviewprs, posting as AP-Review)
+# opens every comment with this marker and quotes the head it reviewed. It
+# does not delete an older review: it wraps it under a leading blockquote,
+# whose wording has changed more than once ("Deprecated", "Superseded", a
+# [!NOTE] admonition), so match the shape rather than the sentence.
+AI_MARKER = "AI-generated"
+_AI_SUPERSEDED = re.compile(r"\b(deprecated|superseded)\b", re.I)
+# "Reviewed at head `54cd8177fa`", "Re-reviewed at head `X` (previously `Y`)"
+# and the older unquoted "head b4e5e1cba9" - the first match is the review's.
+_AI_HEAD = re.compile(r"\bhead[^`\n]{0,20}?`?\b(?=[0-9a-f]*\d)([0-9a-f]{7,40})\b", re.I)
+_AI_VERDICT = re.compile(r"\bverdict\b", re.I)
+_AI_VERDICT_WORD = re.compile(
+    r"^#+\s*\**\s*(APPROVE|COMMENT|REQUEST CHANGES)\b|\*\*(APPROVE|COMMENT|REQUEST CHANGES)\b")
+_AI_REPORT = re.compile(r"Full report[^:\n]*:\s*(https?://\S+)")
+
+
+def ai_review_head(body):
+    """The head a bot comment reviewed.
+
+    A superseded comment's banner names the review that replaced it ("see
+    the review at head X"), so read the head from the kept original below it.
+    """
+    start = body.find("<details") if body.lstrip().startswith(">") else -1
+    m = _AI_HEAD.search(body, max(start, 0))
+    return m.group(1).lower() if m else None
+
+
+def ai_reviews(items, pr):
+    """Split the review bot's comments into (current, [earlier ones]).
+
+    The PR author's own comments are excluded even when they carry the marker:
+    a reply drafted with an assistant is not the bot's review.
+    """
+    author = ((pr.get("author") or {}).get("login") or "").lower()
+    bot = [r for r in items
+           if r["kind"] == "comment" and AI_MARKER in (r.get("body") or "")
+           and (r.get("who") or "").lower() != author]
+
+    def superseded(r):
+        body = (r.get("body") or "").lstrip()
+        return body.startswith(">") and bool(_AI_SUPERSEDED.search(body[:400]))
+
+    live = [r for r in bot if not superseded(r)]
+    current = live[-1] if live else None
+    return current, [r for r in bot if r is not current]
+
+
+def ai_review_summary(current, pr):
+    body = current.get("body") or ""
+    head = ai_review_head(body)
+    verdict = next(
+        (line.strip().lstrip("#").strip() for line in body.split("\n")
+         if _AI_VERDICT.search(line) or _AI_VERDICT_WORD.search(line)), None)
+    report = _AI_REPORT.search(body)
+    local = git("rev-parse", "HEAD").strip()
+    pr_head = pr.get("headRefOid") or ""
+    return {
+        "who": current.get("who"), "when": current.get("when"),
+        "head": head,
+        "verdict": verdict[:200] if verdict else None,
+        "report": report.group(1) if report else None,
+        "pr_head": pr_head[:10], "local_head": local[:10],
+        "at_pr_head": bool(head and pr_head.startswith(head)),
+        "at_local_head": bool(head and local.startswith(head)),
+    }
+
+
+def print_ai_review(summary, current, earlier):
+    print("AI review bot: current review by %s at %s, of head %s"
+          % (summary["who"], (summary["when"] or "")[:16].replace("T", " "),
+             summary["head"] or "(no head quoted)"))
+    if summary["verdict"]:
+        print("  verdict:  %s" % summary["verdict"])
+    if summary["report"]:
+        print("  report:   %s" % summary["report"])
+    if summary["at_pr_head"]:
+        print("  PR head:  %s - the review is of the PR as it stands" % summary["pr_head"])
+    else:
+        print("  PR head:  %s - pushed since the review; the bot re-reviews it"
+              " on its next pass" % summary["pr_head"])
+    if summary["at_local_head"]:
+        print("  local:    %s - the code the review read" % summary["local_head"])
+    else:
+        print("  local:    %s - NOT the code the review read: triage every finding"
+              " against this HEAD, not against the review's quotes" % summary["local_head"])
+    if earlier:
+        print("  earlier:  %d superseded AI review(s), one line each in the thread below"
+              % len(earlier))
+    print("")
+    for line in (current.get("body") or "").strip().split("\n"):
+        print("    %s" % line)
+    print("")
+
+
 def thread_cmd(args):
     pr = lookup_pr(args.target)
     if not pr:
         print("no open PR for this branch - nothing to read")
         return
     items, counts = fetch_thread(pr)
+    current, earlier = ai_reviews(items, pr)
+    summary = ai_review_summary(current, pr) if current else None
     if args.json:
-        print(json.dumps({"pr": pr["number"], "counts": counts, "items": items},
-                         indent=2))
+        print(json.dumps({"pr": pr["number"], "counts": counts,
+                          "ai_review": summary, "ai_superseded": len(earlier),
+                          "items": items}, indent=2))
         return
     print("PR #%s %s" % (pr["number"], pr.get("title", "")))
     # Per-source counts, so "nothing to read" is visibly a fetched result
     # rather than a fetch that quietly failed.
     print("fetched: %s" % ", ".join("%d %s" % (v, k) for k, v in counts.items()))
     print("%d thread item(s)\n" % len(items))
+    if summary:
+        print_ai_review(summary, current, earlier)
+    else:
+        print("AI review bot: no review on this PR\n")
     for r in items:
-        head = "[%s] %s %s" % (r["kind"], r.get("when", "")[:19], r.get("who", ""))
+        head = "[%s] %s %s" % (r["kind"], (r.get("when") or "")[:19], r.get("who", ""))
         if r.get("state"):
             head += " %s" % r["state"]
         if r.get("where"):
             head += " %s" % r["where"]
+        # The bot's reviews run to a hundred lines each, and a PR that has been
+        # through a few rounds carries every one of them. Print the current one
+        # once, above, and the rest as a line so the humans are not buried.
+        if r is current:
+            print(head + "  AI review, current - printed in full above\n")
+            continue
+        if any(r is e for e in earlier):
+            print(head + "  AI review, superseded (head %s)\n"
+                  % (ai_review_head(r.get("body") or "") or "?"))
+            continue
         print(head)
         body = (r.get("body") or "").strip()
         for line in body.split("\n"):
@@ -965,29 +1084,100 @@ def pool_tasks(tasks_dir):
     )
 
 
-def run_one(name, tasks_dir, logs_dir, timeout):
+def session_members(sid):
+    """Live PIDs in session sid, from /proc; empty where there is no /proc."""
+    pids = []
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return pids
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % entry) as fh:
+                stat = fh.read()
+        except OSError:
+            continue
+        # state is the first field after the ")" closing comm; session the fourth
+        fields = stat[stat.rfind(")") + 2:].split()
+        if len(fields) > 3 and fields[0] != "Z" and int(fields[3]) == sid:
+            pids.append(int(entry))
+    return pids
+
+
+def reap_session(sid, grace=5.0):
+    """Kill everything left in a codex run's session; return how many there were.
+
+    Our timeout kills codex itself, and what codex started is left to codex to
+    clean up. APReview has seen that fail - an orphaned git storm ran on for
+    45 minutes after its pool reported done. 0.153.4 under the read-only
+    sandbox does clean up, so this is a backstop, and the log says when it
+    fires. The session catches a command that moved to a group of its own.
+    """
+    left = session_members(sid)
+    found = len(left)
+    if not left:
+        try:
+            os.killpg(sid, signal.SIGKILL)   # no /proc: the group is the best we have
+        except (ProcessLookupError, PermissionError):
+            pass
+        return 0
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in left:
+            try:
+                os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+        deadline = time.time() + grace
+        while left and time.time() < deadline:
+            time.sleep(0.2)
+            left = session_members(sid)
+        if not left:
+            break
+    return found
+
+
+def run_one(name, tasks_dir, logs_dir, timeout, sandbox):
     with open(os.path.join(tasks_dir, name + ".task"), "r") as fh:
         prompt = fh.read()
     log = os.path.join(logs_dir, name + ".log")
     started = time.time()
+    cmd = ["codex", "exec", "--skip-git-repo-check"]
+    if sandbox:
+        cmd += ["--sandbox", sandbox]
+    cmd.append(prompt)
+    leftover = 0
     with open(log, "w") as out, open(os.devnull, "r") as devnull:
         try:
-            proc = subprocess.run(
-                ["codex", "exec", "--skip-git-repo-check", prompt],
-                stdin=devnull, stdout=out, stderr=subprocess.STDOUT,
-                cwd=REPO_ROOT, timeout=timeout,
+            # Its own session, so everything it starts can be found afterwards.
+            proc = subprocess.Popen(
+                cmd, stdin=devnull, stdout=out, stderr=subprocess.STDOUT,
+                cwd=REPO_ROOT, start_new_session=True,
             )
-            rc = proc.returncode
-        except subprocess.TimeoutExpired:
-            out.write("\n[pr_review] TIMEOUT after %ds\n" % timeout)
-            rc = 124
         except FileNotFoundError:
             out.write("[pr_review] codex CLI not found on PATH\n")
+            proc = None
             rc = 127
+        if proc:
+            try:
+                rc = proc.wait(timeout=timeout)
+                leftover = reap_session(proc.pid)
+                if leftover:
+                    out.flush()
+                    out.write("\n[pr_review] codex exited leaving %d process(es)"
+                              " running; killed them\n" % leftover)
+            except subprocess.TimeoutExpired:
+                reap_session(proc.pid)
+                proc.wait()
+                out.flush()
+                out.write("\n[pr_review] TIMEOUT after %ds\n" % timeout)
+                rc = 124
     return {
         "task": name, "rc": rc,
         "seconds": round(time.time() - started, 1),
         "bytes": os.path.getsize(log) if os.path.exists(log) else 0,
+        "leftover": leftover,
     }
 
 
@@ -1013,8 +1203,8 @@ def pool_run(args):
         # Detach so the pool outlives the tool call that started it. The
         # sentinel file, not the process table, is the completion signal.
         if os.fork() != 0:
-            print("pool started: %d task(s), %d at a time, dir=%s"
-                  % (len(names), args.jobs, args.dir))
+            print("pool started: %d task(s), %d at a time, sandbox %s, dir=%s"
+                  % (len(names), args.jobs, args.sandbox or "codex default", args.dir))
             print("poll with: pr_review.py codex status --dir %s" % args.dir)
             return
         os.setsid()
@@ -1028,7 +1218,8 @@ def pool_run(args):
     results = []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = [
-            pool.submit(run_one, n, tasks_dir, logs_dir, args.timeout) for n in names
+            pool.submit(run_one, n, tasks_dir, logs_dir, args.timeout, args.sandbox)
+            for n in names
         ]
         for fut in futures:
             results.append(fut.result())
@@ -1178,15 +1369,23 @@ def state_cmd(args):
         return
     head = git("rev-parse", "HEAD").strip()
     if args.action == "save":
+        # The merge-base is what lets a later diff tell the branch's own
+        # change apart from what a rebase brought in underneath it.
+        try:
+            base_ref, merge_base = resolve_base(args.base or None, refresh=False)
+        except GitError:
+            base_ref, merge_base = args.base or "", ""
         blob = {
             "head": head, "head_short": head[:10],
             "branch": git("rev-parse", "--abbrev-ref", "HEAD").strip(),
             "verdict": args.verdict, "findings": args.findings,
-            "base_ref": args.base or "", "when": int(time.time()),
+            "base_ref": base_ref, "merge_base": merge_base,
+            "when": int(time.time()),
         }
         with open(path, "w") as fh:
             json.dump(blob, fh, indent=2)
-        print("recorded review of %s at %s" % (blob["branch"], blob["head_short"]))
+        print("recorded review of %s at %s (base %s)"
+              % (blob["branch"], blob["head_short"], base_ref))
         return
     # diff: what changed since the recorded review
     if not os.path.exists(path):
@@ -1198,14 +1397,123 @@ def state_cmd(args):
         print("unchanged since the recorded review at %s (verdict: %s)"
               % (blob["head_short"], blob.get("verdict")))
         sys.exit(0)
+    # One state file per checkout, not per branch.
+    branch = git("rev-parse", "--abbrev-ref", "HEAD").strip()
+    if blob.get("branch") and blob["branch"] != branch:
+        print("WARNING: the recorded review was of branch %s, not %s - what"
+              " follows compares two different branches\n" % (blob["branch"], branch))
     if not git_ok("rev-parse", "--verify", "--quiet", blob["head"] + "^{commit}"):
         print("recorded head %s is gone (rebased?) - re-review everything"
               % blob["head_short"])
         sys.exit(2)
-    print("head moved %s -> %s since the last review; changed since then:"
-          % (blob["head_short"], head[:10]))
-    print(git("diff", "--stat", blob["head"], head).rstrip())
+    try:
+        base_ref, new_mb = resolve_base(args.base or blob.get("base_ref") or None,
+                                        refresh=False)
+        old_mb = (blob.get("merge_base")
+                  or git("merge-base", base_ref, blob["head"]).strip())
+    except GitError:
+        base_ref = old_mb = new_mb = None   # no base to separate them by
+    if old_mb == new_mb:
+        print("head moved %s -> %s since the last review, on the same base;"
+              " changed since then:" % (blob["head_short"], head[:10]))
+        print(git("diff", "--stat", blob["head"], head).rstrip())
+        sys.exit(2)
+    # The branch was rebased onto a newer base. A plain diff between the two
+    # heads would now carry everything the base gained in between, so compare
+    # the branch's own patch at each head instead.
+    print("head moved %s -> %s and the base moved under it (%s merge-base %s -> %s)"
+          % (blob["head_short"], head[:10], base_ref, old_mb[:10], new_mb[:10]))
+    delta = patch_delta(old_mb, blob["head"], new_mb, head)
+    changed = {p: why for p, why in delta.items() if why != "unchanged"}
+    print("comparing the branch's own patch at each head, over %d file(s):"
+          % len(delta))
+    for p, why in sorted(changed.items()):
+        print("  %-26s %s" % (why, p))
+    print("  %-26s %d file(s)" % ("unchanged", len(delta) - len(changed)))
+    if not changed:
+        print("rebase only: the patch is the same apart from line offsets."
+              " Nothing to re-review, but rebuild and rerun the tests - the"
+              " code around it moved.")
+        sys.exit(0)
+    if any("binary" in why for why in changed.values()):
+        print("  (range-diff shows a binary as unchanged whatever its content;"
+              " the blob check above is the one to trust for those)")
+    print("")
+    print("what moved, commit by commit (git range-diff):")
+    print(git("range-diff", "--no-color", "%s..%s" % (old_mb, blob["head"]),
+              "%s..%s" % (new_mb, head)).rstrip())
     sys.exit(2)
+
+
+def patch_by_file(base, head, paths):
+    """{path: patch text} for base..head, without what a rebase alone moves.
+
+    Hunk offsets and the index line change whenever the base edits the same
+    file above the hunk, while the author's content stays byte-identical.
+    """
+    out = {}
+    current = None
+    raw = git("diff", "--no-color", "--no-ext-diff", "--no-renames", base, head,
+              "--", *paths)
+    for line in raw.split("\n"):
+        if line.startswith("diff --git "):
+            current = line.split(" b/", 1)[-1]
+            out[current] = []
+        elif current is None or line.startswith("index "):
+            continue
+        elif line.startswith("@@"):
+            out[current].append("@@")
+        else:
+            out[current].append(line)
+    return {p: "\n".join(lines) for p, lines in out.items()}
+
+
+def blob_id(rev, path):
+    return git("rev-parse", "--quiet", "--verify", "%s:%s" % (rev, path),
+               check=False).strip() or None
+
+
+def patch_delta(old_mb, old_head, new_mb, new_head):
+    """Classify every file the branch touches at either head.
+
+    Normalising the text is what makes a rebase read as no change, and it is
+    also what hides a binary: git prints "Binary files differ" with no
+    content, so once the index line is gone a regenerated .hex looks the same.
+    Binaries are compared by blob instead.
+    """
+    def files(base, tip):
+        return {f for f in git("diff", "--name-only", "--no-renames", base, tip)
+                .split("\n") if f.strip()}
+
+    before, after = files(old_mb, old_head), files(new_mb, new_head)
+    paths = sorted(before | after)
+    old_p = patch_by_file(old_mb, old_head, paths) if paths else {}
+    new_p = patch_by_file(new_mb, new_head, paths) if paths else {}
+    binary = set()
+    for base, tip in ((old_mb, old_head), (new_mb, new_head)):
+        for line in git("diff", "--numstat", "--no-renames", base, tip).split("\n"):
+            bits = line.split("\t")
+            if len(bits) == 3 and bits[0] == "-":
+                binary.add(bits[2])
+    delta = {}
+    for p in paths:
+        if p not in before:
+            delta[p] = "added to the branch"
+        elif p not in after:
+            delta[p] = "dropped from the branch"
+        elif p in binary:
+            if blob_id(old_head, p) == blob_id(new_head, p):
+                delta[p] = "unchanged"
+            elif blob_id(old_mb, p) == blob_id(new_mb, p):
+                delta[p] = "changed (binary)"
+            else:
+                # The base moved this file too, so the new blob may be the
+                # rebase rather than the author. Re-reviewing costs less than
+                # missing it.
+                delta[p] = "changed (binary, base moved)"
+        else:
+            delta[p] = "unchanged" if old_p.get(p) == new_p.get(p) else "changed"
+    return delta
 
 
 # ----------------------------------------------------------------- presentation
@@ -1303,6 +1611,12 @@ def main():
     cr.add_argument("--jobs", type=int, default=4)
     cr.add_argument("--timeout", type=int, default=900)
     cr.add_argument("--retry", action="store_true", help="only re-run empty/missing logs")
+    # codex exec runs a trusted project workspace-write by default, and the
+    # pool's working directory is the user's own checkout. A reviewer has no
+    # business writing to it; one that needs to build gets its own worktree.
+    cr.add_argument("--sandbox", default="read-only",
+                    choices=["read-only", "workspace-write"],
+                    help="codex sandbox for every task (default: read-only)")
     cr.add_argument("--foreground", action="store_true")
     cs = csub.add_parser("status")
     cs.add_argument("--dir", required=True)

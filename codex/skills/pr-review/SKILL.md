@@ -14,6 +14,12 @@ pipeline, the head-hash skip and most of the review rules below are his; the tar
 and the ending differ - one PR instead of a batch, and it ends in **fixes applied
 to your tree** rather than comments posted to someone else's PR.
 
+That pipeline now runs unattended as ArduPilot's review bot (AP-Review, from
+<https://github.com/ArduPilot/APReview>) on every PR labelled `AIReview`,
+`DevCallTopic` or `DevCallEU`. On a labelled PR this skill is therefore a
+rehearsal of a review that is definitely coming, run while fixing things is
+still free.
+
 **Self-review is the anchored case.** You already believe the diff is correct - you
 wrote it. Every mechanism below that costs extra effort exists because of that:
 the Codex pass that never sees your findings, the requirement to reproduce numbers,
@@ -129,6 +135,21 @@ On your own PR the thread is not background - it *is* the specification for
 - A review comment you answered *in prose* and never fixed is the most common reason a PR stalls. Surface those explicitly.
 - A claim an earlier comment marked as checked, yours included, is re-derived from the source when the change touches it, not inherited. The "cannot fire in flight" line in PR #32768's thread was the premise every later round built on.
 
+**The bot's review gets triaged, finding by finding.** `thread` picks out the
+bot's current review. It prints it in full with the head it read, the verdict
+and the report link, and says whether that head is the PR's and yours. The
+superseded rounds are folded to one line each, because a PR a few rounds in
+carries hundreds of lines of them. Before step 3, put every finding in that
+review into a table against **your** HEAD: RESOLVED (say how, citing the
+change), STILL OPEN, DISPUTED (you disagree - on what evidence) or PARTIAL.
+That is the table the bot's next pass opens with. Arriving at it with every
+row already RESOLVED or answered is the whole point of running this first.
+
+- The bot's findings are a second opinion, like the second pass's in step 5, not orders. It reproduces most of its numbers, but a finding still gets checked against the source before it drives an edit.
+- A DISPUTED row needs an answer in the thread, with the measurement behind it. The bot reads replies and drops a finding the author has answered on the merits - it dropped two on PR #34292 because the author's measurements answered them. An answer given only in a commit message or not at all gets re-raised as STILL OPEN.
+- It lists unanswered human questions as open items too (on #34292, a maintainer question the author had said they would answer). Those are the cheapest rows to close.
+- Its "previous round" table is itself a set of claims. A row it marked RESOLVED that your later changes touched is re-checked, not inherited.
+
 ## Step 3 - Primary review, fanned out
 
 **Read the whole diff yourself. Fan out to do it, do not fan out to avoid it.**
@@ -156,7 +177,7 @@ than a generic "review this":
 - **hwdef / board PRs** - pin labels, DMA sharing and conflicts, board ID registration and uniqueness, power rail defaults, bootloader/timer agreement. `/hwdef-check` already automates most of this; run it instead of re-deriving it.
 - **Control, EKF, filters** - the maths, the mode dispatch, unit and frame agreement, what happens at the edges the design admits (zero, negative, saturated, NaN). Domain math (`sqrtf`, `logf`, `acosf`, division) gets every reaching value enumerated. A predicate on a configuration enum (`yaw_source_last`, a `_TYPE` parameter, an `AP_NavEKF_Source` getter) says what was asked for, not what is arriving: for each leg of it, ask what the code fuses when that source is configured but absent, and whether a freshness timestamp already exists for it. A guard is protection only in the states where its flag is set the way the guard assumes: read how `onGround`, `inFlight`, `land_complete` or any similar flag is computed for the vehicle type before crediting it. On a copter EKF3's `onGround` is the armed flag inverted, and PR #32768 went three review rounds with `if (!onGround) return` accepted as an in-flight guard for a re-arm after a mid-air disarm.
 - **Drivers and HAL** - register sequences against the datasheet, timeouts, bus sharing, failure paths, what happens when the device is absent. A counter that one block increments and another resets has an implied meaning: list every write to it, then evaluate any test on it at the rate table's edges (downsample rate 1, the slowest and fastest INS_GYRO_RATE, each sensor family's accel ratio). The gate in PR #27893 compared a count that only the accel block reset against the gyro downsample rate; at 8 kHz that is never true after the first sample. A call that adjusts a periodic callback gets its thread checked against the HAL's own test, since DeviceBus::adjust_timer silently returns false off the bus thread.
-- **Anything embedded** - flash and RAM cost, stack depth, allocation in flight paths, and whether a new feature needs an `AP_*_ENABLED` guard so small boards can drop it.
+- **Anything embedded** - flash and RAM cost, stack depth, allocation in flight paths, and whether a new feature needs an `AP_*_ENABLED` guard so small boards can drop it. The reverse matters as much: new code that names something defined only inside a guard must compile with that guard off. PR #34292's blocker was an EKF3 member sized by a constant that exists only under `EK3_FEATURE_RANGEFINDER_MEASUREMENTS`, which only CI's `build-options-defaults-test` caught. Step 7 builds it.
 - **Tooling and scripts** - the failure modes, not the happy path.
 
 **Point each agent at the subsystem playbook before the diff.** The root playbook
@@ -195,6 +216,11 @@ Modification Principle, Commit Conventions, and Writing for Reviewers in the roo
 Tell each agent explicitly that an admitted gap is worth more than a confident
 wrong claim. These findings turn into edits to the user's code.
 
+**Fanning out buys speed, not responsibility.** Do not pass agent output on
+unread. Re-check every finding that will drive an edit, set the verdict or
+carry a number against the source yourself before it goes any further. When
+two readers disagree, that is where to look. Do not average them.
+
 ## Step 4 - Codex cross-check
 
 Unless `--no-codex`, every finding gets a second opinion from a process that has
@@ -213,10 +239,10 @@ Both kinds of task run as one detached pool:
 SCRATCH=$(mktemp -d)/pr-review; mkdir -p "$SCRATCH/tasks"
 # one task file per unit of work; name them so the log is identifiable
 cat > "$SCRATCH/tasks/verify-<commit>.task" <<'EOF'
-...findings for that commit, inline, plus how to fetch the diff...
+...findings for that commit, inline, plus the git command that shows its diff...
 EOF
 cat > "$SCRATCH/tasks/cold-<commit>.task" <<'EOF'
-...PR/commit identity only - no findings, no verdict...
+...commit identity and the git command for its diff only - no findings, no verdict...
 EOF
 
 python3 .codex/skills/pr-review/pr_review.py codex run --dir "$SCRATCH" --jobs 4
@@ -229,10 +255,21 @@ empty or non-zero. Poll `status` rather than the process table, and re-run
 stragglers with `codex run --dir "$SCRATCH" --retry` - a missing log is a piece of
 the diff that received no second opinion, and it is invisible unless you count.
 
-Two kinds of task, kept strictly apart:
+**The pool runs every task read-only.** Its working directory is your
+checkout. Without `--sandbox`, `codex exec` runs a trusted checkout
+workspace-write, and a probe on 2026-09-19 confirmed it could create files
+there. A reviewer that decided to reproduce a finding would then reconfigure
+your build or edit your tree. The sandbox also has no network, in either
+mode, so a task reads the diff with local git (`git show <sha>`,
+`git diff <merge-base>..<sha>`), never `gh`. Settling a finding by building
+is step 5's job, in a scratch worktree. If a task really must build, run the
+pool from inside that worktree with `--sandbox workspace-write`.
+
+Three kinds of task, kept strictly apart:
 
 - **Verification** - give it one commit's findings inline and ask for **CONFIRM / REFUTE / ADJUST** per finding plus any **NEW** ones. Never point it at your report.
 - **Cold** - give it the diff and nothing else: "review this and report anything wrong". This is the one that matters most on a self-review, because it is the only reader in the pipeline that is not anchored by your intent. Aim it at the parts you cleared, especially new hwdefs, state machines, concurrency, lifetime/ownership, and anything that newly depends on existing shared state. The task text must not describe the mechanism, restate the commit message, say which existing code the change "matches", or enumerate the cases to check. Each of those is your framing, and a reader handed the framing answers the question it was asked. The PR #33498 second-round cold task said the guard used "the same predicate as checkGyroCalStatus()" and asked for a check of "every SourceYaw value"; it checked the enum values, found them consistent, and approved a guard that tested the configured source rather than whether yaw was being fused.
+- **Audit** - a fix round only (step 8). Give it every finding already raised against this PR - your earlier rounds, the bot's current review, the maintainers' comments - each as it was raised, with its `file:line`, and ask for **CLOSED / PARTIAL / OPEN** against the current code, with the line that shows it. Findings that everyone believed fixed are where this pays off: when APReview ran it over its own PR, 28 items all thought fixed came back as 18 closed, 9 partial and 1 open, and most of the partials shared a root cause nobody had named. Handing it the findings is fine here, because it is checking closure, not looking for new problems. It still gets no description of how you fixed them.
 
 `codex exec` logs interleave the tool transcript with prose and the final answer is
 not reliably the tail, so extract findings by grepping for the markers you asked
@@ -299,7 +336,9 @@ authority. Then work down the list:
 3. **Keep the diff surgical.** The Surgical Modification Principle applies to review fixes as much as to the original change - do not tidy sibling code while you are in there. A fix that grows the diff gives the reviewer more to read, not less.
 4. **Put each fix in the commit that introduced the problem**, not in a trailing "address review comments" commit. ArduPilot reviews history, so a whitespace fix belongs squashed into the commit that added the whitespace. That means a rebase or an amend, which rewrite history: **ask the user before either, and never push without being asked.** The push after an autosquash is not a fast-forward, so say so when you ask. `GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase -i --autosquash <base>` runs the autosquash without an editor. To reword the target commit in the same pass, add an empty commit whose message is `amend! <original subject>`, a blank line, then the full replacement message (`git commit --allow-empty -F msg`); `--fixup` refuses `-F`, and an editor shim that overwrites the whole buffer drops the marker. Where a rebase is not wanted, say so plainly and use fixup commits instead.
 5. **Re-run the mechanical gate after every round.** It is two seconds and it catches fixes that introduced new problems.
-6. **Build what you touched, then exercise it.** `/build <vehicle>` for the affected target, `/check` when libraries with unit tests changed, and rerun the existing autotests that cover the changed path (grep `Tools/autotest/` for the parameters the change keys on: `EK3_SRC1_YAW` finds `LoiterNoCompassYaw` for a no-yaw-source EKF change), and confirm each one reaches the changed lines before citing it: `RudderDisarmMidair` locks home in its setup and never enters the branch it was cited for. Repeat the A/B from step 5 on the fixed tree. The state diff in step 8 proves the content moved, not that it still works. A review fix that does not compile is worse than the finding.
+6. **Build what you touched, then exercise it.** `/build <vehicle>` for the affected target, `/check` when libraries with unit tests changed, and rerun the existing autotests that cover the changed path (grep `Tools/autotest/` for the parameters the change keys on: `EK3_SRC1_YAW` finds `LoiterNoCompassYaw` for a no-yaw-source EKF change), and confirm each one reaches the changed lines before citing it: `RudderDisarmMidair` locks home in its setup and never enters the branch it was cited for. Repeat the A/B from step 5 on the fixed tree. The state diff in step 8 proves the content moved, not that it still works. A review fix that does not compile is worse than the finding. Never pass `--uds` to `autotest.py` or `sim_vehicle.py` for any of this. It raises SITL's UART outqueue limit from 1024 to 65536 bytes (`AP_HAL_SITL/UARTDriver.cpp`), so a timing-sensitive test behaves differently from CI, and `/autotest` already keeps parallel runs apart by port slot.
+7. **Prove each test by breaking the fix.** A test the PR adds, or one you cite as covering a fix, has to fail with the fix reverted. Revert just the fix in the step 5 scratch worktree, or use the merge-base build when the whole PR is the fix, and see it go red. A test that passes both ways covers nothing, however it reads. APReview adopted this after reading a test had twice claimed coverage that was not there. The bot checks it too: its first #34292 review lists "the autotest fails if the feature is removed" among what it checked.
+8. **Build with the feature off** when the diff touches guarded code (step 3). In the scratch worktree, so your own build configuration is untouched, put `define <GUARD> 0` in a file and run `./waf configure --board sitl --extra-hwdef=<file>`, then build the vehicle. That is how the bot reproduced #34292's blocker, and it answers before the push. CI's `build-options-defaults-test` only answers after it.
 
 ## Step 8 - Re-review what moved
 
@@ -307,16 +346,22 @@ authority. Then work down the list:
 python3 .codex/skills/pr-review/pr_review.py state diff
 ```
 
-Exit **0** means the head is unchanged since the recorded review - nothing to
-re-review. Exit **2** prints a diff of what changed since, and only that needs a
-fresh pass.
+Exit **0** means there is nothing to re-review: either the head has not moved,
+or it moved by a rebase that left the branch's own patch the same. Exit **2**
+shows what changed, and only that needs a fresh pass.
 
-After a rebase or an amend the recorded commit normally still exists locally, so
-this prints a **content** diff between the old head and the new one rather than a
-list of rewritten commits. That is the useful comparison: an empty diff means the
-rebase moved the branch without changing what it does, which is exactly the check
-the playbook asks for before a force push. Only when the old object has actually
-gone does it say so and start the review over.
+How it compares depends on whether the base moved:
+
+- **Same base** (an amend, a fixup, a squash): a **content** diff between the old head and the new one. An empty diff means the history changed without changing what the branch does, which is exactly the check the playbook asks for before a force push.
+- **Base moved** (a rebase onto newer master): a diff between the two heads would now include everything master gained in between. So it compares the branch's own patch at each head instead, file by file, ignoring the line offsets a rebase shifts. It lists each file as changed, added to the branch, dropped from it or unchanged, then prints `git range-diff` for the commit-by-commit view. Binaries are compared by blob, because once the patch text is normalised a regenerated `.hex` looks identical. `range-diff` has the same blind spot and marks such a commit `=`.
+
+The recorded merge-base comes from `state save`. An older state file without one
+falls back to the merge-base of the recorded head with the base ref. Only when
+the old head object has actually gone does it say so and start the review over.
+
+**Audit the previous round, every round.** Alongside the re-review, run the
+audit task from step 4 over every finding already raised. "I fixed that" is the
+claim a fix round is most confident about and has checked least.
 
 ### Before a squash, make the old history addressable
 
@@ -361,6 +406,15 @@ did, gives the fix less scrutiny than the original change had.
 Once CI has run on a pushed branch, `/pr-checks` triages the failures; those are
 findings too, and they belong in the same loop.
 
+**Push once, when the loop has converged.** On a labelled PR every push is a
+new bot review. Its six-hourly label sweep re-reviews any PR whose head moved,
+a plain rebase included, and posts a fresh comment that notifies everyone
+watching the PR. The three-hourly follow-up pass skips a push that left the
+patch the same, but the label sweep does not. Pushing each round half-done
+buys a review of the half-done state. The next comment should be about the finished fix, with
+every row in the step 2 table either closed in code or answered in the
+thread.
+
 ## Reporting back
 
 - Lead with the verdict and the counts: `REQUEST CHANGES - 3 must-fix, 4 should-fix, 2 notes (primary + cold pass, 1 refuted)`.
@@ -369,6 +423,8 @@ findings too, and they belong in the same loop.
 - Say which subsystem playbooks the agents were given, and name any playbook section that turned out to describe branch-only code, so it gets fixed at the source rather than rediscovered.
 - Group findings by severity with `file:line`, and name the ones that came from the cold pass - those are the ones your own read missed.
 - After a fix round, report what changed, what was left and why, and the new verdict.
+- When the bot has reviewed the PR, include the step 2 table as it stands: each of its findings, RESOLVED / STILL OPEN / DISPUTED / PARTIAL, and the evidence at your HEAD. Say which rows still need a reply in the thread.
+- Say which tests were shown to fail with the fix reverted (step 7), and which feature-off builds ran. A test cited without that is coverage claimed, not shown.
 - Name what you did **not** cover: unbuilt targets, untested behaviour, hardware you cannot exercise. On a self-review the unexamined part is the part most likely to fail review.
 
 ## What this skill does not do

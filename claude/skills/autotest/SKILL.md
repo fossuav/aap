@@ -84,6 +84,12 @@ Slot 0 is SITL instance 0, so a lone run uses exactly the ports it always did.
 `--slot N` pins a slot, `--buildlogs DIR` overrides the log tree, and
 `--no-isolate` restores the old shared-`../buildlogs` behaviour.
 
+Do not reach for `--uds` (`--unix-domain-socket`) to keep runs apart instead.
+It changes SITL itself: the UART outqueue limit is 65536 bytes on a Unix socket
+against 1024 on TCP (`AP_HAL_SITL/UARTDriver.cpp`), so the anti-lag throttle
+engages 64x later and a timing-sensitive test passes or fails differently from
+CI. A result obtained that way is not evidence about the change.
+
 Moving the ports needs `autotest.py --sitl-instance`. A checkout without it
 still gets its own log tree and lock, but has to use the default ports, so the
 runner says so and pins the run to slot 0 - two such checkouts still wait for
