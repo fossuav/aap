@@ -121,7 +121,15 @@ Follow the rule regardless - it is the maintainer's, it costs nothing, and stabl
 **These are orthogonal concepts — do not conflate them:**
 
 - **Core (lane)** — a complete EKF instance, typically one per IMU. `XKF*.C` identifies the core. "Lane switch" means the frontend picked a different core as primary; all cores still fuse the **same** sensors as configured by the currently-active source set.
-- **Source set** — a runtime-switchable configuration bundle (`EK3_SRC1_*`, `EK3_SRC2_*`, `EK3_SRC3_*`) that selects *which* sensors to fuse for position/velocity/yaw. Only **one** source set is active at a time across **all** cores.
+- **Source set** — a runtime-switchable configuration bundle (`EK3_SRC1_*`, `EK3_SRC2_*`, `EK3_SRC3_*`) that selects *which* sensors to fuse for position/velocity/yaw. Only **one** source set is active at a time across **all** cores — **except** under `EK3_SRC_OPTIONS` bit 3, below.
+
+**`SRC_PER_CORE` (`EK3_SRC_OPTIONS` bit 3) makes them the same thing, and that inverts most of this section.** `AP_NavEKF_Source::getActiveSourceSet()` returns the **core index** and never reads `active_source_set` at all for cores 0-2, so core *i* is permanently pinned to set *i+1*. Consequences worth knowing before reading any log from such a vehicle:
+
+- Selecting a source set changes nothing by itself. The RC switch, `MAV_CMD_SET_EKF_SOURCE_SET` and the Lua binding all still report success and log `EK3_SOURCES_SET_TO_*`, so a flight intended to be on flow can be flown entirely on GPS with nothing in the statustexts saying so. An SFD-O4 flight did exactly that for four minutes.
+- **`XKFS.SS` is the field that settles it** — it logs the source set each core actually ran. Check it before believing a source-set change had any effect; `XKF4.PI` gives the primary lane alongside it.
+- The only way to change which sources the vehicle flies on is therefore to change **lane**, via `EK3_PRIMARY`. On the SFD fork the source-set request does that for you (`NavEKF3::setPosVelYawSourceSet()`); on upstream it does not.
+- A core can only fall back to flow if *its own* set names flow for velocity (`readyToUseOptFlow()` tests `useVelXYSource(OPTFLOW, core_index)`). With SRC1 GPS-only and SRC2 flow-only, no lane can make the AID_ABSOLUTE → AID_RELATIVE transition on GPS loss: core 0 goes AID_NONE instead. Reaching that transition needs one set holding `POSXY=GPS` **and** `VELXY=OPTFLOW`.
+- Combined with `ManualLaneSwitch` (`EK3_OPTIONS` bit 1) there is no automatic escape either, so denying GPS on such a vehicle leaves it dead-reckoning on lane 0 rather than moving to the healthy flow lane. Do not recommend the `GPS_DISABLE` RC option as a flow test there.
 
 Source sets are switched **manually** — by the pilot via an RC option (`RC_OPTIONS`/auxiliary switch function `SOURCE_SET`), MAVLink, or Lua (`ahrs:set_posvelyaw_source_set()`). They do **not** provide automatic failover when a sensor glitches. If `SRC1_VELXY=3` (GPS) and GPS glitches, configuring `SRC2_VELXY=0` does *not* save you — nothing switches to SRC2 on its own.
 
