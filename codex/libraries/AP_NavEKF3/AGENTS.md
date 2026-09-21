@@ -797,9 +797,16 @@ EKF3 runs one core per IMU (controlled by `EK3_IMU_MASK`). When armed, each core
 - Primary is unhealthy, OR
 - Alternative has a substantially lower accumulated relative error
 
-Decision logic is in `NavEKF3::UpdateFilter()` (`AP_NavEKF3.cpp:932-998`). On stock ArduPilot there is no parameter to disable lane switching — it always runs when armed.
+Decision logic is in `NavEKF3::UpdateFilter()` (`AP_NavEKF3.cpp:932-998`).
 
-**Fork exception:** SmallFastDrone adds `EK3_OPTIONS` bit 1 (`Option::ManualLaneSwitch`), checked in `NavEKF3::UpdateFilter()` and `NavEKF3::checkLaneSwitch()`. When set, automatic lane switching **and the lane health checks** are both disabled; the primary only moves via `EK3_PRIMARY`. A core whose yaw or bias states have diverged will then be flown to the ground with nothing to escape to. Before blaming a diverged lane for a flight outcome, check whether this bit was set — and when reading `XKF4.PI` pinned at one value, do not read that as "no lane ever went unhealthy".
+`EK3_OPTIONS` bit 1 (`Option::ManualLaneSwitch`) disables it, checked in `NavEKF3::UpdateFilter()` and `NavEKF3::checkLaneSwitch()`. This is **upstream**, not a fork addition: this section called it a "Fork exception" until the source-set lane review checked, and `git grep ManualLaneSwitch upstream/master` finds it at `AP_NavEKF3.h:473`. When set, automatic lane switching **and the lane health checks** are both disabled; the primary only moves via `EK3_PRIMARY`. A core whose yaw or bias states have diverged will then be flown to the ground with nothing to escape to. Before blaming a diverged lane for a flight outcome, check whether this bit was set — and when reading `XKF4.PI` pinned at one value, do not read that as "no lane ever went unhealthy".
+
+`EK3_PRIMARY` reaches `primary` by exactly two routes, and neither is unconditional:
+
+- the `ManualLaneSwitch` branch (`AP_NavEKF3.cpp:967-973`), which runs whatever the arm state;
+- the disarmed force (`:1028`), gated on `primary != user_primary && core[user_primary].healthy() && !armed`.
+
+So **while armed without bit 1 the parameter is inert** - automatic selection owns the primary and writing `EK3_PRIMARY` changes nothing. Do not describe it as a preference the filter leans towards. An out-of-range value is clamped to lane 0 by both routes (`:965`, `:878`), so writing one does not leave the lane alone, it moves it to 0 - measured in SITL, where asking for a source set with no lane emitted the warning and then `EKF3 lane switch 0`.
 
 ### Key Parameters
 
