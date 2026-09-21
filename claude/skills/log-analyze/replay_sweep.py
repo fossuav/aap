@@ -167,8 +167,19 @@ import json, math, sys
 from pymavlink import mavutil
 mlog = mavutil.mavlink_connection(sys.argv[1])
 peak, fvc, saw = {}, {}, False
+# largest one-sample height move per core that the filter's own vertical velocity
+# does not account for.  A reset moves position with no matching VD, a climb moves
+# both, so the residual separates them without knowing where the flight phases were.
+step, lastpd = {}, {}
+# AGL KF height/velocity pairs per core.  The pathology is velocity running while
+# the height is pinned on its on-ground floor, so a plain minimum over the log is the
+# wrong number: an in-flight excursion beats it and the on-ground wind-up never shows.
+# The floor is not logged, so read it off the heights themselves: it is where they
+# pile up, and a percentile finds that while ignoring the handful of zeros the filter
+# logs before its first fusion.
+aglhv = {}
 while True:
-    m = mlog.recv_match(type=['XKF1', 'XKF7'])
+    m = mlog.recv_match(type=['XKF1', 'XKF7', 'XKFA'])
     if m is None:
         break
     c = getattr(m, 'C', None)
@@ -180,24 +191,50 @@ while True:
         d = math.hypot(m.PN, m.PE)
         if d > peak.get(c, 0.0):
             peak[c] = d
-    else:
+        if c in lastpd:
+            prev_pd, prev_us = lastpd[c]
+            dt = (m.TimeUS - prev_us) * 1.0e-6
+            if 0.0 < dt < 0.5:
+                jump = abs((m.PD - prev_pd) - m.VD * dt)
+                if jump > step.get(c, 0.0):
+                    step[c] = jump
+        lastpd[c] = (m.PD, m.TimeUS)
+    elif m.get_type() == 'XKF7':
         fvc[c] = max(fvc.get(c, 0), m.FVC)
+    else:
+        aglhv.setdefault(c, []).append((m.HAgl, m.VAgl))
+aglv = {}
+for c, hv in aglhv.items():
+    heights = sorted(h for h, _ in hv)
+    floor = heights[len(heights) // 100]
+    at_floor = [v for h, v in hv if h <= floor + 0.02]
+    aglv[c] = min(at_floor) if at_floor else 0.0
 sys.stdout.write(json.dumps({'peak': {str(k): v for k, v in peak.items()},
-                             'fvc': {str(k): v for k, v in fvc.items()}, 'saw': saw}))
+                             'fvc': {str(k): v for k, v in fvc.items()},
+                             'step': {str(k): v for k, v in step.items()},
+                             'aglv': {str(k): v for k, v in aglv.items()}, 'saw': saw}))
 """ % (REPLAY_CORE_OFFSET, REPLAY_CORE_OFFSET)
 
 
 def scan_output(path):
-    """Peak excursion per re-run core, or None if the reader could not finish."""
+    """Per re-run core numbers from the output BIN, or None if the reader could not finish.
+
+    Peak horizontal excursion, XKF7 flow variance count, the largest one-sample
+    height move (a reset shows here, a climb does not), and the most negative AGL KF
+    velocity reached while the height was pinned on its on-ground floor (there the
+    height innovation is zero, so nothing bounds the velocity).
+    """
     proc = subprocess.run([sys.executable, '-c', PEAK_SCAN, path],
                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                           universal_newlines=True)
     try:
         got = json.loads(proc.stdout)
     except ValueError:
-        return None, None, False
+        return None, None, None, None, False
     return ({int(k): v for k, v in got['peak'].items()},
-            {int(k): v for k, v in got['fvc'].items()}, got['saw'])
+            {int(k): v for k, v in got['fvc'].items()},
+            {int(k): v for k, v in got['step'].items()},
+            {int(k): v for k, v in got['aglv'].items()}, got['saw'])
 
 
 def sweep(args):
@@ -211,11 +248,11 @@ def sweep(args):
             continue
         out, secs, replay_stdout = run_replay(path, args.param, args.progress)
         events = count_events(replay_stdout)
-        peak, fvc, saw = scan_output(out)
+        peak, fvc, step, aglv, saw = scan_output(out)
         if peak is None:
             print("%-14s   NOTE: log reader aborted on the output BIN; peak excursion "
                   "unavailable, counts are unaffected" % name)
-            peak, fvc = {}, {}
+            peak, fvc, step, aglv = {}, {}, {}, {}
         elif not saw:
             print("%-14s WARNING - no C>=%d rows; Replay produced no re-run cores"
                   % (name, REPLAY_CORE_OFFSET))
@@ -228,14 +265,18 @@ def sweep(args):
             'log': name,
             'events': events,
             'peak_m': {str(c): round(v, 2) for c, v in sorted(peak.items())},
+            'hgt_step_m': {str(c): round(v, 2) for c, v in sorted(step.items())},
+            'agl_v_min_ms': {str(c): round(v, 2) for c, v in sorted(aglv.items())},
             'xkf7_fvc': {str(c): v for c, v in sorted(fvc.items())},
             'source_reader_errors': src_errs,
             'output': kept,
             'seconds': round(secs, 1),
         })
-        print("%-14s resets=%-3d deferred=%-3d quality=%-3d unhealthy=%-3d peak=%s  (%.0fs)" % (
+        print("%-14s resets=%-3d deferred=%-3d quality=%-3d unhealthy=%-3d peak=%s step=%s aglv=%s  (%.0fs)" % (
             name, events['reset'], events['deferred'], events['quality'], events['unhealthy'],
-            ", ".join("c%s %.1fm" % (c, v) for c, v in sorted(peak.items())) or "-", secs))
+            ", ".join("c%s %.1fm" % (c, v) for c, v in sorted(peak.items())) or "-",
+            ", ".join("c%s %.2fm" % (c, v) for c, v in sorted(step.items())) or "-",
+            ", ".join("c%s %.1f" % (c, v) for c, v in sorted(aglv.items())) or "-", secs))
         sys.stdout.flush()   # a sweep is minutes per log; do not sit on the result
         if src_errs:
             print("%-14s   NOTE: %d reader desync records in the source log; it replays, but "
@@ -251,18 +292,20 @@ def compare(before_path, after_path):
     before = json.load(open(before_path))
     after = json.load(open(after_path))
     b = {r['log']: r for r in before['results']}
-    print("%-14s %-28s %-28s" % ("log", before.get('label') or 'before', after.get('label') or 'after'))
+    print("%-14s %-52s %-52s" % ("log", before.get('label') or 'before', after.get('label') or 'after'))
     for r in after['results']:
         prev = b.get(r['log'])
         if prev is None or 'skipped' in r or 'skipped' in prev:
             print("%-14s %s" % (r['log'], r.get('skipped', 'no baseline')))
             continue
         def fmt(x):
-            return "resets=%-3d peak=%s" % (
+            return "resets=%-3d peak=%s step=%s aglv=%s" % (
                 x['events']['reset'],
-                ", ".join("%.1f" % v for v in x['peak_m'].values()) or "-")
+                ", ".join("%.1f" % v for v in x['peak_m'].values()) or "-",
+                ", ".join("%.2f" % v for v in x.get('hgt_step_m', {}).values()) or "-",
+                ", ".join("%.1f" % v for v in x.get('agl_v_min_ms', {}).values()) or "-")
         flag = "" if fmt(prev) == fmt(r) else "   <-- moved"
-        print("%-14s %-28s %-28s%s" % (r['log'], fmt(prev), fmt(r), flag))
+        print("%-14s %-52s %-52s%s" % (r['log'], fmt(prev), fmt(r), flag))
     return 0
 
 
