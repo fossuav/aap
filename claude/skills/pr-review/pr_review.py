@@ -143,7 +143,7 @@ _EXPLICIT_PREFIX = {
     "Tools/AP_Periph": "AP_Periph",
     "Tools/Frame_params": "Frame_params",
     "Tools/CodeStyle": "CodeStyle",
-    ".github": "github-actions",
+    ".github": ".github",
     "Docs": "Docs",
 }
 
@@ -159,7 +159,9 @@ def subsystem_of(path):
         if parts[: len(pre)] == pre:
             return name
     if parts[0] == "Tools" and len(parts) > 1:
-        return parts[1]
+        # a file sitting directly in Tools/ (Tools/PrintVersion.py) belongs to
+        # Tools itself; it is not a subsystem named after the file
+        return parts[1] if len(parts) > 2 else "Tools"
     if parts[0] == "modules":
         # A submodule pointer bump is prefixed with the submodule's own name
         # ("ChibiOS: kernel v9"), not with "modules".
@@ -171,43 +173,142 @@ def subsystem_of(path):
     return parts[0]
 
 
+# A commit subject's prefix token. Upstream prefixes are not all bare
+# identifiers: ".github:" (228 commits), "board_types.txt:" (44),
+# "pre-commit:", "Tools/Replay:" and "sim_vehicle.py:" are all in regular use,
+# so dots, dashes and slashes belong in the token.
+SUBJECT_PREFIX = re.compile(r"^([A-Za-z0-9_.][A-Za-z0-9_.+/-]*)\s*:")
+
+# A revert keeps the reverted subject, prefix and all, inside the quotes.
+# Upstream lands them unchanged, so there is nothing here to check.
+REVERT_SUBJECT = re.compile(r'^Revert\s+"')
+
+# Directories whose own name upstream uses as a prefix for anything beneath
+# them, alongside the more specific per-subdirectory prefixes: "Tools:" has
+# 4334 commits, "modules:" 79.
+CONTAINER_PREFIXES = ("Tools", "modules")
+
 # Prefixes upstream uses interchangeably for a subsystem. Measured against
 # ArduPilot master, not assumed: hwdef changes carry "AP_HAL_ChibiOS:" (1159),
 # "HAL_ChibiOS:" (1005) and "hwdef:" (667) in roughly comparable numbers, so
-# treating any of them as wrong is a false positive.
+# treating any of them as wrong is a false positive. ".github" is the same
+# story from the other side - the playbook's "github-actions:" has never been
+# used, while ".github:" has 228 commits and "CI:" 56.
 PREFIX_ALIASES = {
     "AP_HAL_ChibiOS": {"AP_HAL_ChibiOS", "HAL_ChibiOS", "AP_HAL_Chibios", "hwdef"},
+    ".github": {".github", "ci", "github", "actions"},
 }
 
+# How many commits make a prefix the project's practice for a path. Measured
+# over the 1500 commits before master: at 10 the check clears 99.9% of
+# upstream's own commits and still catches 98% of injected wrong prefixes.
+ESTABLISHED_PREFIX_MIN = 10
 
-def acceptable_prefixes(subsystem):
-    """Prefixes that are legitimate for a subsystem."""
-    return PREFIX_ALIASES.get(subsystem, {subsystem})
+
+def normalise_prefix(prefix):
+    """Fold a prefix to its comparison form.
+
+    Upstream writes the same prefix several ways - "board_types.txt:" (44
+    commits) and "board_types:" (6), "CI:" (56) and "ci:" (27), "Tools/Replay:"
+    alongside "Replay:" - so the directory part, a file extension and case are
+    all dropped before comparing.
+    """
+    prefix = prefix.rsplit("/", 1)[-1]
+    base, ext = os.path.splitext(prefix)
+    if ext and len(ext) <= 5:
+        prefix = base
+    return prefix.lower()
+
+
+def acceptable_prefixes(path):
+    """Prefixes that are legitimate for a file, in comparison form."""
+    subsystem = subsystem_of(path)
+    names = set(PREFIX_ALIASES.get(subsystem, {subsystem})) if subsystem else set()
+    parts = path.split("/")
+    if parts[0] in CONTAINER_PREFIXES and len(parts) > 1:
+        names.add(parts[0])
+    # A change confined to one file is routinely prefixed with the file:
+    # "sim_vehicle.py:", "hwdef.py:", "AP_AHRS_DCM:".
+    names.add(os.path.basename(path))
+    return {normalise_prefix(n) for n in names if n}
+
+
+# Subsystems the playbook splits even when one container prefix covers both: a
+# board addition puts the ID in Tools/AP_Bootloader and the binaries in
+# Tools/bootloaders, as two commits. Upstream's combined "Tools:" ones are the
+# case that rule exists for.
+ALWAYS_SPLIT = ({"AP_Bootloader", "bootloaders"},)
+
+
+def spans_one_module(prefix, files, subsystems):
+    """True when several subsystems are one module by the project's practice.
+
+    Upstream lands a change spanning several Tools/ subdirectories as a single
+    "Tools:" commit - 36 of the 38 such commits in the last 4000 - so a subject
+    that names the container makes them one module rather than several.
+    """
+    if not prefix or any(pair <= set(subsystems) for pair in ALWAYS_SPLIT):
+        return False
+    container = normalise_prefix(prefix)
+    return any(normalise_prefix(name) == container
+               and all(f.startswith(name + "/") for f in files)
+               for name in CONTAINER_PREFIXES)
 
 
 _PREFIX_HISTORY = {}
 
 
-def upstream_uses_prefix(prefix, path, base_ref, threshold=3):
-    """True when the base branch's own history uses this prefix for this path.
+def prefix_roots(path):
+    """Directories to ask about a file's prefix, subsystem root first."""
+    parts = path.split("/")
+    roots = []
+    if parts[0] == "libraries" and len(parts) > 1:
+        roots.append("libraries/" + parts[1])
+    elif parts[0] in CONTAINER_PREFIXES and len(parts) > 1:
+        roots.append(parts[0] + "/" + parts[1])
+    elif len(parts) > 1:
+        roots.append(parts[0])
+    directory = os.path.dirname(path)
+    if directory and directory not in roots:
+        roots.append(directory)
+    return roots or ["."]
+
+
+def _root_prefix_counts(root, base_ref):
+    """Prefix -> number of commits using it for a directory, on the base branch."""
+    key = (root, base_ref)
+    if key not in _PREFIX_HISTORY:
+        try:
+            subjects = git("log", base_ref, "--format=%s", "--", root,
+                           check=False).split("\n")
+        except GitError:
+            subjects = []
+        counts = {}
+        for subject in subjects:
+            m = SUBJECT_PREFIX.match(subject)
+            if m:
+                name = normalise_prefix(m.group(1))
+                counts[name] = counts.get(name, 0) + 1
+        _PREFIX_HISTORY[key] = counts
+    return _PREFIX_HISTORY[key]
+
+
+def upstream_uses_prefix(prefix, path, base_ref, threshold=ESTABLISHED_PREFIX_MIN):
+    """True when the base branch's own history establishes this prefix here.
 
     The alias table above cannot know every local convention, so before
     reporting a prefix as wrong, ask the repository. A prefix the project has
-    used repeatedly for these files is the project's practice, whatever the
-    playbook says, and reporting it wastes the author's time.
+    used this many times for these files is the project's practice, whatever
+    the playbook says, and reporting it wastes the author's time.
+
+    The question is put to the whole history of the subsystem root, not to a
+    recent window over the leaf directory. A board directory added last month
+    has no history of its own to answer with, and a window over the last 400
+    commits cannot see a convention that hundreds of older ones established.
     """
-    directory = os.path.dirname(path) or "."
-    key = (prefix, directory)
-    if key in _PREFIX_HISTORY:
-        return _PREFIX_HISTORY[key]
-    try:
-        subjects = git("log", base_ref, "-400", "--format=%s", "--", directory,
-                       check=False).split("\n")
-    except GitError:
-        subjects = []
-    hits = sum(1 for s in subjects if s.startswith(prefix + ":"))
-    _PREFIX_HISTORY[key] = hits >= threshold
-    return _PREFIX_HISTORY[key]
+    prefix = normalise_prefix(prefix)
+    return any(_root_prefix_counts(root, base_ref).get(prefix, 0) >= threshold
+               for root in prefix_roots(path))
 
 
 # ------------------------------------------------------------------ diff model
@@ -531,20 +632,24 @@ def check_commits(scope):
                 commit=ref, detail=c["subject"][:100],
             ))
             continue
-        if not re.match(r"^[A-Za-z][A-Za-z0-9_]*:", c["subject"]):
-            out.append(finding(
-                "commit-prefix", "must-fix",
-                "commit subject has no subsystem prefix",
-                commit=ref, detail=c["subject"][:100],
-            ))
+        if REVERT_SUBJECT.match(c["subject"]):
+            subject_prefix = None
         else:
-            prefix = c["subject"].split(":", 1)[0]
+            subject_prefix = SUBJECT_PREFIX.match(c["subject"])
+            if not subject_prefix:
+                out.append(finding(
+                    "commit-prefix", "must-fix",
+                    "commit subject has no subsystem prefix",
+                    commit=ref, detail=c["subject"][:100],
+                ))
+        prefix = subject_prefix.group(1) if subject_prefix else None
+        if prefix:
             allowed = set()
-            for sub_name in c["subsystems"]:
-                allowed |= acceptable_prefixes(sub_name)
-            if c["subsystems"] and prefix not in allowed and not any(
-                    upstream_uses_prefix(prefix, f, scope["base_ref"])
-                    for f in c["files"][:4]):
+            for f in c["files"]:
+                allowed |= acceptable_prefixes(f)
+            if (c["subsystems"] and normalise_prefix(prefix) not in allowed
+                    and not any(upstream_uses_prefix(prefix, f, scope["base_ref"])
+                                for f in c["files"])):
                 out.append(finding(
                     "commit-prefix-mismatch", "should-fix",
                     "prefix '%s:' does not match the files touched (%s), and the "
@@ -552,7 +657,8 @@ def check_commits(scope):
                     % (prefix, ", ".join(c["subsystems"])),
                     commit=ref, detail=c["subject"][:100],
                 ))
-        if len(c["subsystems"]) > 1:
+        if len(c["subsystems"]) > 1 and not spans_one_module(
+                prefix, c["files"], c["subsystems"]):
             out.append(finding(
                 "commit-multi-subsystem", "should-fix",
                 "commit touches %d subsystems (%s) - split one commit per module"

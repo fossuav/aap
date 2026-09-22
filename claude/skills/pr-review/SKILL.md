@@ -97,7 +97,7 @@ cheapest to clear first and they run in about two seconds:
 | `astyle` | reformatting on lines you added, **only** within the paths `Tools/scripts/run_astyle.py` actually enforces |
 | `non-ascii` | em-dashes, smart quotes, arrows and ellipses in added code - the clearest machine-written tell |
 | `printf` | `printf()` in flight code (`gcs().send_text()`, or `hal.console->printf()` for debug) |
-| `commits` | missing subsystem prefix, prefix that does not match the files, a commit spanning several subsystems, merge commits, Claude/AI attribution, non-ASCII in the message, over-long subjects |
+| `commits` | missing subsystem prefix, prefix that neither matches the files nor has a history upstream, a commit spanning several subsystems, merge commits, Claude/AI attribution, non-ASCII in the message, over-long subjects |
 | `params` | new `AP_GROUPINFO` entries with no `// @Param:` block, incomplete doc blocks, names over 16 characters |
 | `new-file-license` | new source files with no licence or copyright header |
 | `defensive-init` | zero-initialisers added to class members - redundant given BSS/`new`/`calloc`, and a reliable LLM-tell |
@@ -113,8 +113,37 @@ why in the report.
 is not the one the playbook prescribes, the helper looks at whether the base
 branch's own history uses that prefix for those paths, and stays silent if it
 does. This exists because the first version reported `hwdef:` as wrong on hwdef
-commits - upstream has used it 667 times. Extend `PREFIX_ALIASES` rather than
-teaching the user to ignore the check.
+commits - upstream has used it 667 times.
+
+It is deliberately generous, because a prefix the project already uses is the
+project's practice whatever the playbook says. A prefix is accepted when it is
+the subsystem name or one of its `PREFIX_ALIASES`, the containing directory
+(`Tools:`, `modules:`), the name of a file the commit touches
+(`sim_vehicle.py:`, `AP_AHRS_DCM:`), or when the whole history of the
+subsystem root carries it at least `ESTABLISHED_PREFIX_MIN` times. Case, a file
+extension and a leading directory are all folded away first, so `CI:`, `ci:`,
+`board_types.txt:` and `Tools/Replay:` are not read as four unknown prefixes.
+Reverts are left alone - the reverted subject keeps its own prefix inside the
+quotes.
+
+Those rules are measured, not guessed. Over the 1500 commits before master they
+clear 99.9% of upstream's own commits, against 95.6% for the first version,
+while still catching 98% of deliberately wrong prefixes injected into the same
+commits. Re-run that measurement if you change the threshold; the point of the
+check is the 98%, and relaxing it further to silence one complaint trades away
+the thing it is for. Extend `PREFIX_ALIASES` rather than teaching the user to
+ignore the check.
+
+**A `Tools:` commit is one module.** Upstream lands a change spanning several
+Tools/ subdirectories under a single `Tools:` subject - 36 of the 38 such
+commits in the last 4000 - so `commit-multi-subsystem` counts them as one
+module when the subject names a container directory and every file sits inside
+it. A commit that says `autotest:` and then edits `Tools/scripts` as well is
+still reported, and so is one that leaves Tools/ altogether. The exception
+`ALWAYS_SPLIT` holds is a board addition: the playbook puts the ID in an
+`AP_Bootloader:` commit and the binaries in a `bootloaders:` one, and the
+combined `Tools:` commits upstream sometimes lands are the case that rule is
+for.
 
 ## Step 2 - Read the thread
 
