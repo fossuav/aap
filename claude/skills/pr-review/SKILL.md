@@ -298,7 +298,7 @@ Codex is a second opinion, not an authority, and on your own PR you are the one
 with the conflict of interest. Both directions get checked against the source:
 
 - **Grep the evidence record for the symbol before triaging the finding.** A finding naming `storedGPS`, a parameter or a function the record already rules on is answered by that entry, not re-derived. On round five of PR #32768 two findings had both been settled in earlier rounds - one recorded as deliberately left alone, one recorded as intended - and both were re-triaged from scratch, one of them changing code that an earlier round had decided. Re-deciding a settled question is indistinguishable from progress while you are doing it, and it is how a PR that is nearly ready stops converging. If the record is wrong, say so and correct it there; if it is right, cite it and move on.
-- **Watch for a set being discovered one round at a time.** When successive rounds each fix a different member of the same family - another piece of state a reset does not move, another caller that does not set a flag - the finding is not the member, it is the set. Enumerate it once, decide fix-or-document per member, and put the "known and deliberately not fixed" list in the PR body. Reviewers cannot see your analysis repo, so anything left out of the description gets re-found by every later reader, and each re-find costs a round.
+- **Watch for a set being discovered one round at a time.** When successive rounds each fix a different member of the same family - another piece of state a reset does not move, another caller that does not set a flag - the finding is not the member, it is the set. Enumerate it once and decide fix-or-document per member. Reviewers cannot see your analysis repo, so a residual that appears nowhere in the PR gets re-found by every later reader - but the place for it is one line in the description naming it and a comment carrying the working, not a fifteen-row table in the body, which costs the review it was meant to save.
 - **Measured evidence outranks a code argument, including a good one.** Rank what you actually have: a real-vehicle measurement, then that flight's own log replayed through the change, then a SITL run, then inspection. A finding contradicted by a measurement is **refuted**, not "worth discussing", and a fix that would undo behaviour a measurement established is a defect being introduced however sound it reads. This is the direction this pipeline fails in practice: the changes that keep coming back are the ones whose code argument is genuinely strong, which is exactly why reasoning alone never clears them.
 - **Reproduce every numeric claim** - a magnitude, a timing, a size, a count - before it drives a fix. A ten-line script settles it. In tridge's runs this method confirmed a 57.3x timeout error and refuted a claimed 101 degree phase error that measured 0.06.
 - **Check the diff's own comments before accepting a finding.** A second opinion will happily report a bug in code you changed deliberately with a comment saying why. Acting on one such report has reintroduced the bug it was meant to fix.
@@ -312,11 +312,11 @@ with the conflict of interest. Both directions get checked against the source:
 **Write the refutations into the PR.** A finding you refuted with data will be
 raised again - by the next AI pass, by a reviewer, by you in three months -
 because the argument for it is good and the evidence against it is not in the
-repository. The PR description is the one place every later reader can see it.
-Keep a short list there: the change, the argument for it, and the result that
-refuted it. A maintainer suggestion you decline on measured grounds belongs in
-the same list; the playbook's "address obvious-but-wrong alternatives" rule is
-that list with a number attached.
+repository. The PR is the one place every later reader can see it: one line in
+the description for each, and the argument and the number in a comment. A
+maintainer suggestion you decline on measured grounds goes the same way; the
+playbook's "address obvious-but-wrong alternatives" rule is that line with a
+number attached.
 
 Cite the evidence by its result, never by its source. "Flight tests show the
 bias converges to +0.09 m/s/s" and "SITL A/B: 0.71 m against 0.45 m" are
