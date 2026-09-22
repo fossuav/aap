@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.17
+**Playbook version:** 1.7.18
 
 ## Available Skills
 
@@ -479,8 +479,10 @@ Consequences for how you work:
 These rules apply to **commit message bodies, PR descriptions, and PR comments**. Reviewers are time-poor; wordy text gets skimmed or skipped, so it fails to communicate.
 
 - **Be pithy.** Tell the reviewer exactly what is being done in as few words as possible. The diff carries the "what" — your prose carries the "why".
-- **Keep it to the size a maintainer writes.** Ten recent merged rmackay9 PRs run 47 to 447 words of prose, median 180, with no tables and at most a handful of bullets; seven of ours ran 471 to 3322, median 1126. Aim at 200 words and treat 400 as the ceiling for a complex change. Past that the description is carrying something that belongs somewhere else.
+- **Keep it to the size a maintainer writes.** Ten recent merged rmackay9 PRs run 47 to 447 words of prose, median 180, with no tables and at most a handful of bullets; seven of ours ran 471 to 3322, median 1126. Aim at 200 words and treat 400 as the ceiling for a complex change; only the user-visible failure earns more than that, and 500 is the end of it. Past that the description is carrying something that belongs somewhere else.
 - **What the description holds:** the symptom, or the issue it fixes with a link to it; what was wrong; what the change does; what you tested and what it showed. Before and after as a plot, a screenshot or two numbers, not a table of runs.
+- **Open with what the user does and what goes wrong for them.** Start on the mechanism and the reader is lost in the first paragraph, even one who has worked on the subsystem for months. Write it the way a failing test reads: what the user does, what the vehicle does, what that costs them - then what the change does in those same terms, and only then the mechanism. Name the effect a pilot can see ("flies the whole sortie with its height above sea level wrong by a metre"), not the state that produces it; an internal identifier in the opening paragraphs means the order is wrong.
+- **Second person for the failure, third person for everything else.** "If you leave a copter powered while waiting for a GPS lock, the autopilot warms up along with its barometer" puts the reader in front of the vehicle; the mechanism, the tests and the residuals then read as a plain report. Keep first person out of a description altogether: "our test vehicles", "I measured", "happy to expand" reads as a chat reply pasted into a PR, and whose airframe produced a number is not what makes it evidence.
 - **Everything else goes in a comment.** Findings you triaged, alternatives you measured and rejected, residuals you decided to leave: name each in one line in the description where a reviewer would otherwise re-find it, and put the working in a PR comment. A "known and deliberately not fixed" list is three lines, not fifteen.
 - **A reply answers the question and stops.** One to three sentences: the answer, the reason, and the number if there is one. No headings, no tables, no restating the finding, no tour of everything else that changed. Quote the two lines of diff that matter rather than describing them. Never mirror the review bot's shape back at a human: per-finding tables and "evidence at this head" columns are how it reports to you, not how you answer a reviewer.
 - **Stay on the problem at hand.** Do not write changelog-style enumerations of files touched, functions renamed, or refactors performed. If a sentence only restates the diff, delete it.
