@@ -219,6 +219,12 @@ Two things it handles that cost time every time they are met by hand:
   none of its own.** The tool scans the source first and prints a NOTE when it
   does, rather than letting a contaminated count read as clean.
 
+**Copy the log off `/mnt/c` first.** Replay reads the source log message by
+message, and over WSL's 9p mount that dominates everything else: log12 took
+**3039 s** read from `/mnt/c` and **2 s** from a copy on the WSL filesystem, the
+same binary and the same output. A sweep that looks CPU-bound on this machine is
+almost always waiting on 9p. `cp` the logs to the scratchpad and pass those paths.
+
 A flight flown without `LOG_REPLAY` has no `RFRH` records and cannot be replayed
 at all, however good the data is; those logs are reported as skipped.
 
