@@ -135,9 +135,12 @@ def run_replay(logpath, params, progress):
         sys.stderr.write(proc.stdout[-4000:] + "\n")
         raise SystemExit("Replay failed on %s (exit %d)" % (logpath, proc.returncode))
     after = set(os.listdir(logdir)) if os.path.isdir(logdir) else set()
-    new = sorted(after - before)
+    # only the BIN: on a fresh logs/ the run also creates LASTLOG.TXT, which sorts
+    # last and was being returned as the output. Moving that file away then reset
+    # the logger's numbering, so the next run overwrote the previous run's BIN.
+    new = sorted(f for f in (after - before) if f.upper().endswith('.BIN'))
     if not new:
-        raise SystemExit("Replay wrote no log in %s" % logdir)
+        raise SystemExit("Replay wrote no BIN in %s" % logdir)
     return os.path.join(logdir, new[-1]), time.time() - started, proc.stdout
 
 
