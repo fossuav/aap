@@ -1031,17 +1031,35 @@ def fetch_thread(pr):
     return items, counts
 
 
-# ArduPilot's automated reviewer (tridge's /reviewprs, posting as AP-Review)
-# opens every comment with this marker and quotes the head it reviewed. It
-# does not delete an older review: it wraps it under a leading blockquote,
-# whose wording has changed more than once ("Deprecated", "Superseded", a
-# [!NOTE] admonition), so match the shape rather than the sentence.
+# ArduPilot's automated reviewer (tridge's /reviewprs, now ArduPilot/APReview)
+# opens every comment with this marker and quotes the head it reviewed. Only
+# the AP-Review login's comments are the bot's: the command used to post as
+# tridge, and APReview has ignored those since 2026-09-30 - it neither reads
+# their findings nor deprecates them, so one can sit undeprecated above a
+# current review. It does not delete an older review: it wraps it under a
+# leading blockquote, whose wording has changed more than once ("Deprecated",
+# "Superseded", a [!NOTE] admonition), so match the shape rather than the
+# sentence.
 AI_MARKER = "AI-generated"
+AI_LOGINS = ("ap-review",)
 _AI_SUPERSEDED = re.compile(r"\b(deprecated|superseded)\b", re.I)
 # "Reviewed at head `54cd8177fa`", "Re-reviewed at head `X` (previously `Y`)"
 # and the older unquoted "head b4e5e1cba9" - the first match is the review's.
 _AI_HEAD = re.compile(r"\bhead[^`\n]{0,20}?`?\b(?=[0-9a-f]*\d)([0-9a-f]{7,40})\b", re.I)
-_AI_VERDICT = re.compile(r"\bverdict\b", re.I)
+# Since 2026-09-28 line 2, under the marker line, is "**Verdict: REQUEST
+# CHANGES**" and nothing else; APReview's delivery refuses a review without
+# it. ACCEPT and APPROVE are one verdict. A few comments from the two days
+# before carry an invisible marker instead. A followup note that only says
+# the code moved states no verdict at all, so the newest comment is not
+# necessarily the current review. This follows apreview_verdict.py.
+_AI_VERDICT_LINE = re.compile(
+    r"^\s*\**\s*Verdict\s*:\s*\**\s*(ACCEPT|APPROVE|COMMENT|REQUEST[\s_]+CHANGES)[\s*.]*$",
+    re.I)
+_AI_VERDICT_MARKER = re.compile(
+    r"<!--\s*apreview:[^>]*?\bverdict=(ACCEPT|APPROVE|COMMENT|REQUEST_CHANGES)\b", re.I)
+# Older comments APReview did not rewrite - those on PRs closed before the
+# backfill - say it in prose, in several phrasings. Shown, marked as a guess.
+_AI_VERDICT_PROSE = re.compile(r"\bverdict\b", re.I)
 _AI_VERDICT_WORD = re.compile(
     r"^#+\s*\**\s*(APPROVE|COMMENT|REQUEST CHANGES)\b|\*\*(APPROVE|COMMENT|REQUEST CHANGES)\b")
 _AI_REPORT = re.compile(r"Full report[^:\n]*:\s*(https?://\S+)")
@@ -1058,39 +1076,62 @@ def ai_review_head(body):
     return m.group(1).lower() if m else None
 
 
-def ai_reviews(items, pr):
-    """Split the review bot's comments into (current, [earlier ones]).
+def ai_review_verdict(body):
+    """ACCEPT, COMMENT or REQUEST CHANGES as the comment states it, else None."""
+    word = None
+    for line in body.split("\n")[:5]:
+        m = _AI_VERDICT_LINE.match(line)
+        if m:
+            word = m.group(1)
+            break
+    else:
+        m = _AI_VERDICT_MARKER.search(body)
+        word = m.group(1) if m else None
+    if not word:
+        return None
+    word = re.sub(r"[\s_]+", " ", word.upper())
+    return "ACCEPT" if word == "APPROVE" else word
 
-    The PR author's own comments are excluded even when they carry the marker:
-    a reply drafted with an assistant is not the bot's review.
+
+def is_ai_comment(r):
+    return (r["kind"] == "comment" and AI_MARKER in (r.get("body") or "")
+            and (r.get("who") or "").lower() in AI_LOGINS)
+
+
+def ai_reviews(items):
+    """Split the review bot's comments into (current, [the rest]).
+
+    The current review is the newest one not superseded that states a
+    verdict; a followup note after it does not replace it.
     """
-    author = ((pr.get("author") or {}).get("login") or "").lower()
-    bot = [r for r in items
-           if r["kind"] == "comment" and AI_MARKER in (r.get("body") or "")
-           and (r.get("who") or "").lower() != author]
+    bot = [r for r in items if is_ai_comment(r)]
 
     def superseded(r):
         body = (r.get("body") or "").lstrip()
         return body.startswith(">") and bool(_AI_SUPERSEDED.search(body[:400]))
 
     live = [r for r in bot if not superseded(r)]
-    current = live[-1] if live else None
+    stated = [r for r in live if ai_review_verdict(r.get("body") or "")]
+    current = (stated or live or [None])[-1]
     return current, [r for r in bot if r is not current]
+
+
+def ai_review_prose_verdict(body):
+    line = next((line.strip().lstrip("#").strip() for line in body.split("\n")
+                 if _AI_VERDICT_PROSE.search(line) or _AI_VERDICT_WORD.search(line)), None)
+    return "%s (read from prose)" % line[:200] if line else None
 
 
 def ai_review_summary(current, pr):
     body = current.get("body") or ""
     head = ai_review_head(body)
-    verdict = next(
-        (line.strip().lstrip("#").strip() for line in body.split("\n")
-         if _AI_VERDICT.search(line) or _AI_VERDICT_WORD.search(line)), None)
     report = _AI_REPORT.search(body)
     local = git("rev-parse", "HEAD").strip()
     pr_head = pr.get("headRefOid") or ""
     return {
         "who": current.get("who"), "when": current.get("when"),
         "head": head,
-        "verdict": verdict[:200] if verdict else None,
+        "verdict": ai_review_verdict(body) or ai_review_prose_verdict(body),
         "report": report.group(1) if report else None,
         "pr_head": pr_head[:10], "local_head": local[:10],
         "at_pr_head": bool(head and pr_head.startswith(head)),
@@ -1104,6 +1145,8 @@ def print_ai_review(summary, current, earlier):
              summary["head"] or "(no head quoted)"))
     if summary["verdict"]:
         print("  verdict:  %s" % summary["verdict"])
+    else:
+        print("  verdict:  none stated")
     if summary["report"]:
         print("  report:   %s" % summary["report"])
     if summary["at_pr_head"]:
@@ -1117,8 +1160,8 @@ def print_ai_review(summary, current, earlier):
         print("  local:    %s - NOT the code the review read: triage every finding"
               " against this HEAD, not against the review's quotes" % summary["local_head"])
     if earlier:
-        print("  earlier:  %d superseded AI review(s), one line each in the thread below"
-              % len(earlier))
+        print("  earlier:  %d other AI comment(s) - superseded reviews and followup"
+              " notes - one line each in the thread below" % len(earlier))
     print("")
     for line in (current.get("body") or "").strip().split("\n"):
         print("    %s" % line)
@@ -1131,7 +1174,7 @@ def thread_cmd(args):
         print("no open PR for this branch - nothing to read")
         return
     items, counts = fetch_thread(pr)
-    current, earlier = ai_reviews(items, pr)
+    current, earlier = ai_reviews(items)
     summary = ai_review_summary(current, pr) if current else None
     if args.json:
         print(json.dumps({"pr": pr["number"], "counts": counts,
@@ -1160,8 +1203,17 @@ def thread_cmd(args):
             print(head + "  AI review, current - printed in full above\n")
             continue
         if any(r is e for e in earlier):
-            print(head + "  AI review, superseded (head %s)\n"
-                  % (ai_review_head(r.get("body") or "") or "?"))
+            body = r.get("body") or ""
+            what = ("followup note, no verdict"
+                    if (r.get("when") or "") > (current.get("when") or "")
+                    and not ai_review_verdict(body) else "superseded")
+            print(head + "  AI review, %s (head %s)\n"
+                  % (what, ai_review_head(body) or "?"))
+            continue
+        if AI_MARKER in (r.get("body") or "") and r["kind"] == "comment" \
+                and (r.get("who") or "").lower() == "tridge":
+            print(head + "  AI review posted as tridge before AP-Review - APReview"
+                  " ignores it; triage the current review instead\n")
             continue
         print(head)
         body = (r.get("body") or "").strip()

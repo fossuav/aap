@@ -170,7 +170,12 @@ On your own PR the thread is not background - it *is* the specification for
 bot's current review. It prints it in full with the head it read, the verdict
 and the report link, and says whether that head is the PR's and yours. The
 superseded rounds are folded to one line each, because a PR a few rounds in
-carries hundreds of lines of them. Before step 3, put every finding in that
+carries hundreds of lines of them. The current review is the newest one that
+states a verdict, on line 2 as `**Verdict: REQUEST CHANGES**` - a followup
+note saying only that the code moved states none and does not replace it.
+Only AP-Review's comments count: reviews the same command posted as tridge
+before the account existed are folded too, because APReview no longer reads
+them and will not re-raise what they said. Before step 3, put every finding in that
 review into a table against **your** HEAD: RESOLVED (say how, citing the
 change), STILL OPEN, DISPUTED (you disagree - on what evidence) or PARTIAL.
 That is the table the bot's next pass opens with. Arriving at it with every
@@ -330,9 +335,16 @@ even when the PR is not.
 State one, in the maintainer's vocabulary, so it is comparable with what will
 happen next:
 
-- **APPROVE** - would merge as-is. Say what you actually verified, not "looks good": the paths traced, the callers audited, whether a cold pass ran and what it looked for. A clean verdict with no evidence behind it is worth less than nothing on your own PR.
+- **APPROVE** - would merge as-is (the bot's word for it is ACCEPT). Say what you actually verified, not "looks good": the paths traced, the callers audited, whether a cold pass ran and what it looked for. A clean verdict with no evidence behind it is worth less than nothing on your own PR.
 - **COMMENT** - merges, but with noted issues.
 - **REQUEST CHANGES** - has defects that must be fixed first.
+
+The verdict follows from the findings that survive step 5, by the rules the
+bot's reconcile pass applies:
+
+- **An UNCONFIRMED or disputed blocker still blocks.** It stops blocking when evidence refutes or downgrades it, not when nobody got round to confirming it. On your own PR this is the direction the pull goes.
+- **APPROVE cannot carry a blocker, and an actionable finding that does not block makes it COMMENT.** APPROVE with a "should fix" list is a COMMENT.
+- **Name what you could not exercise.** A review can be complete with gaps - a path SITL cannot reach, a board you do not have - as long as each gap is listed and its findings stay UNCONFIRMED. What it cannot do is present silence on those parts as a clean check.
 
 Record it so a re-run can skip unchanged work:
 
