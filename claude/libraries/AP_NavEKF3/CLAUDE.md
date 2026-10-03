@@ -81,6 +81,7 @@ Follow the rule regardless - it is the maintainer's, it costs nothing, and stabl
 - **Calling `AP::ins()` from EKF code**: Use `dal.ins()` instead. Direct sensor access bypasses replay logging. The only exception is EKF code that runs before the DAL is initialized (rare).
 - **Adding a vehicle-to-EKF flag without DAL**: If vehicle code (Copter, Plane) sets a bool/float on the EKF frontend that changes algorithm behavior, it must be logged. Route it through AHRS → DAL RFRN.
 - **Assuming AP_Param values need DAL**: They don't — parameters are replayed via PARM log messages. But if you read a parameter value and cache it in a non-param member that the EKF reads, that cached value needs DAL treatment.
+- **A/B'ing a change keyed on a vehicle flag against old logs**: Replay takes vehicle-side flags (`takeoff_expected`, `touchdown_expected`, armed, fly_forward) from RFRN, so it replays the flight firmware's opinion, not the opinion of the code under test. A change to AP_GroundEffect never shows in a replay, and an EKF change keyed on one of those edges fires where the old firmware put the edge. The SFD indoor logs behind #32553 held `takeoff_expected` through hovers of up to 48 s against today's 5 s cap, so replay showed the change doing nothing. Check how long the logged flag stays set before reading a replay A/B as evidence.
 
 ## Log Messages
 
