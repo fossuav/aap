@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.19
+**Playbook version:** 1.3.20
 
 ## Available Skills
 
@@ -193,7 +193,7 @@ AP_Periph firmware runs on dedicated CAN nodes (GPS, airspeed sensors, etc.). Ke
 
 ### Subsystem Playbooks
 
-The root playbook carries the general rules. Where a subsystem has its own playbook, read it before touching that code and hold reviews of that code against it:
+The root playbook carries the general rules. Where a subsystem has its own playbook, read it before touching that code and hold reviews of that code against it. In particular, when a change hinges on a named state flag or term, look that term up there before building on it - the playbooks carry which flags are unreliable and why, and that is exactly the knowledge a fix silently assumes. The installed playbooks are untracked, so a worktree or fresh clone made for a fix does not have them: read them from the checkout they were installed in, and point any review agent there. The subsystem playbooks:
 
 - `libraries/AP_NavEKF3/AGENTS.override.md` - EKF3 state vector, DAL and Replay rules, bias inhibition, yaw source handling, log analysis method. Some sections are flagged as branch-specific; confirm a mechanism exists on the base branch before citing it.
 - `libraries/AP_HAL_ChibiOS/hwdef/AGENTS.override.md` - board porting, hwdef review rules (applied by `/hwdef-check`)
@@ -232,6 +232,11 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Initialization Order:** The `init()` method of a class must only be called after all dependencies are fully constructed and registered.
 
 **Scheduler Integration:** Any feature requiring periodic execution must have its `update()` function called from an appropriate scheduler or main loop.
+
+**Flight-State Flags Are Per-Vehicle Opinions:**
+- `onGround`, `inFlight`, `takeOffDetected`, `land_complete`, `likely_flying`/`get_time_flying_ms()` and Plane's `is_flying()` each mean something different on each vehicle, and each has a recorded case of reading wrong in flight. The EKF3 playbook's Flight-State Flags section lists how each is set and where it lies.
+- Before using one as evidence of flight, contact or stillness, write down how it is set on every vehicle class the code runs on and when it reads wrong there. Where it does not hold, scope the code to the vehicle classes where it does, or require an independent second signal.
+- Code that fabricates a measurement on the strength of such a flag (zero velocity, zero flow, a height reference) is the highest-risk case: a wrong flag in flight becomes a confident wrong observation. A Copter-only autotest cannot see a Plane failure.
 
 **Coordinate System Convention:**
 - ArduPilot uses **North-East-Down (NED)** coordinate frame for navigation.

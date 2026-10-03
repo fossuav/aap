@@ -552,6 +552,19 @@ detectOptFlowTakeoff();
 
 No flow sensor means no call, so the flag holds its initialised false for the whole flight, and it is compiled out entirely under `#if !EK3_FEATURE_OPTFLOW_FUSION`. A condition of the form `takeOffDetected && <something>` is therefore dead on every vehicle without optical flow, and whatever the `<something>` selects between becomes unreachable with it. Its declared meaning is "takeoff for optical flow navigation has been detected", not "airborne".
 
+### `get_time_flying_ms()` is the vehicle's opinion, and each vehicle forms it differently
+
+`dal.get_time_flying_ms()` is the vehicle's `likely_flying` flag (`AP_Vehicle::set_likely_flying()`), carried in RFRH so it replays. It looks like the one airborne signal that comes through the DAL on every vehicle. It is not one signal:
+
+- **Copter:** `!ap.land_complete` (`land_detector.cpp` `set_land_complete()`). A mid-air disarm forces it landed, and after re-arming only high throttle clears it (#32972). Takeoff holds it landed until throttle or climb criteria fire (`takeoff.cpp`), and THROW until the throw is detected. On one SmallFastDrone flight no NOT_LANDED event was logged through a whole flight that reached cruise (analysis `notes/cqc_height_datum_reset_status.md`; inferred from the missing event).
+- **Plane:** `is_flying()`, a probabilistic detector (`is_flying.cpp`). With no GPS fix ever and no airspeed sensor it reduces to "an airspeed estimate exists and the IMU is not still", so a GPS-denied plane can read not flying in flight. A landing roll-out is on the ground, moving fast, and reads not flying.
+- **Rover, Sub, Tracker:** the armed flag. Never "landed" while armed, so it says nothing about contact or motion.
+- **Any vehicle with `AP_VEHICLE_ENABLED` off:** the DAL records 0 (`AP_DAL.cpp`). It also reads 0 for the first millisecond after becoming true.
+
+What happened when it was trusted. #34292 needed "the copter is sitting on the ground" to fuse zero flow after a landing. Height alone fused zero in a hover below RNGFND_MIN; `get_time_flying_ms() == 0` on every vehicle would have fused zero on a Plane roll-out; the version kept is `vehicle_class == COPTER && get_time_flying_ms() == 0`, still exposed to the Copter cases above. #32232 tried `get_time_flying_ms() > 5000` and dropped it because it degenerates to arming+5 s on Rover, Sub and Tracker. #32972 found all three candidate gates (`takeOffDetected`, `inFlight`, `time_flying_ms`) circular for a height anchor, since the anchor hides the motion the detector waits for.
+
+The rule: a gate that fabricates a measurement (zero velocity, zero flow, a height reference) on the strength of a flying flag turns a wrong flag in flight into a confident wrong observation. Scope it to the vehicle classes where the flag is known to hold, name the residual cases for those, and prefer a second, independent signal over a lone flag.
+
 ### Which flag to use for an observability gate
 
 For "is this bias observable now", follow what `CovariancePrediction()` already does for the delta velocity bias axes:
@@ -564,7 +577,7 @@ const bool is_bias_observable = (fabsF(prevTnb[index][2]) > 0.8f && onGroundNotM
 
 Measured (SITL, #32473): a Z accel-bias gate written as `onGroundNotMoving || (takeOffDetected && heightRefGood)` collapsed to `onGroundNotMoving` on a baro/GPS copter, and the bias learned 0.000097 against a 0.15 injected offset. With `!onGround` it learned 0.178. The subtest that learns on the ground before takeoff passed in both cases, so only a subtest that inhibits ground learning exercises the air path at all.
 
-Review rule: before crediting an `onGround`, `inFlight`, `takeOffDetected` or `land_complete` test as protection, read how that flag is set for the vehicle type the code runs on, and check it can be set at all with the sensors that vehicle has. A gate that reads as a clean observability test can quietly reduce to a constant.
+Review rule: before crediting an `onGround`, `inFlight`, `takeOffDetected`, `land_complete`, `likely_flying`/`get_time_flying_ms()` or `is_flying()` test as protection, read how that flag is set for the vehicle type the code runs on, and check it can be set at all with the sensors that vehicle has. A gate that reads as a clean observability test can quietly reduce to a constant.
 
 ## Known Issues
 
