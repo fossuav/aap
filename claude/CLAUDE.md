@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.22
+**Playbook version:** 1.7.23
 
 ## Available Skills
 
@@ -238,7 +238,7 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **Flight-State Flags Are Per-Vehicle Opinions:**
 - `onGround`, `inFlight`, `takeOffDetected`, `land_complete`, `likely_flying`/`get_time_flying_ms()` and Plane's `is_flying()` each mean something different on each vehicle, and each has a recorded case of reading wrong in flight. The EKF3 playbook's Flight-State Flags section lists how each is set and where it lies.
-- Before using one as evidence of flight, contact or stillness, write down how it is set on every vehicle class the code runs on and when it reads wrong there. Where it does not hold, scope the code to the vehicle classes where it does, or require an independent second signal.
+- Before using one as evidence of flight, contact or stillness, write down how it is set on every vehicle class the code runs on and when it reads wrong there. Where it does not hold, require an independent second signal. In the EKF that cannot be a vehicle-class test: the EKF carries no vehicle-specific code, so vehicle differences arrive through generic signals the vehicle sets (see the EKF3 playbook).
 - Code that fabricates a measurement on the strength of such a flag (zero velocity, zero flow, a height reference) is the highest-risk case: a wrong flag in flight becomes a confident wrong observation. A Copter-only autotest cannot see a Plane failure.
 
 **Coordinate System Convention:**

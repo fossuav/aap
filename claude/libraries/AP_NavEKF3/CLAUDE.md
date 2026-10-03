@@ -561,9 +561,13 @@ No flow sensor means no call, so the flag holds its initialised false for the wh
 - **Rover, Sub, Tracker:** the armed flag. Never "landed" while armed, so it says nothing about contact or motion.
 - **Any vehicle with `AP_VEHICLE_ENABLED` off:** the DAL records 0 (`AP_DAL.cpp`). It also reads 0 for the first millisecond after becoming true.
 
-What happened when it was trusted. #34292 needed "the copter is sitting on the ground" to fuse zero flow after a landing. Height alone fused zero in a hover below RNGFND_MIN; `get_time_flying_ms() == 0` on every vehicle would have fused zero on a Plane roll-out; the version kept is `vehicle_class == COPTER && get_time_flying_ms() == 0`, still exposed to the Copter cases above. #32232 tried `get_time_flying_ms() > 5000` and dropped it because it degenerates to arming+5 s on Rover, Sub and Tracker. #32972 found all three candidate gates (`takeOffDetected`, `inFlight`, `time_flying_ms`) circular for a height anchor, since the anchor hides the motion the detector waits for.
+What happened when it was trusted. #34292 needed "the copter is sitting on the ground" to fuse zero flow after a landing. Height alone fused zero in a hover below RNGFND_MIN; `get_time_flying_ms() == 0` on every vehicle would have fused zero on a Plane roll-out; `vehicle_class == COPTER && get_time_flying_ms() == 0` was then written and withdrawn, because the EKF must not contain vehicle-specific code. #32232 tried `get_time_flying_ms() > 5000` and dropped it because it degenerates to arming+5 s on Rover, Sub and Tracker. #32972 found all three candidate gates (`takeOffDetected`, `inFlight`, `time_flying_ms`) circular for a height anchor, since the anchor hides the motion the detector waits for.
 
-The rule: a gate that fabricates a measurement (zero velocity, zero flow, a height reference) on the strength of a flying flag turns a wrong flag in flight into a confident wrong observation. Scope it to the vehicle classes where the flag is known to hold, name the residual cases for those, and prefer a second, independent signal over a lone flag.
+The rule: a gate that fabricates a measurement (zero velocity, zero flow, a height reference) on the strength of a flying flag turns a wrong flag in flight into a confident wrong observation. Prefer a measurement the EKF already has (a fresh range at the ground clearance) over a vehicle flag, and where a flag is unavoidable name every vehicle on which it reads wrong.
+
+### No vehicle-specific code in the EKF
+
+The EKF must not branch on which vehicle it runs on: no `get_vehicle_class()` test, and no logic that only holds because of how one vehicle sets a flag. Behaviour that differs by vehicle comes in through a generic signal the vehicle sets for itself (`get_fly_forward()`, `get_takeoff_expected()`, `get_touchdown_expected()`), or through a new generic signal the vehicle opts into, so the EKF code reads the same on every vehicle. When a fix only seems to work on one vehicle, that is the sign the signal it rests on is the wrong one.
 
 ### Which flag to use for an observability gate
 
