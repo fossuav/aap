@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.24
+**Playbook version:** 1.3.25
 
 ## Available Skills
 
@@ -359,8 +359,8 @@ AP_Int16 rtl_alt;
 **Code Comments:**
 - Match the comment density of the surrounding file. If the neighbouring functions are uncommented or use one-line comments, do not add a paragraph to yours. New comments that stand out from the existing style are the clearest sign code was machine-written.
 - A multi-line comment on a one- or two-line change is a red flag. Cut it to a single line stating the non-obvious "why", or delete it.
-- State a fact once, at the declaration. Do not repeat the same explanation on the definition, at call sites, or across files.
-- Comment only what the code cannot say itself. Skip comments on self-explanatory getters, setters, and trivial wrappers. A brief one-line purpose comment on a public/header declaration is welcome; do not restate it on the `.cpp` definition.
+- Describe every method in both places, split by length: a short one-line purpose comment above the declaration in the `.h`, and the longer description - what it does, its inputs and units, the edge cases and the non-obvious why - above the definition in the `.cpp`. Maintainers ask for this (rmackay9 on #34208: "a description above each method in both the .h and .cpp"). Do not repeat the explanation at call sites or across files.
+- Inside a function body, comment only what the code cannot say itself. A trivial getter, setter or wrapper defined inline in the header needs only its one-line comment.
 - Comments explain "why", not "what". Never narrate what the next line does or record development process ("now we add", "changed to", "previously this was").
 - ASCII only: write `-`, `->`, `"`, `...`. Never use em-dashes, en-dashes, arrows, smart quotes, or the ellipsis character in comments or strings.
 - New `.h` and `.cpp` files should start with GPLv3 license and purpose description.
