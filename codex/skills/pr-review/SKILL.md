@@ -95,7 +95,7 @@ cheapest to clear first and they run in about two seconds:
 | `astyle` | reformatting on lines you added, **only** within the paths `Tools/scripts/run_astyle.py` actually enforces |
 | `non-ascii` | em-dashes, smart quotes, arrows and ellipses in added code - the clearest machine-written tell |
 | `printf` | `printf()` in flight code (`gcs().send_text()`, or `hal.console->printf()` for debug) |
-| `commits` | missing subsystem prefix, prefix that neither matches the files nor has a history upstream, a commit spanning several subsystems, merge commits, AI attribution, non-ASCII in the message, over-long subjects |
+| `commits` | missing subsystem prefix, prefix that neither matches the files nor has a history upstream, a commit spanning several subsystems, merge commits, AI attribution, non-ASCII in the message, over-long subjects, and other commits' subjects left in the body by a squash (the 2026-10-08 batch shipped twelve PR branches like that; flags 5 of master's last 2000 commits, all the same pattern) |
 | `params` | new `AP_GROUPINFO` entries with no `// @Param:` block, incomplete doc blocks, names over 16 characters |
 | `new-file-license` | new source files with no licence or copyright header |
 | `defensive-init` | zero-initialisers added to class members - redundant given BSS/`new`/`calloc`, and a reliable LLM-tell |

@@ -613,6 +613,37 @@ def check_defensive_init(scope):
     return out
 
 
+def leftover_subjects(c):
+    """Lines of a commit body that read as another commit's subject.
+
+    A squash, unlike a fixup, keeps every folded commit's message, so its
+    subject turns up in the body as a short line standing alone. On
+    2026-10-08 twelve PR branches were pushed with bodies like that, still
+    describing abandoned designs, and nothing here looked past the subject.
+    """
+    allowed = set()
+    for f in c["files"]:
+        allowed |= acceptable_prefixes(f)
+    own = SUBJECT_PREFIX.match(c["subject"])
+    if own:
+        allowed.add(normalise_prefix(own.group(1)))
+    lines = c["body"].split("\n")
+    hits = []
+    for i in range(1, len(lines)):
+        line = lines[i].rstrip()
+        if not line or len(line) > 72 or lines[i - 1].strip():
+            continue
+        if i + 1 < len(lines) and lines[i + 1].strip():
+            continue
+        if re.match(r"^(fixup|squash|amend)! ", line):
+            hits.append(line)
+            continue
+        m = SUBJECT_PREFIX.match(line)
+        if m and not line.endswith((".", ":")) and normalise_prefix(m.group(1)) in allowed:
+            hits.append(line)
+    return hits
+
+
 def check_commits(scope):
     out = []
     commits = commit_records(scope["rev_range"])
@@ -684,6 +715,14 @@ def check_commits(scope):
                 "commit message uses non-ASCII punctuation (%s) - a reviewer "
                 "tell for machine-written text" % " ".join(hits),
                 commit=ref, detail=c["subject"][:100],
+            ))
+        leftover = leftover_subjects(c)
+        if leftover:
+            out.append(finding(
+                "commit-squashed-subjects", "should-fix",
+                "commit body carries %d line(s) that read as squashed commits' "
+                "subjects - rewrite the message to describe the final change"
+                % len(leftover), commit=ref, detail=leftover[0][:100],
             ))
         if len(c["subject"]) > 72:
             out.append(finding(
