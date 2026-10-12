@@ -701,6 +701,9 @@ def check_commits(scope):
             r"noreply@anthropic|noreply@openai)", c["body"], re.IGNORECASE
         ) or re.search(
             r"Generated with \[?(Claude|Codex)", c["body"], re.IGNORECASE
+        ) or re.search(
+            # Claude Code's session trailer; three VALT commits carried it to a PR
+            r"^Claude-Session\s*:|claude\.ai/code/session", c["body"], re.IGNORECASE | re.MULTILINE
         ) or "\U0001f916" in c["body"]:
             out.append(finding(
                 "commit-attribution", "must-fix",
