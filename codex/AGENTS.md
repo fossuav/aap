@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.31
+**Playbook version:** 1.3.32
 
 ## Available Skills
 
@@ -444,7 +444,8 @@ When modifying existing files:
 - **Discuss first when it touches flight safety:** a change to failsafe or flight-safety behaviour, or a refactor of a core library, gets a Discourse (development) or Discord thread before the code.
 - **Say what parameters change:** a PR that adds, removes or changes the meaning of a parameter says so in its description, with any migration a user needs.
 - **CI must pass:** investigate a failure and fix it, or show it is unrelated; never ask a maintainer to merge over a red check.
-- **Review it before you open it:** run `/pr-review` on the branch before creating the PR, again whenever review feedback arrives, and again before pushing a new commit to an open PR. A branch sweep that finds a commit already on a PR has found it pushed, not reviewed; #27893 reached the dev-call review that way with a two-year-old gate no local review had ever read. It runs the mechanical CI gates, reviews the diff against the rules in this playbook, adds a cold second pass over what it cleared, and drives the fixes. Clearing the gate first spends a maintainer's attention on the design rather than on whitespace and commit prefixes.
+- **Review it before you open it, and size later reviews to the push:** run a full `/pr-review` on the branch before creating the PR, and before pushing new commits to an open PR that has never been reviewed, locally or by the review bot. A branch sweep that finds a commit already on a PR has found it pushed, not reviewed; #27893 reached the dev-call review that way with a two-year-old gate no local review had ever read. The full run executes the mechanical CI gates, reviews the diff against the rules in this playbook, adds a cold second pass over what it cleared, and drives the fixes. Clearing the gate first spends a maintainer's attention on the design rather than on whitespace and commit prefixes.
+- **A push that answers review findings or fixes a bug gets `/pr-review --quick`:** the mechanical gate, the thread, and one cold read of the new commits only. A full run costs a great many tokens and a long wait, and on a PR labelled `AIReview`, `DevCallTopic` or `DevCallEU` the bot reviews the new head anyway, so there the quick pass is the ceiling. Escalate to the full run when the new commits redesign rather than patch (new state, a new mechanism, files the PR did not touch), when the quick pass finds something material, or when the user asks.
 - **Follow the repo's PR template:** Before drafting a PR body, read `.github/PULL_REQUEST_TEMPLATE.md` from the repository root and use its sections, headings, and ordering. Do not invent your own structure.
 - **Trim the checklist — don't dump it verbatim.** PR templates often ship with a long boilerplate ticklist that maintainers don't want copied wholesale. Include only:
   - items that have already been done (check them with `[x]`), and

@@ -1,7 +1,7 @@
 ---
 name: pr-review
 description: Review your own ArduPilot PR the way a maintainer will - before you open it, or after review feedback arrives - and then fix what the review finds. Runs the CI gates that bounce PRs mechanically, fans out parallel reviewers over the diff, cross-checks every finding with an independent Codex pass, and iterates fixes until the verdict is clean. Use when the user is about to open a PR, asks whether a branch is ready to submit, or wants to make a PR pass review.
-argument-hint: "[PR number/url] [--fix] [--no-codex] [--base ref]"
+argument-hint: "[PR number/url] [--quick] [--fix] [--no-codex] [--base ref]"
 allowed-tools: Bash(python3 *pr_review.py*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git rev-parse:*), Bash(git merge-base:*), Read, Grep, Edit, Task
 ---
 
@@ -35,11 +35,33 @@ contradict you.
 
 - *(nothing)* - review the current branch against its merge-base with upstream master. This is the pre-submission case: there may be no PR yet.
 - `<number>` or `<url>` - review that PR. Use this when review feedback has arrived and you are making the PR pass.
+- `--quick` - the reduced review for a push that answers review findings or fixes a bug on a PR that has already been reviewed. See "Quick review" below.
 - `--fix` - go straight into the fix loop after the review, instead of stopping to show findings first.
 - `--no-codex` - skip the Codex cross-check (say so in the report; the verdict is single-sourced).
 - `--base <ref>` - diff against something other than the auto-detected base.
 
 Run from the root of an ArduPilot checkout.
+
+## Quick review (`--quick`)
+
+A full run fans out reviewers and cross-checks every finding, and costs a long
+wait and a great many tokens. Spend that before a PR opens, and before the
+first push to a PR that nobody - you or the bot - has reviewed. A push that
+answers review findings, or fixes a bug found since, on a PR that has been
+reviewed gets this instead:
+
+1. Step 0 and step 1 as written. A must-fix still blocks.
+2. Step 2. If the bot has a current review, triage only the rows the new commits claim to answer.
+3. One cold read of the new commits only, under step 4's rules for a cold task: the `git show` of each commit and nothing else, no account of the fix and no list of things to check. If the commits answer findings, add step 8's audit task for those findings alone. With `--no-codex`, one reviewer agent with the same brief.
+4. Step 5 for what that pass raises, step 6, and `state save --depth quick`.
+
+Skip the per-commit fan-out, the whole-PR reader and the verification pool.
+Escalate to the full run when the new commits redesign rather than patch (new
+state, a new mechanism, files the PR did not touch), when the quick pass finds
+something material, or when the user asks. On a PR labelled `AIReview`,
+`DevCallTopic` or `DevCallEU` the bot reviews the new head anyway, so there
+the quick pass is the ceiling unless one of those holds. Say "quick review" in
+the report.
 
 ## Step 0 - Scope the review
 

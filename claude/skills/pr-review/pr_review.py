@@ -1579,13 +1579,14 @@ def state_cmd(args):
             "head": head, "head_short": head[:10],
             "branch": git("rev-parse", "--abbrev-ref", "HEAD").strip(),
             "verdict": args.verdict, "findings": args.findings,
+            "depth": args.depth,
             "base_ref": base_ref, "merge_base": merge_base,
             "when": int(time.time()),
         }
         with open(path, "w") as fh:
             json.dump(blob, fh, indent=2)
-        print("recorded review of %s at %s (base %s)"
-              % (blob["branch"], blob["head_short"], base_ref))
+        print("recorded %s review of %s at %s (base %s)"
+              % (args.depth, blob["branch"], blob["head_short"], base_ref))
         return
     # diff: what changed since the recorded review
     if not os.path.exists(path):
@@ -1594,8 +1595,8 @@ def state_cmd(args):
     with open(path) as fh:
         blob = json.load(fh)
     if blob["head"] == head:
-        print("unchanged since the recorded review at %s (verdict: %s)"
-              % (blob["head_short"], blob.get("verdict")))
+        print("unchanged since the recorded %s review at %s (verdict: %s)"
+              % (blob.get("depth", "full"), blob["head_short"], blob.get("verdict")))
         sys.exit(0)
     # One state file per checkout, not per branch.
     branch = git("rev-parse", "--abbrev-ref", "HEAD").strip()
@@ -1837,6 +1838,8 @@ def main():
     s.add_argument("action", choices=["save", "show", "diff", "clear"])
     s.add_argument("--verdict", default="")
     s.add_argument("--findings", type=int, default=0)
+    s.add_argument("--depth", choices=["full", "quick"], default="full",
+                   help="full: the whole pipeline; quick: gate, thread and one cold read of the new commits")
     s.add_argument("--base", default="")
 
     args = ap.parse_args()
