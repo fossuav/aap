@@ -31,33 +31,28 @@ Status:  proposed <date>
 
 ## Proposed
 
-### ARCH-1: Changing what a shared flag means changes every reader of it
+### ARCH-1: Shared state is a contract between subsystems
 
-A flag or check that several parts of the code read is an agreement between
-them. A change to when it is true has to be checked against every reader,
-not only the one that prompted the change, and the PR should say which
-readers it checked.
+A subsystem owns its state. What it shares with other subsystems it
+publishes through a read-only `const` accessor rather than letting them
+read or write its members, and what that accessor returns is a contract
+between them. A change to what it returns, or when, is a change to the
+contract: every caller is checked against the new meaning, and the PR says
+which callers it checked.
 
-Example: #32514 let Copter's EKF failsafe clear without a position; #34696
-restores Loiter when it clears, and on a branch carrying both the restore
-was refused.
-Check:   For each shared flag or check whose meaning the diff changes, its
-         readers are listed and each is accounted for.
-Status:  proposed 2026-10-13
+Example: #32514 changed when Copter's EKF failsafe clears; #34696 relied on
+the old meaning, and on a branch carrying both its restore was refused.
+Check:   New state shared across a subsystem boundary has a `const`
+         accessor. For each accessor whose meaning the diff changes, the
+         callers are listed and each is accounted for.
+Status:  proposed 2026-10-13 (second draft: the first was too narrow, one
+         facet of separation of concerns)
 
-### ARCH-2: Test for what you need, not for something that usually comes with it
+## Confirmed
 
-Code that needs a capability - a position, a healthy sensor, a link -
-should test for that capability directly, not for a proxy such as a
-failsafe having cleared. A proxy holds only until someone changes what it
-means.
-
-Example: #34696's restore needed a position and waited for the EKF failsafe
-to clear; once the failsafe could clear without a position, the restore was
-refused.
-Check:   Where code acts on a proxy, ask what it actually needs and whether
-         there is a direct test for it.
-Status:  proposed 2026-10-13
+- **ARCH-2**, "Test for what you need, not for something that usually comes
+  with it" - confirmed 2026-10-13, in the root playbook under Architectural
+  Principles (1.7.36).
 
 ## Rejected
 
