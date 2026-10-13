@@ -355,6 +355,7 @@ aap/
 ├── uninstall-codex.sh               # Remove Codex playbooks from ArduPilot
 ├── install-gemini.sh                # Install Gemini playbooks to ArduPilot
 ├── uninstall-gemini.sh              # Remove Gemini playbooks from ArduPilot
+├── RULES_PROPOSED.md                # Architectural rules awaiting confirmation (not installed)
 └── README.md
 ```
 

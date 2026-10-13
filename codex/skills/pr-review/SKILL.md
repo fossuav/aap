@@ -51,7 +51,8 @@ reviewed gets this instead:
 1. Step 0 and step 1 as written. A must-fix still blocks.
 2. Step 2. If the bot has a current review, triage only the rows the new commits claim to answer.
 3. One cold read of the new commits only, under step 4's rules for a cold task: the `git show` of each commit and nothing else, no account of the fix and no list of things to check. If the commits answer findings, add step 8's audit task for those findings alone. With `--no-codex`, one reviewer agent with the same brief.
-4. Step 5 for what that pass raises, step 6, and `state save --depth quick`.
+4. Check the new commits yourself against the confirmed architectural rules in their scope (step 3). That is a lookup, not a second review, and it stays out of the cold read's brief.
+5. Step 5 for what the passes raise, step 6, and `state save --depth quick`.
 
 Skip the per-commit fan-out, the whole-PR reader and the verification pool.
 Escalate to the full run when the new commits redesign rather than patch (new
@@ -248,6 +249,13 @@ reviews the diff in a vacuum. Tell each agent which one applies to its slice:
 | `Tools/autotest/` | `Tools/autotest/AGENTS.override.md` - event waits, registration, speedup, harness gotchas |
 | `libraries/AP_Scripting/`, any `.lua` | `libraries/AP_Scripting/AGENTS.override.md` and its CRSF menu / vehicle control companions |
 | `ArduPlane/`, QuadPlane, TECS | `ArduPlane/AGENTS.override.md` |
+
+**Hold the change against the confirmed architectural rules too.** Give each
+agent the rules in its slice's playbook, plus the entries of the fork's
+`ARCHITECTURE_RULES.md` (`git ls-files '*ARCHITECTURE_RULES.md'`) whose scope
+the diff touches, and have it state for each one whether the change keeps it.
+Candidates in a `RULES_PROPOSED.md` are not standards: never review against
+them.
 
 **A playbook can mislead as well as inform.** Some sections document mechanisms that
 exist only on a feature branch (the EKF3 playbook's `zAxisInhibit` and hover Z-bias

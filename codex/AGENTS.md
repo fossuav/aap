@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.32
+**Playbook version:** 1.3.33
 
 ## Available Skills
 
@@ -200,6 +200,8 @@ The root playbook carries the general rules. Where a subsystem has its own playb
 - `Tools/autotest/AGENTS.override.md` - autotest authoring, harness gotchas, before/after A/B runs
 - `libraries/AP_Scripting/AGENTS.override.md` - Lua applets (with companions for CRSF menus and vehicle control)
 - `ArduPlane/AGENTS.override.md` - Plane modes, log messages, QuadPlane transitions, GPS-denied flight
+
+**Architectural rules.** These playbooks also carry assumptions maintainers hold about how the code fits together - what a shared flag promises, who may rely on it - which no single diff shows. They are added only with the user's agreement. A candidate goes into `RULES_PROPOSED.md` in the `aap` repository, which is never installed, so nothing proposed is a standard. It carries its evidence, its scope and a check a reviewer can apply, and moves into the playbook for the code it constrains only once the user confirms it. A rejected candidate stays in the queue with the reason, so it does not come back. A rule that holds only on a fork's own branches lives in that fork's repository, in a tracked `ARCHITECTURE_RULES.md` with its own queue beside it (find it with `git ls-files '*ARCHITECTURE_RULES.md'`), and is read alongside the playbook for the code it covers. When a bug turns out to rest on an assumption nobody wrote down, propose the rule in the same turn the bug is explained.
 
 ## C++ Development Guidelines
 
