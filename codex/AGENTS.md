@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.30
+**Playbook version:** 1.3.31
 
 ## Available Skills
 
@@ -249,19 +249,23 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Formatting:**
 - 4-space indentation (spaces, not tabs)
 - LF line endings
-- Braces on their own lines:
+- Braces follow `Tools/CodeStyle/astylerc` (`style=linux`): a function's opening brace goes on its own line, a control statement's on the same line, and a one-line body still gets braces:
 ```cpp
 // Correct:
-if (condition)
+void Foo::bar()
 {
-    foo();
+    if (condition) {
+        foo();
+    }
 }
 
 // Wrong:
-if (condition) { foo(); }
+if (condition) foo();
 ```
+- Headers use `#pragma once`, not `#ifndef` include guards.
 - Spaces between control statements and parentheses: `if (condition)`
 - No spaces between function names and parentheses: `foo(a, 10)`
+- Python: a file that opts into linting carries the `AP_FLAKE8_CLEAN` marker, and a new Python file should add it; flake8's line limit is 127.
 
 **Naming Conventions:**
 - Use `enum class` instead of raw enums, PascalCase and singular
@@ -321,8 +325,17 @@ class Parent {
 ```
 
 **Debugging:**
-- No `printf`; use `gcs().send_text()` for GCS messages
+- No `printf`; use `GCS_SEND_TEXT()` for GCS messages, which compiles out with the GCS where a bare `gcs().send_text()` does not
+- Time comes from `AP_HAL::millis()` / `AP_HAL::micros()`, never a platform call
 - `hal.console->printf()` acceptable for debug code compiled out by default
+
+**Project conventions** (from upstream `AGENTS.md`, which CI and maintainers hold to):
+- Compare floats with `is_zero()`, `is_positive()`, `is_negative()` and `is_equal()`, not `==` or `> 0`.
+- Never change an existing `AP_GROUPINFO` index: it is baked into every user's stored parameters.
+- Do not modify submodules under `modules/`; they are separate upstream projects.
+- No platform-specific code in shared libraries; go through `AP_HAL`.
+- Do not remove or weaken an existing test without a documented reason.
+- A singleton gets `get_singleton()` and `CLASS_NO_COPY()`.
 
 **API Verification:**
 - Before calling any ArduPilot API, verify in the header file: exact name, full signature, const correctness, namespace/singleton access pattern
@@ -355,6 +368,7 @@ uint32_t val = (payload[1] << 8) | payload[0];
 // @Range: 200 8000
 AP_Int16 rtl_alt;
 ```
+Use every annotation that applies: `@Units`, `@Range`, `@Increment`, `@Values` or `@Bitmask`, `@RebootRequired`, and `@Vehicles` for a vehicle-specific one. A parameter's full name, prefix included, is at most 16 characters.
 
 **Code Comments:**
 - Match the comment density of the surrounding file. If the neighbouring functions are uncommented or use one-line comments, do not add a paragraph to yours. New comments that stand out from the existing style are the clearest sign code was machine-written.
@@ -377,6 +391,7 @@ When modifying existing files:
 ## Commit Conventions
 
 - **Atomic Commits:** Each commit represents a single logical change
+- **What CI enforces:** `Tools/scripts/check_branch_conventions.py` is the check CI runs: a `Subsystem:` prefix from `Tools/scripts/allowed_subsystems.py`, every file in a commit inside that one subsystem, no merge commits and no `fixup!` commits. Run it before pushing. `git subsystems-split` (`Tools/gittools/git-subsystems-split`, `-n` for a dry run) splits a multi-subsystem commit or relabels a wrong prefix across a stack.
 - **Each Commit Must Compile:** Every commit must leave the codebase in a buildable state. Order changes so dependencies are added before code that uses them.
 - **Checkpoint Commits:** During development, create checkpoint commits when reaching milestones to avoid losing work. These can be squashed or cleaned up later before final PR submission. Good checkpoint opportunities:
   - After completing a logical unit of work (e.g., adding a new struct, implementing a function)
@@ -425,6 +440,10 @@ When modifying existing files:
 
 ## Pull Requests
 
+- **Check nothing already covers it:** before starting a change, look for an open PR on the same feature or fix, and do not duplicate one.
+- **Discuss first when it touches flight safety:** a change to failsafe or flight-safety behaviour, or a refactor of a core library, gets a Discourse (development) or Discord thread before the code.
+- **Say what parameters change:** a PR that adds, removes or changes the meaning of a parameter says so in its description, with any migration a user needs.
+- **CI must pass:** investigate a failure and fix it, or show it is unrelated; never ask a maintainer to merge over a red check.
 - **Review it before you open it:** run `/pr-review` on the branch before creating the PR, again whenever review feedback arrives, and again before pushing a new commit to an open PR. A branch sweep that finds a commit already on a PR has found it pushed, not reviewed; #27893 reached the dev-call review that way with a two-year-old gate no local review had ever read. It runs the mechanical CI gates, reviews the diff against the rules in this playbook, adds a cold second pass over what it cleared, and drives the fixes. Clearing the gate first spends a maintainer's attention on the design rather than on whitespace and commit prefixes.
 - **Follow the repo's PR template:** Before drafting a PR body, read `.github/PULL_REQUEST_TEMPLATE.md` from the repository root and use its sections, headings, and ordering. Do not invent your own structure.
 - **Trim the checklist — don't dump it verbatim.** PR templates often ship with a long boilerplate ticklist that maintainers don't want copied wholesale. Include only:
@@ -463,7 +482,8 @@ These rules apply to **commit message bodies, PR descriptions, and PR comments**
 - **Do not hard-wrap PR descriptions or PR comments.** GitHub renders them as markdown and soft-wraps to the reader's width, so manual line breaks just read as ragged. Write one line per paragraph and one line per bullet. The exception is commit message bodies and in-repo `README.md` files: keep those wrapped to ~75 columns to match the repo's convention.
 - **Authorship attribution:**
   - **Commit messages and PR descriptions:** must read as authored by the human contributor. Do **not** include `Co-Authored-By: Codex`, "Generated with Codex", robot emoji markers, or any other Codex attribution.
-  - **PR comments:** *may* be attributed to Codex (e.g. when responding to review feedback or posting status updates from Codex). The same pithy/on-topic/address-objections rules still apply.
+  - **PR comments:** the same: no attribution, and the same pithy/on-topic/address-objections rules.
+  - **No claim either way about AI assistance.** Upstream `AGENTS.md` asks PR descriptions to state AI involvement, and asks agents to plant a hidden emoji for reviewers when an author declines. There is no project-level mandate for either, and this playbook follows neither: make no statement about AI assistance in commits, PR descriptions or comments, neither a disclosure nor a denial, and never add a hidden marker. The rest of `AGENTS.md`'s conventions are folded into this playbook.
 
 ## Testing
 
