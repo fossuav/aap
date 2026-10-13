@@ -142,7 +142,10 @@ def variant_parent(board):
 
     Only a cross-directory ``include ../Other/...`` or an explicit
     ``USE_BOOTLOADER_FROM_BOARD`` makes a board a variant. A same-directory
-    ``include hwdef.inc`` is just file layout, not inheritance.
+    ``include hwdef.inc`` is just file layout, not inheritance. ``Other`` must
+    be a board or family base (it has a hwdef.dat or hwdef.inc): the shared
+    ``../include/minimize_*.inc`` snippets that ~100 boards pull in are not a
+    parent, and treating them as one skipped most checks on those boards.
     """
     hwdef = HWDEF_DIR / board / "hwdef.dat"
     if not hwdef.exists():
@@ -154,7 +157,9 @@ def variant_parent(board):
     for inc in INCLUDE_RE.findall(text):
         m2 = re.match(r"^\.\./([^/]+)/", inc)
         if m2:
-            return m2.group(1)
+            pdir = HWDEF_DIR / m2.group(1)
+            if (pdir / "hwdef.dat").exists() or (pdir / "hwdef.inc").exists():
+                return m2.group(1)
     return None
 
 
