@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.36
+**Playbook version:** 1.7.37
 
 ## Available Skills
 
@@ -242,6 +242,11 @@ loc.offset(offset_ned.x, offset_ned.y);
 - `onGround`, `inFlight`, `takeOffDetected`, `land_complete`, `likely_flying`/`get_time_flying_ms()` and Plane's `is_flying()` each mean something different on each vehicle, and each has a recorded case of reading wrong in flight. The EKF3 playbook's Flight-State Flags section lists how each is set and where it lies.
 - Before using one as evidence of flight, contact or stillness, write down how it is set on every vehicle class the code runs on and when it reads wrong there. Where it does not hold, require an independent second signal. In the EKF that cannot be a vehicle-class test: the EKF carries no vehicle-specific code, so vehicle differences arrive through generic signals the vehicle sets (see the EKF3 playbook).
 - Code that fabricates a measurement on the strength of such a flag (zero velocity, zero flow, a height reference) is the highest-risk case: a wrong flag in flight becomes a confident wrong observation. A Copter-only autotest cannot see a Plane failure.
+
+**Shared State Is a Contract Between Subsystems** (ARCH-1, confirmed 2026-10-13):
+- A subsystem owns its state, and what it shares with others is a contract between them. A change to what shared state means, or when it is set, changes the contract: every reader is checked against the new meaning, and the PR says which readers it checked.
+- Libraries publish shared state through read-only `const` accessors rather than public members, and so does `AP_Vehicle` wherever it can. A vehicle's own state is read directly by its modes and failsafes, which are part of the vehicle, but the contract applies to those reads all the same.
+- #32514 changed when Copter's EKF failsafe clears; #34696 relied on the old meaning, and on a branch carrying both its restore was refused.
 
 **Test for What You Need, Not for What Usually Comes With It** (ARCH-2, confirmed 2026-10-13):
 - Code that needs a capability - a position, a healthy sensor, a link - tests for that capability directly, not for a proxy such as a failsafe having cleared. A proxy holds only until someone changes what it means.

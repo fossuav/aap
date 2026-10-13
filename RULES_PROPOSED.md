@@ -31,28 +31,14 @@ Status:  proposed <date>
 
 ## Proposed
 
-### ARCH-1: Shared state is a contract between subsystems
-
-A subsystem owns its state, and what it shares with others is a contract
-between them. A change to what shared state means, or when it is set,
-changes the contract: every reader is checked against the new meaning, and
-the PR says which readers it checked. Libraries publish shared state
-through read-only `const` accessors rather than public members, and so
-does `AP_Vehicle` wherever it can. A vehicle's own state is read directly
-by its modes and failsafes, which are part of the vehicle, but the contract
-applies to those reads all the same.
-
-Example: #32514 changed when Copter's EKF failsafe clears; #34696 relied on
-the old meaning, and on a branch carrying both its restore was refused.
-Check:   New state shared by a library or `AP_Vehicle` has a `const`
-         accessor. For each piece of shared state whose meaning the diff
-         changes, the readers are listed and each is accounted for.
-Status:  proposed 2026-10-13 (third draft: scope from the user - vehicle
-         state is read directly, libraries and AP_Vehicle use accessors,
-         the contract holds everywhere)
+None.
 
 ## Confirmed
 
+- **ARCH-1**, "Shared state is a contract between subsystems" - confirmed
+  2026-10-13 after three drafts (the scope from the user: vehicle state is
+  read directly, libraries and AP_Vehicle use accessors, the contract holds
+  everywhere), in the root playbook under Architectural Principles (1.7.37).
 - **ARCH-2**, "Test for what you need, not for something that usually comes
   with it" - confirmed 2026-10-13, in the root playbook under Architectural
   Principles (1.7.36).
