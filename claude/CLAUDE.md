@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.37
+**Playbook version:** 1.7.38
 
 ## Available Skills
 
@@ -215,6 +215,7 @@ The root playbook carries the general rules. Where a subsystem has its own playb
 - A core, non-optional component must never depend on a compile-time optional component. The base system must compile when optional features are disabled.
 - Build options are defined in `Tools/scripts/build_options.py` (400+ options). Use `/build-options` to search them.
 - Features can be enabled/disabled via `hwdef.dat` files using `define` directives.
+- A feature not every vehicle needs costs nothing to the users who do not use it (ARCH-4, confirmed 2026-10-14): it has its own enable define, defaulted in the library's `_config.h` and listed in `build_options.py`, is off where flash is tight, and compiles out completely, with guards around whole functions and `case`s rather than inside them. The PR states its flash cost on a small board.
 
 **Named Constructor Pattern:**
 - Core classes like `Location` use named constructors for clarity and type safety:
@@ -236,7 +237,7 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **Initialization Order:** The `init()` method of a class must only be called after all dependencies are fully constructed and registered.
 
-**Scheduler Integration:** Any feature requiring periodic execution must have its `update()` function called from an appropriate scheduler or main loop.
+**Scheduler Integration:** Any feature requiring periodic execution must have its `update()` function called from an appropriate scheduler or main loop. The main loop never waits (ARCH-9, confirmed 2026-10-14): flight code does not block, busy-wait or sleep on the main thread; slow or waiting work runs as a state machine across calls or on another thread, periodic work runs at a rate set by its measured cost, and data shared between threads is protected (`WITH_SEMAPHORE`).
 
 **Flight-State Flags Are Per-Vehicle Opinions:**
 - `onGround`, `inFlight`, `takeOffDetected`, `land_complete`, `likely_flying`/`get_time_flying_ms()` and Plane's `is_flying()` each mean something different on each vehicle, and each has a recorded case of reading wrong in flight. The EKF3 playbook's Flight-State Flags section lists how each is set and where it lies.
@@ -251,6 +252,23 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Test for What You Need, Not for What Usually Comes With It** (ARCH-2, confirmed 2026-10-13):
 - Code that needs a capability - a position, a healthy sensor, a link - tests for that capability directly, not for a proxy such as a failsafe having cleared. A proxy holds only until someone changes what it means.
 - Where code acts on a proxy, ask what it actually needs and whether there is a direct test for it. #34696's restore needed a position and waited for the EKF failsafe to clear; once #32514 let the failsafe clear without a position, the restore was refused.
+
+**Lower Layers Detect, Higher Layers Decide** (ARCH-3, confirmed 2026-10-14):
+- A library reports what it sees and the vehicle decides what to do about it, since different vehicles need different responses: motor failure detection belongs in AP_Motors, the response in the vehicle (rmackay9, #20856).
+- Callers go through a layer's interface (AHRS rather than an EKF backend, AP_HAL rather than a platform), never into its internals, and lower layers never call up. Asking the EKF where its data comes from is a layering violation (peterbarker, #31177).
+- Generic behaviour lives in a shared library usable by every vehicle, not in one vehicle's directory.
+
+**Do Not Break What Users Already Have** (ARCH-6, confirmed 2026-10-14):
+- Existing configurations, ground stations, log consumers and scripts keep working across an update. A change to user-visible behaviour, a default or a parameter's meaning is stated, migrated and released with notes, and old tools stay supported until they are deprecated. Changed log numbering broke QGC in #14299.
+
+**Prefer the Simplest Design That Does the Job** (ARCH-7, confirmed 2026-10-14):
+- Do not add a queue, an option, a state flag or a mechanism for a small or hypothetical gain. Use the constructs the codebase already uses, and keep one source of truth rather than mirroring it in new state. For each new option, flag or mechanism, ask what fails without it.
+
+**Reuse Before You Write** (ARCH-8, confirmed 2026-10-14):
+- Extend or factor the existing implementation, through a common base class or shared library, rather than copying it or adding a second one.
+
+**Nothing From Outside Is Trusted** (ARCH-10, confirmed 2026-10-14):
+- Bound every loop and buffer, check every index and length before use, validate values from parameters, sensors and the wire, and treat an impossible state as an internal error rather than a crash. Never index an array from a user-set parameter (peterbarker, #26887).
 
 **Coordinate System Convention:**
 - ArduPilot uses **North-East-Down (NED)** coordinate frame for navigation.
