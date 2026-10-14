@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.38
+**Playbook version:** 1.7.39
 
 ## Available Skills
 
@@ -257,6 +257,11 @@ loc.offset(offset_ned.x, offset_ned.y);
 - A library reports what it sees and the vehicle decides what to do about it, since different vehicles need different responses: motor failure detection belongs in AP_Motors, the response in the vehicle (rmackay9, #20856).
 - Callers go through a layer's interface (AHRS rather than an EKF backend, AP_HAL rather than a platform), never into its internals, and lower layers never call up. Asking the EKF where its data comes from is a layering violation (peterbarker, #31177).
 - Generic behaviour lives in a shared library usable by every vehicle, not in one vehicle's directory.
+
+**Safety Logic Is Judged by What It Does When It Is Wrong** (ARCH-5, confirmed 2026-10-14):
+- A failsafe triggers when the vehicle loses something its current flight depends on, and what it then does is a separate, configurable decision.
+- Improve an existing failsafe rather than adding an overlapping one, and never let one feature disable or bypass another's protection (rmackay9, #34210).
+- Anything that can disarm, land or change mode in flight is designed for the case where it fires wrongly as much as for the case where it is right: landing detector false positives disarm vehicles in flight (rmackay9, #20929).
 
 **Do Not Break What Users Already Have** (ARCH-6, confirmed 2026-10-14):
 - Existing configurations, ground stations, log consumers and scripts keep working across an update. A change to user-visible behaviour, a default or a parameter's meaning is stated, migrated and released with notes, and old tools stay supported until they are deprecated. Changed log numbering broke QGC in #14299.

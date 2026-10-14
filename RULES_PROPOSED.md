@@ -37,29 +37,7 @@ peterbarker, lthall and tridge (his AI-tool comments excluded), clustered,
 and ranked by distinct PRs with Randy and Peter weighted highest. "Seen
 in" counts distinct PRs.
 
-### ARCH-5: Safety logic is judged by what it does when it is wrong
-
-A failsafe triggers when the vehicle loses something its current flight
-depends on, and what it then does is a separate, configurable decision.
-Improve an existing failsafe rather than adding an overlapping one, and
-never let one feature disable or bypass another's protection. Anything
-that can disarm, land or change mode in flight is designed for the case
-where it fires wrongly as much as for the case where it is right.
-
-Example: rmackay9 on #34210, improve the existing failsafe instead of
-adding another
-(https://github.com/ArduPilot/ardupilot/pull/34210#issuecomment-5471845867);
-on #20929, landing detector false positives disarm vehicles in flight.
-Check:   What does it do when its own input is wrong in flight, and does it
-         remove or bypass any existing protection?
-Seen in: 18 PRs (rmackay9 8, peterbarker 6, tridge 5, lthall 2)
-Status:  proposed 2026-10-14 (second draft). Open: "something its current
-         flight depends on" agrees with #32514, where a source set with no
-         horizontal source expects no position. rmackay9 on #32514 held
-         the stricter view, that the EKF failsafe should trigger without a
-         good position whatever sources are in use
-         (https://github.com/ArduPilot/ardupilot/pull/32514#issuecomment-4124383538);
-         adopting that wording would put #32514's design against the rule.
+None.
 
 ## Confirmed
 
@@ -69,6 +47,9 @@ Status:  proposed 2026-10-14 (second draft). Open: "something its current
   "Nothing from outside is trusted" - confirmed 2026-10-14 from the first
   mined batch, in the root playbook under Architectural Principles
   (1.7.38).
+- **ARCH-5** "Safety logic is judged by what it does when it is wrong" -
+  confirmed 2026-10-14 with the second draft's wording, in the root
+  playbook under Architectural Principles (1.7.39).
 - **ARCH-4** "A feature costs nothing to the users who do not use it" and
   **ARCH-9** "The main loop never waits" - confirmed 2026-10-14 and merged
   into the existing "Compile-Time Dependency Analysis" and "Scheduler
@@ -83,6 +64,12 @@ Status:  proposed 2026-10-14 (second draft). Open: "something its current
 
 ## Rejected
 
+- **ARCH-5 with rmackay9's #32514 trigger** (2026-10-14), "the EKF
+  failsafe should trigger without a good position whatever sources are in
+  use": rejected by the user, who holds that this view of #32514 is not
+  correct. A failsafe triggers on the loss of what the current flight
+  depends on, and a source set with no horizontal source does not depend
+  on a position.
 - **ARCH-5 first draft** (2026-10-14), "Safety logic fails safe, and
   stays one mechanism": needed refinement (the user); its trigger wording
   was Randy's #32514 view unscoped.
