@@ -68,6 +68,29 @@ Status:  parked 2026-10-16. The user is not sure what there is good consensus
          on for pre-arm checks yet (Leonard and Tridge pull in different
          directions on checks for settings and on option bits to disable them).
 
+### ARCH-3a: A layer reports the structure its users configure
+
+A refinement of ARCH-3 (lower layers detect, higher layers decide; callers
+go through a layer's interface). Where a configuration makes a backend's
+structure visible to the user - one EKF core per source set with
+`EK3_SRC_OPTIONS` bit 3 - the layer above reports that structure in the
+user's terms rather than hiding it behind a single generic answer. What
+stays forbidden is reaching past the layer, not the layer exposing what the
+user configured.
+
+Example: #34543's per-core OSD items; peterbarker on #34630 (2026-10-06):
+         "Our abstraction is AHRS. Just looking through that abstraction
+         layer into the EKF isn't really appropriate." The user: AHRS cannot
+         be required to be entirely generic when that leaves a real user
+         unable to see the standby source set's estimate before switching
+         to it. AP_AHRS's set_posvelyaw_source_set() and
+         get_posvelyaw_source_set() already pass straight to EKF3.
+Check:   the caller uses the layer's interface; anything backend-specific
+         it exposes corresponds to something the user configures, and is
+         named in those terms.
+Status:  proposed 2026-10-16 from the user's position on #34543; needs
+         confirmation of the wording.
+
 ## Confirmed
 
 - **ARCH-16** "Use the weakest spatial reference the job needs, and name
