@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.40
+**Playbook version:** 1.7.41
 
 ## Available Skills
 
@@ -275,6 +275,12 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Nothing From Outside Is Trusted** (ARCH-10, confirmed 2026-10-14):
 - Bound every loop and buffer, check every index and length before use, validate values from parameters, sensors and the wire, and treat an impossible state as an internal error rather than a crash. Never index an array from a user-set parameter (peterbarker, #26887).
 
+**A Driver Change Holds for Every Variant and Failure It Can Meet** (ARCH-13, confirmed 2026-10-16):
+- A driver serves a family of chips and meets lost devices, bus glitches and timeouts. Check a change against the datasheet of every variant the driver supports, take the timeout path first so a lost sensor always reaches no-data, do not trust a single sample, and behave like the sibling backends: pass on what the sensor reported, and flag every kind of new data. Limit a risky change to the variant that needs it. An SPL06 change would have written the wrong configuration into the SPA06 (peterbarker, #28983).
+
+**internal_error Is for the Impossible, Not the Unexpected** (ARCH-15, confirmed 2026-10-16):
+- `INTERNAL_ERROR` marks a state the code believes cannot happen - "land now, do not fly again until the bug is fixed" (peterbarker, #24196) - so it reaches the logs and watchdog dumps without asserts. If a sensor, a GCS or a parameter can cause the condition, it is input handling, not an internal error. Harmless misuse is not raised either, and a non-critical fault at startup is recorded rather than leaving the board unbootable.
+
 **Coordinate System Convention:**
 - ArduPilot uses **North-East-Down (NED)** coordinate frame for navigation.
 - X = North, Y = East, Z = Down (positive Z is below the vehicle).
@@ -335,6 +341,7 @@ astyle --options=Tools/CodeStyle/astylerc path/to/modified_file.cpp
 
 **Memory:**
 - No dynamic memory allocation (`malloc`, `new`) in performance-critical flight code paths
+- Memory is paid for only where it is used (ARCH-12, confirmed 2026-10-16): an optional feature allocates its state at init or on first use, only when the hardware or the feature is present. Check every allocation, report a failure rather than skip it in silence, and make every path that uses the object cope with it being absent. Free what an option stops using and clear the pointer, and keep large buffers out of BSS, which on some boards shares a full first memory block with the vehicle objects (tridge, #13923, #11795).
 - `new` and `malloc` zero their memory; stack variables must be explicitly initialized
 - ArduPilot zeroes BSS at startup, and class instances reach you either through BSS (singletons, statics), through `new`-zeroed heap, or through an explicit constructor. Do not add `{0}` / `= 0` / `{}` initializers to POD class members in headers as a defensive habit; they are redundant noise and a strong LLM-tell. The only places explicit init is required are stack locals and members where a non-zero default is intended.
 - Be mindful of stack size; avoid deep recursion and large local variables

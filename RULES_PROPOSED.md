@@ -31,7 +31,7 @@ Status:  proposed <date>
 
 ## Proposed
 
-Second batch (2026-10-16). ARCH-11 to ARCH-16 are the architecture themes
+Second batch (2026-10-16). ARCH-11, 14 and 16 are the architecture themes
 of the 2026-10-14 mining not used in the first batch, with the ones the
 playbooks already cover left out (control and filter changes need evidence,
 EKF changes need scrutiny, hwdef and scripting conventions, which belong to
@@ -60,43 +60,6 @@ Check:   for each new check - what silently fails without it, where its
 Seen in: 12 PRs, all four reviewers.
 Status:  proposed 2026-10-16
 
-### ARCH-12: Memory is paid for only where it is used
-
-An optional feature allocates its state at init or on first use, only when
-the hardware or the feature is actually present, and never in a flight
-path. Every allocation is checked: a failure is reported rather than
-skipped in silence, and every path that uses the object copes with it
-being absent. What an option stops using is freed and its pointer cleared,
-and large buffers stay out of BSS, which on some boards shares a full first
-memory block with the vehicle objects.
-
-Example: tridge on #13923 (an object paid for on every board when there was
-         no UART) and #11795 (what happens if this allocation fails?);
-         peterbarker on #31521 (report the failure rather than rumble on).
-Check:   for each new allocation - when it happens, what limits it to when
-         it is needed, what happens when it fails, and what frees it.
-Seen in: 15 PRs, tridge foremost, with peterbarker and rmackay9.
-Status:  proposed 2026-10-16
-
-### ARCH-13: A driver change holds for every variant and failure the driver can meet
-
-A driver serves a family of chips and meets lost devices, bus glitches and
-timeouts. A change is checked against the datasheet of every variant the
-driver supports, takes the timeout path first so a lost sensor always
-reaches no-data, does not trust a single sample, and behaves like its
-sibling backends (pass on what the sensor reported; flag every kind of new
-data). A risky change is limited to the variant that needs it.
-
-Example: peterbarker on #28983 (an SPL06 change would write the wrong
-         configuration into the SPA06) and #31155 (handle the timeout first,
-         and behave like every other rangefinder backend); tridge on #32399
-         (checked against all v3 variants' datasheets?).
-Check:   the variants the driver supports and how each is covered; what the
-         change does when the device stops answering; what the sibling
-         backends do in the same case.
-Seen in: 11 PRs, peterbarker, rmackay9, tridge.
-Status:  proposed 2026-10-16
-
 ### ARCH-14: Do not add code before it is used, and remove what your change leaves unused
 
 Code that nothing calls costs flash and review time, and rots. A PR adds
@@ -115,23 +78,6 @@ Seen in: 11 PRs, all four reviewers.
 Status:  proposed 2026-10-16. If confirmed, the Surgical Modification
          Principle's "Never remove existing code ... unless directly
          required by the change" gets a pointer to it.
-
-### ARCH-15: internal_error is for the impossible, not the unexpected
-
-INTERNAL_ERROR marks a state the code believes cannot happen - "land now,
-do not fly again until the bug is fixed" - so it reaches the logs and
-watchdog dumps even without asserts, rather than the code crashing or
-quietly misbehaving. Bad external input, protocol drift and harmless misuse
-are handled, not raised, and a non-critical fault at startup is recorded
-rather than leaving the board unbootable.
-
-Example: peterbarker on #24196 (internal errors are for land-now conditions,
-         not unrecognised input); tridge on #28828 (cork, cork, push is not
-         dangerous) and #17029 (do not panic at startup).
-Check:   for each new internal error - can anything outside the code (a
-         sensor, a GCS, a parameter) cause it? Then it is input handling.
-Seen in: 6 PRs, peterbarker and tridge.
-Status:  proposed 2026-10-16
 
 ### ARCH-16: Home, EKF origin and position are different things
 
@@ -154,26 +100,34 @@ Status:  proposed 2026-10-16. Note: #32768 is one of andyp1per's own open
          PRs, and rmackay9's comment there is one of the objections this
          rule records.
 
-### ARCH-17: Behaviour that cannot apply to a vehicle type is compiled out of that build
+### ARCH-17: Libraries carry no vehicle-specific code; the vehicle moderates them
 
-Shared code does not branch at run time on which vehicle it runs in;
-vehicle differences arrive through generic signals the vehicle sets. Where
-a feature cannot apply to a vehicle type at all - a landing floor on a
-Rover, which never lands - it is compiled out of that vehicle's build
-(APM_BUILD_TYPE), as the EKF's FLOW_HGT_OVR range override already is.
-Replay is its own build, so the PR says what Replay of that vehicle's logs
-then does. The alternative, a runtime vehicle-class test, keeps Replay
-faithful but puts vehicle knowledge into the library.
+A library serves every vehicle, including ones that do not use a feature
+today but may tomorrow, and a library with vehicle-specific code has to be
+built once per vehicle, which slows every multi-vehicle build. So a library
+never tests at run time which vehicle it is in. Behaviour that differs by
+vehicle lives in the vehicle's code, which moderates the library through a
+mechanism the library offers: a setter, an option, or a generic signal the
+vehicle sets for itself (get_fly_forward(), takeoff_expected()). Compiling
+part of a library out of one vehicle's build is the exception: only for
+something that could never make sense on that vehicle, only where it is
+strictly necessary, and the PR says why, and what Replay - built as its own
+vehicle type - does with that vehicle's logs.
 
 Example: #34292 (2026-10-16): a flow Rover fused zero flow while driving,
-         because the landing floor read its range at the ground clearance as
-         resting. Compiled out of Rover; AP-Review had proposed a runtime
-         class test and cited assume_zero_sideslip() as precedent.
-Check:   a new vehicle-type condition is APM_BUILD_TYPE, not
-         get_vehicle_class(), and the PR says what Replay does.
-Where:   refines the EKF3 playbook's "No vehicle-specific code in the EKF"
-         and the root's "In the EKF that cannot be a vehicle-class test".
-Status:  proposed 2026-10-16
+         because a landing floor read its range at the ground clearance as
+         resting. AP-Review proposed a runtime vehicle-class test, citing
+         assume_zero_sideslip(); a Rover never lands, so the floor was
+         compiled out of Rover builds instead (AP_NavEKF3 was already built
+         per vehicle).
+Check:   no new run-time vehicle test in a library; each new APM_BUILD_TYPE
+         in a library names why the code can never apply to that vehicle
+         and why a vehicle-set mechanism will not do, and whether it makes
+         the library vehicle-dependent in the build.
+Where:   root playbook, Architectural Principles; the EKF3 playbook's "No
+         vehicle-specific code in the EKF" and the root's flight-state flags
+         line point to it.
+Status:  second draft 2026-10-16
 
 ### ARCH-18: Know which threads call a function before giving it state
 
@@ -196,6 +150,12 @@ Status:  proposed 2026-10-16
 
 ## Confirmed
 
+- **ARCH-12** "Memory is paid for only where it is used", **ARCH-13** "A
+  driver change holds for every variant and failure it can meet" and
+  **ARCH-15** "internal_error is for the impossible, not the unexpected" -
+  confirmed 2026-10-16 from the second batch: ARCH-12 as a bullet in the
+  root playbook's Memory section, ARCH-13 and ARCH-15 under Architectural
+  Principles after ARCH-10 (1.7.41).
 - **ARCH-3** "Lower layers detect, higher layers decide", **ARCH-6** "Do not
   break what users already have", **ARCH-7** "Prefer the simplest design
   that does the job", **ARCH-8** "Reuse before you write" and **ARCH-10**
@@ -219,6 +179,16 @@ Status:  proposed 2026-10-16
 
 ## Rejected
 
+- **ARCH-17, first draft** "Behaviour that cannot apply to a vehicle type
+  is compiled out of that build" (2026-10-16). Too permissive about
+  compiling out, and it framed the choice as compile-time against a runtime
+  class test. The user: vehicle-specific code in libraries is to be avoided
+  in general - it slows multi-vehicle builds, and the library may be used by
+  that vehicle in future - so compiling out is only for something that makes
+  no sense for the vehicle and could never be used, and only if strictly
+  necessary; runtime vehicle checks in libraries are universally bad, and
+  belong in vehicle code with a mechanism for the vehicle to moderate the
+  library.
 - **ARCH-5 with rmackay9's #32514 trigger** (2026-10-14), "the EKF
   failsafe should trigger without a good position whatever sources are in
   use": rejected by the user, who holds that this view of #32514 is not
