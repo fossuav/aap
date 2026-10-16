@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.45
+**Playbook version:** 1.7.46
 
 ## Available Skills
 
@@ -276,6 +276,10 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Reuse Before You Write** (ARCH-8, confirmed 2026-10-14):
 - Extend or factor the existing implementation, through a common base class or shared library, rather than copying it or adding a second one.
 
+**Do Not Add Code Before It Is Used, and Remove What Your Change Leaves Unused** (ARCH-14, confirmed 2026-10-16):
+- Code that nothing calls costs flash on every board and review time, and rots, since nothing exercises it. A PR adds methods, members, parameters and options only when something in it uses them (rmackay9, #11795: "a golden rule in AP that we don't add things before they are used"); a helper first used by a later PR belongs in that PR, or that PR stacks on this one.
+- When a change replaces a mechanism or stops calling a helper, the old one goes in the same PR (peterbarker, #31919: "why are we keeping any of the old calibration code?"). That is what "required by the change" means in the Surgical Modification Principle; dead code the change did not touch is a separate PR. Removing something users see - a parameter, a log field, a mode - is still governed by ARCH-6.
+
 **Nothing From Outside Is Trusted** (ARCH-10, confirmed 2026-10-14):
 - Bound every loop and buffer, check every index and length before use, validate values from parameters, sensors and the wire, and treat an impossible state as an internal error rather than a crash. Never index an array from a user-set parameter (peterbarker, #26887).
 
@@ -441,7 +445,7 @@ When modifying existing files:
 - Limit changes strictly to the scope of the request
 - No unrelated refactoring or style changes
 - Produce the smallest possible diff
-- Never remove existing code (defines, constants, helpers) unless directly required by the change
+- Never remove existing code (defines, constants, helpers) unless directly required by the change; what the change itself leaves unused counts as required (ARCH-14)
 - Do not "tidy up" sibling code in a class you are touching. Adding default-initializers (`{0}`, `= 0`, `{}`) to existing members that were uninitialized before, normalising whitespace on neighbouring lines, or reordering declarations are all out of scope. Touch only the lines the change requires; defensive initialization sprayed across siblings is a reliable LLM-tell and reviewers will flag it.
 
 ## Commit Conventions

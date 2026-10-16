@@ -63,25 +63,6 @@ Status:  parked 2026-10-16. The user is not sure what there is good consensus
          on for pre-arm checks yet (Leonard and Tridge pull in different
          directions on checks for settings and on option bits to disable them).
 
-### ARCH-14: Do not add code before it is used, and remove what your change leaves unused
-
-Code that nothing calls costs flash and review time, and rots. A PR adds
-methods, members and options only when something uses them, and when its
-new mechanism replaces an old one it removes the old one in the same PR.
-This is what "required by the change" means in the Surgical Modification
-Principle: what the change orphans goes with it, while dead code the change
-did not touch is a separate PR.
-
-Example: rmackay9 on #11795 ("a golden rule in AP that we don't add things
-         before they are used") and #32396 (an unused method); peterbarker
-         on #31919 (why keep any of the old calibration code?).
-Check:   every new symbol has a caller in the PR; every symbol the PR stops
-         calling is removed or has a caller elsewhere.
-Seen in: 11 PRs, all four reviewers.
-Status:  proposed 2026-10-16. If confirmed, the Surgical Modification
-         Principle's "Never remove existing code ... unless directly
-         required by the change" gets a pointer to it.
-
 ### ARCH-16: Home, EKF origin and position are different things
 
 Home is where the vehicle returns to; the EKF origin is the frame its
@@ -105,6 +86,12 @@ Status:  proposed 2026-10-16. Note: #32768 is one of andyp1per's own open
 
 ## Confirmed
 
+- **ARCH-14** "Do not add code before it is used, and remove what your
+  change leaves unused" - confirmed 2026-10-16, in the root playbook after
+  ARCH-8, with the Surgical Modification Principle's "never remove existing
+  code" line pointing to it (1.7.46). User-visible removals stay under
+  ARCH-6; untouched dead code is a separate PR; a helper first used by a
+  later PR belongs in it or the later PR stacks.
 - **ARCH-18** "Data crosses from a driver's thread to the main loop only at
   the frontend's copy" - confirmed 2026-10-16 on its second draft (the
   user's backend/frontend point, checked against AP_Baro, AP_Compass,
