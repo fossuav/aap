@@ -6,7 +6,12 @@ no review holds a change against it. The process is in the root playbook,
 "Subsystem Playbooks", under "Architectural rules".
 
 - A **confirmed** rule moves to the playbook for the code it constrains,
-  with the date, and the playbook version is bumped.
+  with the date, and the playbook version is bumped. Then
+  `python3 rules/generate.py` writes its page under `rules/` and its row
+  in the README index; it finds the rule by its
+  `(ARCH-n, confirmed <date>):` marker, so keep that form. Re-run it after
+  editing a confirmed rule too: `--check` reports a page that has fallen
+  behind the playbook.
 - A **rejected** rule moves to "Rejected" below with the user's reason, so
   the next session does not propose it again.
 - A rule that holds only on a fork's own branches goes in that fork's
