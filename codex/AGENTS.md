@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.42
+**Playbook version:** 1.3.43
 
 ## Available Skills
 
@@ -281,7 +281,7 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **Data Crosses From a Driver's Thread to the Main Loop Only at the Frontend's Copy** (ARCH-18, confirmed 2026-10-16):
 - Sensor drivers split into a backend, whose periodic callback runs on the device's bus thread, and a frontend that runs in the main loop. The callback reads the device and writes only the backend's own accumulators, under the backend's semaphore (`_sem`). The frontend's `update()` calls the backend's `update()` or `read()`, which takes the same semaphore, copies the accumulated data into the frontend's state and resets it.
-- That copy is the synchronisation point: the frontend's state, and everything downstream of it - AHRS, the EKF, the vehicle - is read and written only on the main thread (the shared-data line of ARCH-9). A callback never calls out of its backend into the frontend or another library, and code that adds state on a path a callback can reach first checks which thread runs it. Baro (`_timer()`, then `_copy_to_frontend()` from `update()`), Compass, RangeFinder, Airspeed and the Pixart flow driver keep this; PX4Flow's I2C `timer()` called `_update_frontend()` directly and so ran the EKF on the bus thread (#33484).
+- That copy is the synchronisation point: the frontend's state, and everything downstream of it - AHRS, the EKF, the vehicle - is read and written only on the main thread (the shared-data line of ARCH-9). A callback never calls out of its backend into the frontend or another library, and code that adds state on a path a callback can reach first checks which thread runs it. The BMP280 barometer (`_timer()` accumulates, `update()` copies out with `_copy_to_frontend()`), the VL53L1X range finder and the HereFlow flow driver (a `new_data` flag set in the callback, published from `update()`) keep this. Not every driver does yet: PulsedLightLRF writes the frontend's state from its I2C callback, Pixart reads the AHRS gyro in its, the compass publishes its raw field from the bus thread, and PX4Flow called `_update_frontend()` from its timer, which ran the EKF and the Replay logging on the bus thread (#33484).
 
 **internal_error Is for the Impossible, Not the Unexpected** (ARCH-15, confirmed 2026-10-16):
 - `INTERNAL_ERROR` marks a state the code believes cannot happen - "land now, do not fly again until the bug is fixed" (peterbarker, #24196) - so it reaches the logs and watchdog dumps without asserts. If a sensor, a GCS or a parameter can cause the condition, it is input handling, not an internal error. Harmless misuse is not raised either, and a non-critical fault at startup is recorded rather than leaving the board unbootable.

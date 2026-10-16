@@ -111,6 +111,12 @@ Status:  proposed 2026-10-16. Note: #32768 is one of andyp1per's own open
   AP_InertialSensor, AP_RangeFinder, AP_Airspeed and AP_OpticalFlow), in
   the root playbook after ARCH-13 (1.7.44). PX4Flow, which breaks the
   pattern, gets its own fix PR.
+  Corrected the same day (1.7.45): the confirmed text named Pixart and the
+  range finders as keeping the pattern. A review of the PX4Flow fix found
+  Pixart reads the AHRS gyro in its callback, PulsedLightLRF writes the
+  frontend's state from its, and the compass publishes its raw field from
+  the bus thread. The examples are now BMP280, VL53L1X and HereFlow, with
+  those named as not following it yet.
 - **ARCH-19** "New behaviour is opt-in, and lands as the last and smallest
   commits of a PR" - confirmed 2026-10-16 from the user, with the user's
   addition that a maintainer can agree to a change being on by default. In
