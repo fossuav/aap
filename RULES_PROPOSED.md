@@ -103,41 +103,14 @@ Status:  proposed 2026-10-16. Note: #32768 is one of andyp1per's own open
          PRs, and rmackay9's comment there is one of the objections this
          rule records.
 
-### ARCH-18: Data crosses from a driver's thread to the main loop only at the frontend's copy
-
-Sensor drivers split into a backend, whose periodic callback runs on the
-device's bus thread, and a frontend that runs in the main loop. The
-callback reads the device and writes only the backend's own accumulators,
-under the backend's semaphore (`_sem`). The frontend's update() calls the
-backend's update() or read(), which takes the same semaphore, copies the
-accumulated data into the frontend's state and resets it. That copy is the
-synchronisation point: the frontend's state, and everything downstream of
-it - AHRS, the EKF, the vehicle - is read and written only on the main
-thread. A callback never calls out of its backend into the frontend or
-another library, and code that adds state on a path a callback can reach
-first checks which thread runs it.
-
-Example: Baro (`_timer()` accumulates, `update()` takes `_sem` and calls
-         `_copy_to_frontend()`), Compass (`accumulate_sample()`, then
-         `drain_accumulated_samples()` from `read()`), RangeFinder,
-         Airspeed and the Pixart flow driver keep it. PX4Flow does not: its
-         `update()` is empty and its I2C `timer()` calls `_update_frontend()`
-         directly, which runs `writeOptFlowMeas()` and the EKF on the bus
-         thread. That is how #33484's flow latch could race with a sample on
-         another core (2026-10-16).
-Check:   a new periodic callback writes only backend fields, under the
-         backend's semaphore, and calls nothing outside the backend; the
-         frontend copies under the same semaphore from the main loop.
-Where:   under ARCH-9 ("The main loop never waits"), which already says data
-         shared between threads is protected, and beside ARCH-13 (drivers).
-Status:  second draft 2026-10-16, from the user's backend/frontend point
-         and a survey of AP_Baro, AP_Compass, AP_InertialSensor,
-         AP_RangeFinder, AP_Airspeed and AP_OpticalFlow. The first draft
-         put the duty on the code being called ("know which threads call a
-         function"), where the pattern puts it on the driver.
-
 ## Confirmed
 
+- **ARCH-18** "Data crosses from a driver's thread to the main loop only at
+  the frontend's copy" - confirmed 2026-10-16 on its second draft (the
+  user's backend/frontend point, checked against AP_Baro, AP_Compass,
+  AP_InertialSensor, AP_RangeFinder, AP_Airspeed and AP_OpticalFlow), in
+  the root playbook after ARCH-13 (1.7.44). PX4Flow, which breaks the
+  pattern, gets its own fix PR.
 - **ARCH-19** "New behaviour is opt-in, and lands as the last and smallest
   commits of a PR" - confirmed 2026-10-16 from the user, with the user's
   addition that a maintainer can agree to a change being on by default. In

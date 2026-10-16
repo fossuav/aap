@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.43
+**Playbook version:** 1.7.44
 
 ## Available Skills
 
@@ -281,6 +281,10 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **A Driver Change Holds for Every Variant and Failure It Can Meet** (ARCH-13, confirmed 2026-10-16):
 - A driver serves a family of chips and meets lost devices, bus glitches and timeouts. Check a change against the datasheet of every variant the driver supports, take the timeout path first so a lost sensor always reaches no-data, do not trust a single sample, and behave like the sibling backends: pass on what the sensor reported, and flag every kind of new data. Limit a risky change to the variant that needs it. An SPL06 change would have written the wrong configuration into the SPA06 (peterbarker, #28983).
+
+**Data Crosses From a Driver's Thread to the Main Loop Only at the Frontend's Copy** (ARCH-18, confirmed 2026-10-16):
+- Sensor drivers split into a backend, whose periodic callback runs on the device's bus thread, and a frontend that runs in the main loop. The callback reads the device and writes only the backend's own accumulators, under the backend's semaphore (`_sem`). The frontend's `update()` calls the backend's `update()` or `read()`, which takes the same semaphore, copies the accumulated data into the frontend's state and resets it.
+- That copy is the synchronisation point: the frontend's state, and everything downstream of it - AHRS, the EKF, the vehicle - is read and written only on the main thread (the shared-data line of ARCH-9). A callback never calls out of its backend into the frontend or another library, and code that adds state on a path a callback can reach first checks which thread runs it. Baro (`_timer()`, then `_copy_to_frontend()` from `update()`), Compass, RangeFinder, Airspeed and the Pixart flow driver keep this; PX4Flow's I2C `timer()` called `_update_frontend()` directly and so ran the EKF on the bus thread (#33484).
 
 **internal_error Is for the Impossible, Not the Unexpected** (ARCH-15, confirmed 2026-10-16):
 - `INTERNAL_ERROR` marks a state the code believes cannot happen - "land now, do not fly again until the bug is fixed" (peterbarker, #24196) - so it reaches the logs and watchdog dumps without asserts. If a sensor, a GCS or a parameter can cause the condition, it is input handling, not an internal error. Harmless misuse is not raised either, and a non-critical fault at startup is recorded rather than leaving the board unbootable.
