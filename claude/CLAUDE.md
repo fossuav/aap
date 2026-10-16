@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.39
+**Playbook version:** 1.7.40
 
 ## Available Skills
 
@@ -439,7 +439,7 @@ When modifying existing files:
   Always verify the build succeeds before creating a checkpoint: `./waf copter` (or appropriate target)
 - **One module per commit:** Each commit must only touch files from a single subsystem/module. Never mix changes to different libraries or directories in one commit. If a feature requires changes to multiple modules, split into separate commits per module.
 - **Squash per subsystem:** When squashing commits, group by subsystem prefix (AP_GyroFFT, RC_Channel, Tools, etc.)
-- **Never squash an unflown behaviour change into a flown commit.** Once a commit has flown (a flight test, or the SFD beta carrying it on a flown vehicle), a later change that alters behaviour goes on top as its own commit, with any test that needs it in a commit after it, until that change has flown too; squash after the flight test, as the 2026-10-08 batch did. Otherwise the flown commit's flight evidence silently covers code that never flew. Changes that do not affect behaviour may be squashed in: commit messages, comments, parameter documentation and test fixes that do not depend on the new behaviour. The 2026-10-11 round broke this, autosquashing unflown review fixes into five flown PRs (#34457, #34292, #33484, #33359, #32270).
+- **Never squash an unflown behaviour change into a flown commit.** A change has flown when a flight ran its code, not when a flown build carried it: the log has to show the changed path running - an event, message or state only that path produces, or a configuration and flight that put the vehicle through it. A change behind a parameter the vehicle has off, a branch the flight never entered (a range that never left its range, a sensor that never went silent), or a vehicle type that did not fly has no flight evidence, however many flights carried it. Until it has flown, a change that alters behaviour goes on top of the flown commit as its own commit, with any test that needs it in a commit after it; squash it once a flight has run it, as the 2026-10-08 batch did. Otherwise the flown commit's flight evidence silently covers code that never ran: this is "Coverage is a trace, not a green run" for flights. Changes that do not affect behaviour may be squashed in: commit messages, comments, parameter documentation and test fixes that do not depend on the new behaviour. The 2026-10-11 round broke this, autosquashing unflown review fixes into five flown PRs (#34457, #34292, #33484, #33359, #32270); on 2026-10-16 TD25's flights had carried eight on-top changes but run only two in full, as EK3_RNG_USE_HGT was off, the range finder never left its range and the flow never went silent.
 - **DO NOT list Claude as author or co-author** - commits should only show the human author
 - **Message Prefix:** Subject line prefixed with the specific subsystem or directory name, not a generic parent directory. Use the most specific prefix that matches the changed files:
   - `libraries/` changes use the library name: `AP_AHRS:`, `AC_PosControl:`, `AP_Scripting:`
