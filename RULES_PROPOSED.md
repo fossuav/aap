@@ -35,7 +35,8 @@ Second batch (2026-10-16). ARCH-11, 14 and 16 are the architecture themes
 of the 2026-10-14 mining not used in the first batch, with the ones the
 playbooks already cover left out (control and filter changes need evidence,
 EKF changes need scrutiny, hwdef and scripting conventions, which belong to
-their own playbooks). ARCH-17 and ARCH-18 come from this week's PR work.
+their own playbooks). ARCH-17 and ARCH-18 come from this week's PR work, and ARCH-19 from the
+user.
 "Seen in" counts distinct PRs in the mining.
 
 ### ARCH-11: A pre-arm check catches what would silently go wrong, says exactly what, and changes nothing
@@ -58,7 +59,9 @@ Check:   for each new check - what silently fails without it, where its
          setting lives, whether a vehicle without the sensor can still arm,
          and whether the check writes anything.
 Seen in: 12 PRs, all four reviewers.
-Status:  proposed 2026-10-16
+Status:  parked 2026-10-16. The user is not sure what there is good consensus
+         on for pre-arm checks yet (Leonard and Tridge pull in different
+         directions on checks for settings and on option bits to disable them).
 
 ### ARCH-14: Do not add code before it is used, and remove what your change leaves unused
 
@@ -100,35 +103,6 @@ Status:  proposed 2026-10-16. Note: #32768 is one of andyp1per's own open
          PRs, and rmackay9's comment there is one of the objections this
          rule records.
 
-### ARCH-17: Libraries carry no vehicle-specific code; the vehicle moderates them
-
-A library serves every vehicle, including ones that do not use a feature
-today but may tomorrow, and a library with vehicle-specific code has to be
-built once per vehicle, which slows every multi-vehicle build. So a library
-never tests at run time which vehicle it is in. Behaviour that differs by
-vehicle lives in the vehicle's code, which moderates the library through a
-mechanism the library offers: a setter, an option, or a generic signal the
-vehicle sets for itself (get_fly_forward(), takeoff_expected()). Compiling
-part of a library out of one vehicle's build is the exception: only for
-something that could never make sense on that vehicle, only where it is
-strictly necessary, and the PR says why, and what Replay - built as its own
-vehicle type - does with that vehicle's logs.
-
-Example: #34292 (2026-10-16): a flow Rover fused zero flow while driving,
-         because a landing floor read its range at the ground clearance as
-         resting. AP-Review proposed a runtime vehicle-class test, citing
-         assume_zero_sideslip(); a Rover never lands, so the floor was
-         compiled out of Rover builds instead (AP_NavEKF3 was already built
-         per vehicle).
-Check:   no new run-time vehicle test in a library; each new APM_BUILD_TYPE
-         in a library names why the code can never apply to that vehicle
-         and why a vehicle-set mechanism will not do, and whether it makes
-         the library vehicle-dependent in the build.
-Where:   root playbook, Architectural Principles; the EKF3 playbook's "No
-         vehicle-specific code in the EKF" and the root's flight-state flags
-         line point to it.
-Status:  second draft 2026-10-16
-
 ### ARCH-18: Know which threads call a function before giving it state
 
 A function reached from a driver's callback runs on that driver's bus
@@ -148,8 +122,39 @@ Where:   under ARCH-9 ("The main loop never waits"), which already says
          shared data is protected.
 Status:  proposed 2026-10-16
 
+### ARCH-19: New behaviour is opt-in, and lands as the last and smallest commits of a PR
+
+A change to what a vehicle does is off by default - behind a parameter, an
+option bit or a feature define - unless it fixes an actual bug, so no one's
+aircraft behaves differently after an update they did not ask for. Within a
+PR the structure comes first: refactoring and plumbing in commits that
+change no behaviour, shown where possible to leave the compiler output
+unchanged, then the behaviour change last, as a small surgical set of
+commits a reviewer can read on its own. A refactor mixed into a functional
+change hides what actually changed and makes both harder to review.
+
+Example: the RP2350 branch (#32995): every commit built with
+         --consistent-builds; MatekH743 copter stayed binary-identical
+         through the first 45 commits, and the six commits that change STM32
+         output came after them, each saying so in its message.
+Check:   does the PR default to the old behaviour, and if not, which bug
+         does it fix? Is every commit before the functional ones shown to
+         leave the output unchanged (Tools/scripts/size_compare_branches.py,
+         or --consistent-builds hashes per commit), and does each commit
+         say whether it changes output?
+Where:   root playbook, Architectural Principles beside ARCH-6 ("Do not
+         break what users already have"), with a line in Commit Conventions
+         on commit order. ARCH-4 already covers the compile-time side
+         (a feature has its own enable define, off where flash is tight).
+Status:  proposed 2026-10-16, from the user.
+
 ## Confirmed
 
+- **ARCH-17** "Libraries carry no vehicle-specific code; the vehicle
+  moderates them" - confirmed 2026-10-16 on its second draft, in the root
+  playbook under Architectural Principles after ARCH-15, with the EKF3
+  playbook's "No vehicle-specific code in the EKF" and the root's
+  flight-state flags line pointing to it (1.7.42).
 - **ARCH-12** "Memory is paid for only where it is used", **ARCH-13** "A
   driver change holds for every variant and failure it can meet" and
   **ARCH-15** "internal_error is for the impossible, not the unexpected" -

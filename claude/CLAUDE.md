@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.41
+**Playbook version:** 1.7.42
 
 ## Available Skills
 
@@ -241,7 +241,7 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **Flight-State Flags Are Per-Vehicle Opinions:**
 - `onGround`, `inFlight`, `takeOffDetected`, `land_complete`, `likely_flying`/`get_time_flying_ms()` and Plane's `is_flying()` each mean something different on each vehicle, and each has a recorded case of reading wrong in flight. The EKF3 playbook's Flight-State Flags section lists how each is set and where it lies.
-- Before using one as evidence of flight, contact or stillness, write down how it is set on every vehicle class the code runs on and when it reads wrong there. Where it does not hold, require an independent second signal. In the EKF that cannot be a vehicle-class test: the EKF carries no vehicle-specific code, so vehicle differences arrive through generic signals the vehicle sets (see the EKF3 playbook).
+- Before using one as evidence of flight, contact or stillness, write down how it is set on every vehicle class the code runs on and when it reads wrong there. Where it does not hold, require an independent second signal. In the EKF that cannot be a vehicle-class test: the EKF carries no vehicle-specific code, so vehicle differences arrive through generic signals the vehicle sets (ARCH-17, and the EKF3 playbook).
 - Code that fabricates a measurement on the strength of such a flag (zero velocity, zero flow, a height reference) is the highest-risk case: a wrong flag in flight becomes a confident wrong observation. A Copter-only autotest cannot see a Plane failure.
 
 **Shared State Is a Contract Between Subsystems** (ARCH-1, confirmed 2026-10-13):
@@ -280,6 +280,10 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **internal_error Is for the Impossible, Not the Unexpected** (ARCH-15, confirmed 2026-10-16):
 - `INTERNAL_ERROR` marks a state the code believes cannot happen - "land now, do not fly again until the bug is fixed" (peterbarker, #24196) - so it reaches the logs and watchdog dumps without asserts. If a sensor, a GCS or a parameter can cause the condition, it is input handling, not an internal error. Harmless misuse is not raised either, and a non-critical fault at startup is recorded rather than leaving the board unbootable.
+
+**Libraries Carry No Vehicle-Specific Code; the Vehicle Moderates Them** (ARCH-17, confirmed 2026-10-16):
+- A library serves every vehicle, including ones that do not use a feature today but may tomorrow, and a library with vehicle-specific code has to be built once per vehicle, which slows every multi-vehicle build. So a library never tests at run time which vehicle it is in: behaviour that differs by vehicle lives in the vehicle's code, which moderates the library through a mechanism the library offers - a setter, an option, or a generic signal the vehicle sets for itself (`get_fly_forward()`, `takeoff_expected()`).
+- Compiling part of a library out of one vehicle's build (`APM_BUILD_TYPE`) is the exception: only for something that could never make sense on that vehicle, only where strictly necessary, and the PR says why and what Replay, built as its own vehicle type, then does with that vehicle's logs. #34292 compiled a landing floor out of Rover, which never lands, rather than take a runtime vehicle-class test.
 
 **Coordinate System Convention:**
 - ArduPilot uses **North-East-Down (NED)** coordinate frame for navigation.
