@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.42
+**Playbook version:** 1.7.43
 
 ## Available Skills
 
@@ -266,6 +266,10 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Do Not Break What Users Already Have** (ARCH-6, confirmed 2026-10-14):
 - Existing configurations, ground stations, log consumers and scripts keep working across an update. A change to user-visible behaviour, a default or a parameter's meaning is stated, migrated and released with notes, and old tools stay supported until they are deprecated. Changed log numbering broke QGC in #14299.
 
+**New Behaviour Is Opt-In, and Lands as the Last and Smallest Commits of a PR** (ARCH-19, confirmed 2026-10-16):
+- A change to what a vehicle does is off by default - behind a parameter, an option bit or a feature define - so no one's aircraft behaves differently after an update they did not ask for. The exceptions are a fix for an actual bug, and a change a maintainer agrees should be on by default; the PR says which.
+- Within a PR the structure comes first: refactoring and plumbing in commits that change no behaviour, shown where possible to leave the compiler output unchanged (`Tools/scripts/size_compare_branches.py`, or `--consistent-builds` builds hashed per commit), then the behaviour change last, as a small surgical set of commits a reviewer can read on its own. A refactor mixed into a functional change hides what actually changed and makes both harder to review. On the RP2350 branch (#32995) MatekH743 copter stayed binary-identical through the first 45 commits, and the six that changed STM32 output came after them, each saying so.
+
 **Prefer the Simplest Design That Does the Job** (ARCH-7, confirmed 2026-10-14):
 - Do not add a queue, an option, a state flag or a mechanism for a small or hypothetical gain. Use the constructs the codebase already uses, and keep one source of truth rather than mirroring it in new state. For each new option, flag or mechanism, ask what fails without it.
 
@@ -441,6 +445,7 @@ When modifying existing files:
 - **Atomic Commits:** Each commit represents a single logical change
 - **What CI enforces:** `Tools/scripts/check_branch_conventions.py` is the check CI runs: a `Subsystem:` prefix from `Tools/scripts/allowed_subsystems.py`, every file in a commit inside that one subsystem, no merge commits and no `fixup!` commits. Run it before pushing. `git subsystems-split` (`Tools/gittools/git-subsystems-split`, `-n` for a dry run) splits a multi-subsystem commit or relabels a wrong prefix across a stack.
 - **Each Commit Must Compile:** Every commit must leave the codebase in a buildable state. Order changes so dependencies are added before code that uses them.
+- **Structure before behaviour:** refactoring commits that change no behaviour go first, each saying whether it changes the compiler output, and the behaviour change goes last in as few commits as it needs (ARCH-19).
 - **Checkpoint Commits:** During development, create checkpoint commits when reaching milestones to avoid losing work. These can be squashed or cleaned up later before final PR submission. Good checkpoint opportunities:
   - After completing a logical unit of work (e.g., adding a new struct, implementing a function)
   - Before attempting risky refactoring or experimentation

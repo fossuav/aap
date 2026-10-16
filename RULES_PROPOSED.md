@@ -35,8 +35,8 @@ Second batch (2026-10-16). ARCH-11, 14 and 16 are the architecture themes
 of the 2026-10-14 mining not used in the first batch, with the ones the
 playbooks already cover left out (control and filter changes need evidence,
 EKF changes need scrutiny, hwdef and scripting conventions, which belong to
-their own playbooks). ARCH-17 and ARCH-18 come from this week's PR work, and ARCH-19 from the
-user.
+their own playbooks). ARCH-17 and ARCH-18 come from this week's PR work, and ARCH-19 (confirmed)
+from the user.
 "Seen in" counts distinct PRs in the mining.
 
 ### ARCH-11: A pre-arm check catches what would silently go wrong, says exactly what, and changes nothing
@@ -122,34 +122,13 @@ Where:   under ARCH-9 ("The main loop never waits"), which already says
          shared data is protected.
 Status:  proposed 2026-10-16
 
-### ARCH-19: New behaviour is opt-in, and lands as the last and smallest commits of a PR
-
-A change to what a vehicle does is off by default - behind a parameter, an
-option bit or a feature define - unless it fixes an actual bug, so no one's
-aircraft behaves differently after an update they did not ask for. Within a
-PR the structure comes first: refactoring and plumbing in commits that
-change no behaviour, shown where possible to leave the compiler output
-unchanged, then the behaviour change last, as a small surgical set of
-commits a reviewer can read on its own. A refactor mixed into a functional
-change hides what actually changed and makes both harder to review.
-
-Example: the RP2350 branch (#32995): every commit built with
-         --consistent-builds; MatekH743 copter stayed binary-identical
-         through the first 45 commits, and the six commits that change STM32
-         output came after them, each saying so in its message.
-Check:   does the PR default to the old behaviour, and if not, which bug
-         does it fix? Is every commit before the functional ones shown to
-         leave the output unchanged (Tools/scripts/size_compare_branches.py,
-         or --consistent-builds hashes per commit), and does each commit
-         say whether it changes output?
-Where:   root playbook, Architectural Principles beside ARCH-6 ("Do not
-         break what users already have"), with a line in Commit Conventions
-         on commit order. ARCH-4 already covers the compile-time side
-         (a feature has its own enable define, off where flash is tight).
-Status:  proposed 2026-10-16, from the user.
-
 ## Confirmed
 
+- **ARCH-19** "New behaviour is opt-in, and lands as the last and smallest
+  commits of a PR" - confirmed 2026-10-16 from the user, with the user's
+  addition that a maintainer can agree to a change being on by default. In
+  the root playbook after ARCH-6, with a "Structure before behaviour" line
+  in Commit Conventions (1.7.43).
 - **ARCH-17** "Libraries carry no vehicle-specific code; the vehicle
   moderates them" - confirmed 2026-10-16 on its second draft, in the root
   playbook under Architectural Principles after ARCH-15, with the EKF3
