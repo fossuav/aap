@@ -63,57 +63,14 @@ Status:  parked 2026-10-16. The user is not sure what there is good consensus
          on for pre-arm checks yet (Leonard and Tridge pull in different
          directions on checks for settings and on option bits to disable them).
 
-### ARCH-16: Use the weakest spatial reference the job needs, and name the one you use
-
-Four things are often confused:
-- A position is relative to the EKF origin (NED from the AHRS) and needs
-  no absolute reference: a flow-only copter has one with no GPS and no
-  origin at all.
-- A location is latitude, longitude and altitude. Turning one into a
-  position or back needs the EKF origin (Location's
-  get_vector_from_origin_NEU() asks the AHRS for it), and an absolute
-  location needs an absolute source such as GPS.
-- The EKF origin is the frame positions are measured in. Once valid, its
-  horizontal position never moves (the EKF refuses a second one); its
-  altitude is re-referenced only by a height datum reset on the ground.
-- Home is where the vehicle returns to. It can move: a GCS can set it at
-  any time, and Plane moves it while disarmed.
-
-Code asks for the weakest of these that does the job: nothing where no
-spatial reference is needed, a position where a position will do, a
-location only where an absolute fix is genuinely required, and home or
-origin only as what each is. Vehicles differ, so shared code allows for
-both: on Copter home is not the origin, most modes need only a position
-(requires_position(); arming asks for a position, relative or absolute),
-RTL needs home and lat/lon targets need the origin; on Plane home and
-origin are set together from the first good GPS fixes and kept together
-while disarmed, and it navigates by locations, so it needs both. Code
-never moves the origin's horizontal position, does not change the
-altitude reference a vehicle measures against from one flight to the
-next, and uses home-relative height for above-home semantics.
-
-Example: peterbarker on #31619 ("home is not the same as origin");
-         rmackay9 on #32505 (the origin must not move once there is a
-         position, which the position controller relies on) and on #32768
-         (resetting the altitude above origin at arming breaks AMSL mission
-         altitudes across flights). Copter's flow Loiter flies with no
-         origin at all (ekf_has_relative_position()).
-Check:   for each new use of a location, home or origin - what fails with a
-         position instead; whether it still works on a flow-only copter with
-         no GPS and no origin; whether home is used where the origin is
-         meant, or the reverse.
-Seen in: 4 PRs, peterbarker, rmackay9, tridge.
-Status:  second draft 2026-10-16, from the user's Copter/Plane and
-         position/location points, checked against AP_AHRS::set_home(),
-         NavEKF3_core::setOrigin() and resetHeightDatum(),
-         Location::get_vector_from_origin_NEU(), Copter's position_ok(),
-         requires_position() and ModeRTL::init(), and Plane's
-         update_GPS_10Hz() and update_home(). #32768 is one of
-         andyp1per's own open PRs; rmackay9's comment there is one of the
-         objections this rule records.
-
 ## Confirmed
 
+- **ARCH-16** "Use the weakest spatial reference the job needs, and name
+  the one you use" - confirmed 2026-10-16 on its second draft (the user's
+  Copter/Plane and position/location points, checked against the code),
+  in the root playbook before the Coordinate System Convention (1.7.47).
+  The user: #32768 works towards making the origin fully immutable; the
+  altitude re-referencing the rule describes is the current behaviour.
 - **ARCH-14** "Do not add code before it is used, and remove what your
   change leaves unused" - confirmed 2026-10-16, in the root playbook after
   ARCH-8, with the Surgical Modification Principle's "never remove existing
