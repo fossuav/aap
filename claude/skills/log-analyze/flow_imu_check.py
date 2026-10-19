@@ -31,7 +31,9 @@ from pymavlink import mavutil
 
 AVG_S = 0.1
 QUALITY_BINS = ((0, 40), (40, 50), (50, 60), (60, 70), (70, 100), (100, 150), (150, 256))
-HEIGHT_BINS = ((0.3, 0.6), (0.6, 1.0), (1.0, 2.0), (2.0, 5.0), (5.0, 1000.0))
+HEIGHT_BINS = ((0.0, 0.1), (0.1, 0.15), (0.15, 0.2), (0.2, 0.3), (0.3, 0.6), (0.6, 1.0), (1.0, 2.0), (2.0, 5.0),
+               (5.0, 1000.0))
+MIN_RANGE_M = 0.3
 
 
 def quat_to_dcm(w, x, y, z):
@@ -132,7 +134,7 @@ def flow_vel(s, t):
     r = s['rng'].at(t, 0.2)
     R = s['q'].at(t, 0.2)
     ev = s['ekfv'].at(t, 0.2)
-    if None in (o, r, R, ev) or r[1] != 4 or r[0] < 0.3:
+    if None in (o, r, R, ev) or r[1] != 4 or r[0] < MIN_RANGE_M:
         return None
     cfx, cfy, q = o
     bvx = -cfy * r[0]
@@ -178,14 +180,14 @@ def imu_dv(s, a, b):
     return dvn, dve
 
 
-def windows(s, armed, T, step, lag, gps_lag):
+def windows(s, armed, T, step, lag, gps_lag, need_armed=True):
     out = []
     if not s['of'].t:
         return out
     t = s['of'].t[0]
     end = s['of'].t[-1] - T
     while t < end:
-        if armed_at(armed, t):
+        if armed_at(armed, t) or not need_armed:
             f0 = flow_vel_avg(s, t, lag)
             f1 = flow_vel_avg(s, t + T, lag) if f0 else None
             im = imu_dv(s, t, t + T) if f1 else None
@@ -237,13 +239,13 @@ def row(label, ws, show_gps):
     print(line)
 
 
-def best_lag(s, armed, T, key, ref, lags, flow_lag=0.0, min_quality=0, trace=False):
+def best_lag(s, armed, T, key, ref, lags, flow_lag=0.0, min_quality=0, trace=False, need_armed=True):
     best = None
     for lag in lags:
         if key == 'flow':
-            ws = windows(s, armed, T, 0.25, lag, 0.0)
+            ws = windows(s, armed, T, 0.25, lag, 0.0, need_armed)
         else:
-            ws = windows(s, armed, T, 0.25, flow_lag, lag)
+            ws = windows(s, armed, T, 0.25, flow_lag, lag, need_armed)
         f = fit([w for w in ws if w['q'] >= min_quality], key, ref)
         if trace and f:
             print('  lag %3d ms: n %4d slope %5.2f corr %5.2f' % (lag * 1000, f[0], f[1], f[2]))
@@ -262,7 +264,14 @@ def main():
     ap.add_argument('--lag-quality', type=int, default=0,
                     help='scan the lag only over windows at or above this flow quality, where the flow is informative')
     ap.add_argument('--lag-trace', action='store_true', help='print the correlation at every lag scanned')
+    ap.add_argument('--disarmed', action='store_true',
+                    help='use disarmed data too, for a hand-carried test (needs LOG_DISARMED 1)')
+    ap.add_argument('--min-range', type=float, default=0.3,
+                    help='lowest range finder reading used, m (default 0.3; lower it to find the focus height)')
     args = ap.parse_args()
+    global MIN_RANGE_M
+    MIN_RANGE_M = args.min_range
+    need_armed = not args.disarmed
     s, armed, msgs = load(args.log)
     if not s['of'].t:
         print('=== %s\nno OF messages, nothing to check' % args.log)
@@ -272,19 +281,21 @@ def main():
         return 0
     if args.lag_ms is None:
         b = best_lag(s, armed, args.window, 'flow', 'imu', [x * 1e-3 for x in range(0, args.lag_max_ms + 1, 20)],
-                     min_quality=args.lag_quality, trace=args.lag_trace)
+                     min_quality=args.lag_quality, trace=args.lag_trace, need_armed=need_armed)
         lag = b[0] if b else 0.0
     else:
         lag = args.lag_ms * 1e-3
     has_gps = len(s['gps'].t) > 20
     gps_lag = 0.0
     if has_gps:
-        b = best_lag(s, armed, max(args.window, 1.0), 'gps', 'imu', [x * 1e-3 for x in range(0, 401, 50)], lag)
+        b = best_lag(s, armed, max(args.window, 1.0), 'gps', 'imu', [x * 1e-3 for x in range(0, 401, 50)], lag,
+                     need_armed=need_armed)
         gps_lag = b[0] if b else 0.0
-    ws = windows(s, armed, args.window, args.step, lag, gps_lag)
+    ws = windows(s, armed, args.window, args.step, lag, gps_lag, need_armed)
     print('=== %s' % args.log)
-    print('flow lag %d ms%s; %.1f s windows, armed, range good above 0.3 m, tilt under 35 deg'
-          % (lag * 1000, (', GPS lag %d ms' % (gps_lag * 1000)) if has_gps else ', no GPS', args.window))
+    print('flow lag %d ms%s; %.2f s windows, %s, range good above %.2f m, tilt under 35 deg'
+          % (lag * 1000, (', GPS lag %d ms' % (gps_lag * 1000)) if has_gps else ', no GPS', args.window,
+             'armed or not' if args.disarmed else 'armed', MIN_RANGE_M))
     head = '  %-20s %5s  %-16s   %-16s   %4s' % ('', 'n', 'flow vs IMU', 'EKF vs IMU', 'IMU')
     if has_gps:
         head += '   %-16s   %-16s' % ('GPS vs IMU', 'flow vs GPS')
@@ -294,7 +305,7 @@ def main():
     for lo, hi in QUALITY_BINS:
         row('quality %d-%d' % (lo, hi - 1), [w for w in ws if lo <= w['q'] < hi], has_gps)
     for lo, hi in HEIGHT_BINS:
-        row('height %.1f-%.1f m' % (lo, hi) if hi < 100 else 'height over %.0f m' % lo,
+        row('height %.2f-%.2f m' % (lo, hi) if hi < 100 else 'height over %.0f m' % lo,
             [w for w in ws if lo <= w['h'] < hi], has_gps)
     spans = []
     for t, txt in msgs:

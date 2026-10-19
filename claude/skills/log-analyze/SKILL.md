@@ -69,6 +69,14 @@ Reading it:
 - **The lag scan is broad.** With 0.5 s windows the correlation plateaus over about 100 ms. Use `--window 0.25 --lag-quality <a quality the sensor is good at> --lag-trace` to see the shape, and treat the peak as indicative. TD25's MAVLink flow peaked at 80-180 ms, against `EK3_FLOW_DELAY` 30; SFD-O4's at 40-80 ms.
 - Windows need a good range above 0.3 m and tilt under 35 deg. SITL logs the IMU and flow at about 7-8 Hz under speedup; use `--window 1.5` there.
 
+**Finding `FLOW_HGT_MIN`, the sensor's focus height.** Flow quality does not show it: on the TD25 sensor quality was flat from 0.1 m to 2.5 m (indoors median 47-58, outdoors 130-150), set by the light and the surface. What fails below the focus height is accuracy, and normal flights spend too little time low, level and moving sideways to measure it. A hand-carried test does, props off and `LOG_DISARMED` 1: hold the vehicle level over the floor it flies on, in its usual light, and slide it briskly back and forth (strokes of 0.5-1 m, forward/back then sideways) for about 15 s at each of 5, 10, 15, 20, 30 and 50 cm on the range finder, pausing still between heights. Then
+
+```bash
+python3 .claude/skills/log-analyze/flow_imu_check.py --disarmed --min-range 0.02 <log.bin>
+```
+
+and read the height rows: `FLOW_HGT_MIN` is the lowest band where flow against the IMU still reads correlation about 0.7 or more with a slope near 1, with some margin. Below it the flow is discarded in flight (and fused as zero at rest), so it must sit below the lowest height the vehicle is meant to fly on flow; a focus height above that is a sensor or mounting problem, not a parameter to raise. If every band reads low, the light or the surface is the limit, not the height - repeat in good light to separate the two.
+
 ## Did the autopilot die, or did the vehicle? (`log_health.py`)
 
 When a log **stops mid-flight**, the first question is whether the flight controller failed
