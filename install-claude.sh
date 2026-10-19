@@ -180,12 +180,13 @@ chmod +x .claude/skills/autotest/autotest_results.py .claude/skills/autotest/run
 
 # log-analyze skill (has additional Python tools)
 mkdir -p .claude/skills/log-analyze
-for file in SKILL.md log_extract.py flow_cal_check.py log_health.py thrust_check.py \
+for file in SKILL.md log_extract.py flow_cal_check.py flow_imu_check.py log_health.py thrust_check.py \
             gyro_fft.py rate_response.py filter_phase.py baro_thst_cal.py rate_band.py batch_fft.py \
             baro_health.py replay_sweep.py; do
     install_file "$SKILLS_URL/log-analyze/$file" ".claude/skills/log-analyze/$file"
 done
 chmod +x .claude/skills/log-analyze/log_extract.py .claude/skills/log-analyze/flow_cal_check.py \
+    .claude/skills/log-analyze/flow_imu_check.py \
     .claude/skills/log-analyze/log_health.py .claude/skills/log-analyze/thrust_check.py \
     .claude/skills/log-analyze/gyro_fft.py .claude/skills/log-analyze/rate_response.py \
     .claude/skills/log-analyze/filter_phase.py .claude/skills/log-analyze/baro_thst_cal.py \

@@ -83,6 +83,7 @@ The install script places the following files:
 | `.claude/skills/*/SKILL.md` | Slash command skills (see table below) |
 | `.claude/skills/log-analyze/log_extract.py` | Log extraction tool used by `/log-analyze` |
 | `.claude/skills/log-analyze/flow_cal_check.py` | Verifies optical-flow scale/orientation against GPS truth (per-axis scaler check) used by `/log-analyze` |
+| `.claude/skills/log-analyze/flow_imu_check.py` | Does the optical flow measure motion? Flow against the integrated IMU over short windows, no GPS needed, by flow quality and height, used by `/log-analyze` |
 | `.claude/skills/log-analyze/log_health.py` | Memory, stacks, internal errors, log-buffer and end-of-log sweep -- did the autopilot die or the vehicle? used by `/log-analyze` |
 | `.claude/skills/log-analyze/thrust_check.py` | Measured throttle-to-thrust map against the vehicle's own calibration, mixer-clip filtered, used by `/log-analyze` |
 | `.claude/skills/log-analyze/gyro_fft.py` | Pre- against post-filter gyro spectra, per-band attenuation and notch coverage -- is the filtering working? used by `/log-analyze` |

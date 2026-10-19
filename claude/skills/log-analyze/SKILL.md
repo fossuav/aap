@@ -47,6 +47,28 @@ Key interpretation rules (these are why the helper exists - each was a real misd
 - A scale calibration that "keeps the same values" can mean the flight was **one-directional in the body frame** - yawing the nose to face the direction of travel puts ground left/right onto the forward axis. Strafe (hold heading, translate sideways at >1.5 m/s) to exercise the X axis.
 - Comparing the *EKF velocity* (`XKF1.VN/VE`) to GPS overstates the scale error vs the raw flow because of EKF filtering; this helper's body-axis `flow/ideal` is the honest number.
 
+## Does the flow measure motion? (`flow_imu_check.py`)
+
+```bash
+python3 .claude/skills/log-analyze/flow_imu_check.py <log.bin> [--window 0.5] [--lag-quality Q] [--lag-max-ms 300] [--lag-trace]
+```
+
+Needs no GPS, so it answers the question an indoor flight raises: is the flow measuring the vehicle's motion, or is the EKF navigating on noise? Over short windows it compares the velocity change the flow implies with the velocity change the accelerometers integrate to. Integration drifts, but not over half a second: a 0.1 m/s/s accel bias is 0.05 m/s there.
+
+- Flow side: compensated flow (`bodyRate - flowRate`, as the EKF fuses it) times the raw range finder's slant range gives two body-frame velocity components, averaged over +-0.1 s; with the EKF's vertical velocity they solve for north and east. Single raw samples are too noisy to difference - without the averaging the same log read correlation 0.02 where it reads 0.84.
+- IMU side: `R*(acc - bias) + g` integrated over the window, with the EKF's attitude (`XKQ`, else `ATT`) and accel bias (`XKF2`).
+
+It prints slope, correlation and rms error of flow dV against IMU dV, pooled over north and east, by flow quality, height and quality-latch state, with the flow's lag behind the IMU scanned. With GPS in the log it adds GPS dV against the IMU, which validates the reference itself, and flow against GPS.
+
+Reading it:
+
+- **Flow that measures motion reads slope near 1 and correlation well above 0.5.** SITL flow: 1.00 / 0.99. The SFD-O4 flow sensor outdoors: 0.6-0.97 at its quality 100-255. GPS against the IMU on the same logs: 0.92-0.98 wherever the vehicle moved enough to measure.
+- **Read the quality rows to find the sensor's own threshold; quality scales are not shared.** The TD25 MAVLink flow sensor (MicoAir743v2) tracked the IMU at 0.72-0.94 at quality 60 and above, about 0.5 at 50-59 and not at all (about 0.1) below 50. That is what `EK3_FLOW_QMIN` should be set from, and it is why its latch was right on the 16 October flights: most of both flew below 50.
+- **The EKF row is a control, not a verdict.** The EKF's velocity follows the IMU by construction. When it reads a slope near 1.1, the logged IMU (filtered and decimated) is attenuating dynamic acceleration; divide the flow slope by it before calling the flow scale wrong.
+- **Too little motion means nothing to judge.** When the IMU dV rms is below about 0.1 m/s (a steady hover), every correlation drops, flow's included.
+- **The lag scan is broad.** With 0.5 s windows the correlation plateaus over about 100 ms. Use `--window 0.25 --lag-quality <a quality the sensor is good at> --lag-trace` to see the shape, and treat the peak as indicative. TD25's MAVLink flow peaked at 80-180 ms, against `EK3_FLOW_DELAY` 30; SFD-O4's at 40-80 ms.
+- Windows need a good range above 0.3 m and tilt under 35 deg. SITL logs the IMU and flow at about 7-8 Hz under speedup; use `--window 1.5` there.
+
 ## Did the autopilot die, or did the vehicle? (`log_health.py`)
 
 When a log **stops mid-flight**, the first question is whether the flight controller failed
