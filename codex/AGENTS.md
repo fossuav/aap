@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.45
+**Playbook version:** 1.3.46
 
 ## Available Skills
 
@@ -292,7 +292,7 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **Libraries Carry No Vehicle-Specific Code; the Vehicle Moderates Them** (ARCH-17, confirmed 2026-10-16):
 - A library serves every vehicle, including ones that do not use a feature today but may tomorrow, and a library with vehicle-specific code has to be built once per vehicle, which slows every multi-vehicle build. So a library never tests at run time which vehicle it is in: behaviour that differs by vehicle lives in the vehicle's code, which moderates the library through a mechanism the library offers - a setter, an option, or a generic signal the vehicle sets for itself (`get_fly_forward()`, `takeoff_expected()`).
-- Compiling part of a library out of one vehicle's build (`APM_BUILD_TYPE`) is the exception: only for something that could never make sense on that vehicle, only where strictly necessary, and the PR says why and what Replay, built as its own vehicle type, then does with that vehicle's logs. #34292 compiled a landing floor out of Rover, which never lands, rather than take a runtime vehicle-class test.
+- Compiling part of a library out of one vehicle's build (`APM_BUILD_TYPE`) is the exception: only for something that could never make sense on that vehicle, only where strictly necessary, and the PR says why. Replay is built as its own vehicle type, so it still runs that code on the vehicle's logs; there, and only there, the code follows the logged vehicle class (`dal.get_vehicle_class()` under `APM_BUILD_TYPE(APM_BUILD_Replay)`), since Replay's job is to reproduce the build that made the log. #34292 compiled a landing floor out of Rover, which never lands, rather than take a runtime vehicle-class test, and gates the floor on the logged class in Replay, which then replays Rover logs exactly.
 
 **Use the Weakest Spatial Reference the Job Needs, and Name the One You Use** (ARCH-16, confirmed 2026-10-16):
 - A position is relative to the EKF origin (NED from the AHRS) and needs no absolute reference: a flow-only copter has one with no GPS and no origin. A location is latitude, longitude and altitude; converting between the two needs the EKF origin (`Location::get_vector_from_origin_NEU()` asks the AHRS for it), and an absolute location needs an absolute source such as GPS. The EKF origin is the frame positions are measured in: once valid its horizontal position never moves, and its altitude is re-referenced only by a height datum reset on the ground (#32768 works towards making the origin fully immutable). Home is where the vehicle returns to, and it can move: a GCS can set it at any time, and Plane moves it while disarmed.

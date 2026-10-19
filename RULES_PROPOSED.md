@@ -93,6 +93,14 @@ Status:  proposed 2026-10-16 from the user's position on #34543; needs
 
 ## Confirmed
 
+- **ARCH-17 refined** 2026-10-18 from the user: Replay, built as its own
+  vehicle type, may follow the logged vehicle class (`dal.get_vehicle_class()`,
+  compiled only under `APM_BUILD_Replay`) so that code compiled out of a
+  vehicle's build replays that vehicle's logs as it ran them. Prompted by
+  AP-Review on #34292: Replay built the focus floor and fused zero flow on
+  Rover logs; with the Replay-only gate SITL Rover logs replay exactly (worst
+  speed difference 0.000 m/s, from 0.48 m/s). The bot's suggested runtime
+  class test in the vehicle build stays ruled out (1.7.48).
 - **ARCH-16** "Use the weakest spatial reference the job needs, and name
   the one you use" - confirmed 2026-10-16 on its second draft (the user's
   Copter/Plane and position/location points, checked against the code),
