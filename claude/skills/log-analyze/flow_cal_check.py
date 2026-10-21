@@ -16,7 +16,12 @@ its own gyro by the same factor. That is invisible to the onboard FlowCal (which
 fits flow against the sensor's own gyro) and to a flowX-vs-bodyX eyeball check, and
 a FLOW_*SCALER cannot fix it (the scaler scales flowRate but not bodyRate). The IMU
 is the only external witness, so when the sensor/IMU gyro slope is not ~1.0 the
-scaler suggestion is suppressed.
+scaler suggestion is suppressed. The node reports its gyro averaged over each flow
+frame, so the IMU reference is the batch sampler's gyro (ISBH/ISBD, at the sensor
+rate) averaged over the same frame where the log has it. An IMU message logged
+slower than the flow cannot follow the motion within a frame and reads the node
+low: SFD-O4 logs at 25 Hz read 0.62-0.81 against 0.94-0.99 from the batches, so
+from that alone no wrong-rate verdict is given.
 
 That cross-check needs the sensor's own gyro. Several drivers log the flight
 controller's gyro as the body rate instead (FC_GYRO_TYPES below), where it would
@@ -28,7 +33,8 @@ judged, since the translation that follows each tilt inflates the slope. A log
 that never arms is taken as a hand-rocking test, which also gives the scale.
 
 Requires a flight with GPS (outdoors), flow logged (OF or ROFH), ATT and RFND or
-XKFA (XKF6 on older SmallFastDrone logs). The IMU gyro check additionally needs the IMU message.
+XKFA (XKF6 on older SmallFastDrone logs). The IMU gyro check additionally needs
+INS_LOG_BAT_MASK batches, or the IMU message logged faster than the flow.
 Flow may be the nav source or not; GPS is used only as the truth reference.
 
 Flow model (matches AP_NavEKF3 FuseOptFlow):
@@ -109,22 +115,67 @@ def sensor_rate_slope(srate, imu):
     return out
 
 
-def report_sensor_rate(srate, imu, cur_ratef):
+def batch_rate_slope(srate, batches):
+    # As sensor_rate_slope, against the batch sampler's gyro averaged over each
+    # flow frame (from the previous flow sample to this one). batches holds
+    # (t_first, rate_hz, cumulative x, cumulative y) per gyro block.
+    out = {}
+    st = [s[0] for s in srate]
+    for axis, col, ci in (("X", 1, 2), ("Y", 2, 3)):
+        xs, ys = [], []
+        for b in batches:
+            tf, rate, c = b[0], b[1], b[ci]
+            tl = tf + (len(c) - 1) / rate
+            for k in range(max(bisect.bisect_left(st, tf), 1), bisect.bisect_right(st, tl)):
+                ia = int((st[k - 1] - tf) * rate)
+                ib = int((st[k] - tf) * rate)
+                if st[k] - st[k - 1] > 0.05 or ia < 0 or ib <= ia:
+                    continue
+                g = (c[ib] - c[ia]) / (ib - ia)
+                if abs(g) < 0.15:   # rotation only
+                    continue
+                xs.append(g)
+                ys.append(srate[k][col])
+        out[axis] = fit_through_origin(xs, ys) + (len(xs),) if len(xs) >= 30 else None
+    return out
+
+
+def log_rate(series):
+    if len(series) < 2 or series[-1][0] <= series[0][0]:
+        return 0.0
+    return (len(series) - 1) / (series[-1][0] - series[0][0])
+
+
+def report_sensor_rate(srate, imu, cur_ratef, batches=(), srate_us=None):
     # Prints the sensor-rate verdict and returns True when the node clocks its
     # output at the right rate. Needs no truth reference - only the flow node's
     # own gyro and the FC IMU - so it is valid on a GPS-less indoor flight.
-    srs = sensor_rate_slope(srate, imu) if (srate and imu) else {}
+    # srate_us is the node gyro timed by TimeUS (OF), for pairing with the batches.
+    srs = batch_rate_slope(srate_us or srate, batches) if batches and (srate_us or srate) else {}
+    ref = "FC gyro from the batch sampler, averaged over each flow frame"
+    slow = False
+    if not any(srs.values()):
+        srs = sensor_rate_slope(srate, imu) if (srate and imu) else {}
+        imu_hz, flow_hz = log_rate(imu), log_rate(srate)
+        ref = "FC IMU message at %.0f Hz" % imu_hz
+        slow = imu_hz < 2 * flow_hz
     have = [srs[a] for a in ("X", "Y") if srs.get(a)]
     if not have:
         print("Sensor-rate check: no IMU + flow gyro pair logged - cannot verify\n")
         return True
     mag = sum(abs(s[0]) for s in have) / len(have)
     ok = 0.85 <= mag <= 1.18
-    print("Sensor-rate check (flow node gyro vs FC IMU, during rotation):")
+    print("Sensor-rate check (flow node gyro vs %s, during rotation):" % ref)
     for a in ("X", "Y"):
         if srs.get(a):
             sl, co, nn = srs[a]
             print("  %s: sensor/IMU slope=%+.2f corr=%+.2f n=%d" % (a, sl, co, nn))
+    if not ok and slow:
+        print("  slope != 1.0, but the IMU is logged too slowly to follow the motion within a flow")
+        print("  frame, which reads the node low on its own. Not evidence of a wrong rate: set")
+        print("  INS_LOG_BAT_MASK for full-rate gyro batches, or check the scale against GPS below.")
+        print("")
+        return True
     if not ok:
         print("  *** slope != 1.0: the flow node is reporting at the WRONG RATE ***")
         print("  *** flow AND its gyro are scaled by ~%.2fx together - a FLOW_*SCALER" % mag)
@@ -306,12 +357,14 @@ def main():
     rfnd = []   # (t, dist)
     aglkf = []  # (t, hagl)  XKFA (or older XKF6) AGL Kalman filter, core 0, valid
     imu = []    # (t, gx, gy)  flight-controller IMU gyro, instance 0
+    of_us = []  # (t, bx, by)  OF body rate timed by its TimeUS, in the batch sampler's time base
+    blocks = {}  # ISBH.N -> [t_first, rate, multiplier, xs, ys]  gyro batch blocks
     arm = []    # (t, armed)  EV ARMED/DISARMED
     cur = {"FLOW_FXSCALER": 0.0, "FLOW_FYSCALER": 0.0, "FLOW_HF_RATEF": 1.0,
            "RNGFND1_MAX": 0.0, "FLOW_TYPE": -1.0}
     while True:
-        msg = m.recv_match(type=["ROFH", "OF", "GPS", "ATT", "RFND", "XKF6", "XKFA", "IMU", "PARM", "EV"],
-                           blocking=False)
+        msg = m.recv_match(type=["ROFH", "OF", "GPS", "ATT", "RFND", "XKF6", "XKFA", "IMU", "PARM", "EV",
+                                 "ISBH", "ISBD"], blocking=False)
         if msg is None:
             break
         ty = msg.get_type()
@@ -329,6 +382,16 @@ def main():
             of.append((t, msg.bodyX - msg.flowX, msg.bodyY - msg.flowY, msg.Qual))
             of_g.append((t, msg.bodyX, msg.bodyY))
             of_raw.append((t, msg.flowX, msg.flowY, msg.bodyX, msg.bodyY))
+            of_us.append((msg.TimeUS * 1e-6, msg.bodyX, msg.bodyY))
+        elif ty == "ISBH":
+            # every gyro block counts, pre- or post-filter (instance N..2N-1), on any IMU
+            if msg.type == 1 and msg.mul > 0 and msg.smp_rate > 0:
+                blocks[msg.N] = [msg.SampleUS * 1e-6, msg.smp_rate, msg.mul, [], []]
+        elif ty == "ISBD":
+            b = blocks.get(msg.N)
+            if b is not None:
+                b[3].extend(v / b[2] for v in msg.x)
+                b[4].extend(v / b[2] for v in msg.y)
         elif ty == "GPS" and getattr(msg, "Status", 3) >= 3:
             c = math.radians(msg.GCrs)
             gps.append((t, msg.Spd * math.cos(c), msg.Spd * math.sin(c),
@@ -401,7 +464,16 @@ def main():
         hand_log = not arm
         sensor_rate_ok = report_flow_rotation(raw, rfnd, armed_at, hand_log, flow_type, cur)
     else:
-        sensor_rate_ok = report_sensor_rate(srate, imu, cur["FLOW_HF_RATEF"])
+        batches = []
+        for tf, rate, _, xs, ys in blocks.values():
+            if len(xs) < 100:
+                continue
+            cx, cy = [0.0], [0.0]
+            for x, y in zip(xs, ys):
+                cx.append(cx[-1] + x)
+                cy.append(cy[-1] + y)
+            batches.append((tf, rate, cx, cy))
+        sensor_rate_ok = report_sensor_rate(srate, imu, cur["FLOW_HF_RATEF"], batches, of_us)
 
     if not flow or not gps or not att or not rng:
         print("Scale check needs GPS truth: flow=%d gps=%d att=%d rng(%s)=%d" %
