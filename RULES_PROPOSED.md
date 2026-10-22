@@ -91,6 +91,27 @@ Check:   the caller uses the layer's interface; anything backend-specific
 Status:  proposed 2026-10-16 from the user's position on #34543; needs
          confirmation of the wording.
 
+### ARCH-20: A flag a mode holds true must still be true when the mode ends
+
+Where a validity flag is held true by a mode rather than by its own evidence,
+the evidence it would otherwise need is not refreshed for as long as the mode
+runs. When the mode ends the flag falls back on that evidence, now stale, and
+drops in the same cycle, taking everything that depends on it. Either keep the
+evidence current while the mode holds the flag, or hand over fresh evidence as
+the mode ends.
+
+Example: SFD-O4 log54 (2026-10-22). EKF3's `gndOffsetValid` is `ground
+         measured within 5 s || range finder is the height source`; the
+         terrain estimator does not run on range finder height, so after a
+         low hover its timestamp was 55 s old. At touchdown the range went out
+         of range low, the height source fell back to baro, and the ground
+         offset, the flow lane's relative position and then the EKF failsafe
+         all went in turn. Confirmed by Replay.
+Check:   for each `evidence || mode` validity, what the evidence reads at the
+         moment the mode ends, and whether anything kept it current while
+         the mode ran.
+Status:  proposed 2026-10-22 from log54; needs confirmation of the wording.
+
 ## Confirmed
 
 - **ARCH-17 refined** 2026-10-18 from the user: Replay, built as its own
