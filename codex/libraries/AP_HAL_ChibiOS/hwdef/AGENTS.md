@@ -518,8 +518,8 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   `define HAL_I2C_INTERNAL_MASK 0`.
     *   **Deprecated defines (do NOT use):**
         *   `HAL_PROBE_EXTERNAL_I2C_COMPASSES` → use `AP_COMPASS_PROBING_ENABLED 1` instead.
-        *   `HAL_COMPASS_DISABLE_IST8310_INTERNAL_PROBE` → use `AP_COMPASS_IST8310_INTERNAL_BUS_PROBING_ENABLED 0` instead (but note: this disables ALL IST8310 probing on internal buses, including explicit `COMPASS` lines. If you have an explicit `COMPASS IST8310 ...` line with the correct rotation, you may not need to disable internal probing at all).
-        *   `HAL_COMPASS_DISABLE_RM3100_INTERNAL_PROBE` → use `AP_COMPASS_RM3100_INTERNAL_BUS_PROBING_ENABLED 0` instead (same caveat as above).
+        *   `HAL_COMPASS_DISABLE_IST8310_INTERNAL_PROBE` → use `AP_COMPASS_IST8310_INTERNAL_BUS_PROBING_ENABLED 0` instead. This only stops the generic probe sweep (`AP_COMPASS_PROBING_ENABLED`, `Compass::_probe_external_i2c_compasses()`) from trying the IST8310 addresses on internal buses. Explicit `COMPASS IST8310 ...` lines go through `HAL_MAG_PROBE_LIST` and are probed regardless, so a board that declares its internal IST8310 with a `COMPASS` line and sets this to 0 is correct: the sweep leaves that chip alone instead of trying it again with the sweep's default rotation. Reviewers: do not report such a board as having no internal compass.
+        *   `HAL_COMPASS_DISABLE_RM3100_INTERNAL_PROBE` → use `AP_COMPASS_RM3100_INTERNAL_BUS_PROBING_ENABLED 0` instead. Same scope as the IST8310 flag: it gates only the generic sweep on internal buses, never an explicit `COMPASS RM3100 ...` line.
 *   **IMU:**
     *   `IMU <Driver> SPI:<name> <Rotation>`
     *   Example: `IMU Invensensev3 SPI:imu1 ROTATION_YAW_270`.
