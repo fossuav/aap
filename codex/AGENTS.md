@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.47
+**Playbook version:** 1.3.48
 
 ## Available Skills
 
