@@ -112,6 +112,31 @@ Check:   for each `evidence || mode` validity, what the evidence reads at the
          the mode ran.
 Status:  proposed 2026-10-22 from log54; needs confirmation of the wording.
 
+### ARCH-21: A state kept out of a filter update keeps its covariance consistent
+
+When a fusion stops one state learning from an observation, usually by
+zeroing that state's Kalman gain, the covariance update has to match the
+gain actually applied. The short form `P = P - K*H*P` holds only for the
+optimal gain: with an entry of K forced to zero it corrects that state's
+column but not its row, symmetrising afterwards keeps half the correction,
+and the matrix can stop being positive definite. The filter's guard against
+negative variances then skips later fusions that touch the state, with no
+fault raised, so a sensor stops being used while the filter still reports
+it healthy. Update the masked state's covariance in Joseph form (its row
+takes its column's correction), or decorrelate the state before the gain is
+computed, as EKF3 does for states it inhibits outright.
+
+Example: SFD TD25, 2026-10-29. #33498 masks the Z gyro bias out of optical
+         flow fusion while no yaw is fused. On a hand launch the first flow
+         fusion broke positive definiteness; EKF3 then refused 222 of 225
+         baro height fusions, its height variance grew to 860 m^2, and VALT
+         climbed while the estimate read 1.5 m/s down. Replay with a
+         Joseph-consistent update kept every fusion.
+Check:   for every mask on a Kalman gain, how the covariance is updated for
+         the masked states, and whether a test or Replay shows the matrix
+         stays positive definite through it.
+Status:  proposed 2026-10-29 from TD25; needs confirmation of the wording.
+
 ## Confirmed
 
 - **ARCH-17 refined** 2026-10-18 from the user: Replay, built as its own
