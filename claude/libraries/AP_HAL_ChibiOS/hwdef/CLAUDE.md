@@ -47,6 +47,10 @@ The auto-generated file is **always** incomplete and requires manual verificatio
     *   Betaflight scales often need conversion.
 *   **GPIOs:**
     *   Identify GPIOs for VTX power, Camera switching, etc., and map them to `GPIO(n)` or `RELAY`.
+*   **Betaflight settings that do not read the way they look:**
+    *   `PINIOn_CONFIG 129` is a push-pull output, inverted: the pin idles **high** while its box is off (`PINIOn_CONFIG 1` idles low). A box named "... OFF" ("12V BEC OFF", "LIGHT OFF") means driving the pin low turns that rail off, so the hwdef pin is `OUTPUT HIGH`, in `hwdef-bl.dat` too. #34844 drove such a pin low and switched its 12V BEC off at boot.
+    *   `BEEPER_INVERTED` means the pin goes high to sound, i.e. an active-high buzzer, which is ArduPilot's default (`NTF_BUZZ_ON_LVL` 1). It needs no define.
+    *   `USE_BARO_*`, `USE_GYRO_*` and `USE_ACCGYRO_*` list the drivers compiled into the target, not the parts on the board. Probe only what is fitted (§7.4), and ask about an extra `USE_ACCGYRO_*`: it usually marks an alternative IMU population (`USE_ACCGYRO_LSM6DSK320X` is driven by `IMU LSM6DSV`).
 
 ### 3.3. Schematic-Driven Generation
 When a vendor schematic (PDF or Image) is provided, the AI must perform a structured extraction:
@@ -446,6 +450,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 
 ### 7.2. MCU & System
 *   **H7:** `MCU STM32H7xx STM32H743xx`, `FLASH_RESERVE_START_KB 128`.
+    *   **Storage goes with the reserve.** On 128 KB-sector H7s, pair `FLASH_RESERVE_START_KB 128` with `STORAGE_FLASH_PAGE 14` (storage in the last two sectors), or `FLASH_RESERVE_START_KB 384` with `STORAGE_FLASH_PAGE 1` (storage in sectors 1-2). Never 384 with page 14: sectors 1-2 then sit unused and the app loses 256 KB, and the bootloader built from it takes `FLASH_RESERVE_END_KB` from the storage page and refuses the larger firmware. Get it right before release; moving storage later wipes users' parameters.
 *   **F7:** `MCU STM32F7xx STM32F745xx`, `FLASH_RESERVE_START_KB 96`.
 *   **F4:** `MCU STM32F4xx STM32F405xx`, `FLASH_RESERVE_START_KB 48`.
 
@@ -473,6 +478,7 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
     *   **Pixhawk-family convention.** `SERIALn` index follows the *physical port label* on the board (`TELEM1`, `TELEM2`, `GPS1`, `FrSky`, etc.), not the underlying UART. The remapping is intentional and is the established pattern across Pixhawk6X, CubeOrange, fmuv5, and similar designs (e.g. `SERIAL_ORDER OTG1 UART7 UART5 USART1 UART8 USART2 UART4 USART3 OTG2`). Use this when the README labels ports by function ("Telem1", "GPS", "FrSky") rather than by UART number.
     *   **The convention must match the README.** The failure mode this rule prevents is mixing the two — e.g. labelling a port "TX3" in the README while it's actually USART2, or using natural ordering while the silkscreen says "TELEM1/TELEM2/GPS". If the README uses Pixhawk-style port names, a non-natural `SERIAL_ORDER` is correct and expected; do not "fix" it.
     *   **`DEFAULT_SERIALn_PROTOCOL` — only set it when the desired protocol differs from the in-code default for that index.** `libraries/AP_SerialManager/AP_SerialManager.cpp` already supplies defaults: `SERIAL0/1/2 → MAVLink2`, `SERIAL3/4 → GPS`, `SERIAL5+ → None`. A board that wants `SERIAL1 = MAVLink2` (Telem1) and `SERIAL3 = GPS` should **not** set those — they're already correct. Conversely, if the README labels `SERIAL4` as "FrSky" or `SERIAL1` as "GPS2", you **must** set the matching `define DEFAULT_SERIAL4_PROTOCOL …` / `DEFAULT_SERIAL1_PROTOCOL …` so the board ships in the documented state. *Reviewers: don't blanket-flag a missing `DEFAULT_SERIALn_PROTOCOL`; only flag entries where the README's claimed role contradicts the in-code default.*
+    *   **Count `n` from `SERIAL_ORDER`, not from the UART number.** Under a non-natural order the two differ, and a define for a SERIALn past the end of the order, or on an `EMPTY` slot, sets nothing. #34844 put `DEFAULT_SERIAL7_PROTOCOL` under its UART7 comment, where SERIAL7 was UART8, and set `DEFAULT_SERIAL8_PROTOCOL` on a board whose order stopped at SERIAL7.
     *   Use `NODMA` for low-bandwidth ports (e.g., GPS, generic UARTs) if DMA channels are scarce.
     *   **RC Input:** Typically `SerialProtocol_RCIN`.
     *   **ESC Telemetry:** `SerialProtocol_ESCTelemetry`.
@@ -508,11 +514,13 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   **PWM/Motors:**
     *   Use `BIDIR` for DShot capability.
     *   Group timers carefully (comments like `# Motors` vs `# LEDs` help).
-    *   Disable DMA (`NODMA`) on LED strips or aux outputs if needed.
+    *   **`NODMA` on PWM pins:** a timer keeps its UP DMA unless *every* PWM pin on it is `NODMA`, and both DShot and LED strips need that DMA; without it the group falls back to PWM ("failed, no DMA" in `RCOutput.cpp`). So `NODMA` suits servo-only timers, never an LED strip or a motor timer. When an LED or motor timer is left without a stream (`can't be resolved for DMA` in `hwdef.h`), free one with `NODMA` on slow UARTs instead.
     *   **PWM-only outputs:** If a timer is used as the system timer (e.g., TIM2 or TIM5 via `STM32_ST_USE_TIMER`), its PWM outputs cannot use DShot and should be marked `NODMA` to free DMA channels for other peripherals.
 
 ### 7.4. Sensors
 *   **Baro:** `BARO DPS310 I2C:0:0x76` (Driver Bus:Instance:Addr).
+    *   List the part that is fitted, not every driver the Betaflight target compiles. Probing several drivers at both addresses can hand the chip to the wrong one: the DPS310 driver (`AP_Baro_DPS280`) accepts product ID 0x10, which is also the SPL06-001's chip ID, so an SPL06 needs its own `BARO SPL06 ...` line.
+    *   The DPS310 driver's enable define is `AP_BARO_DPS280_ENABLED`; `AP_BARO_DPS310_ENABLED` does not exist.
 *   **Compass:**
     *   If none internal: `define ALLOW_ARM_NO_COMPASS`, `define AP_COMPASS_PROBING_ENABLED 1`.
     *   `define HAL_I2C_INTERNAL_MASK 0`.
@@ -562,6 +570,8 @@ ArduPilot requires separate commits for each subsystem. The commit message prefi
 *   `HAL_CHIBIOS_ARCH_<BoardName>` — **only `HAL_CHIBIOS_ARCH_FMUV3` and `HAL_CHIBIOS_ARCH_FMUV6` are consumed by code** (`libraries/AP_BoardConfig/board_drivers.cpp`, for Pixhawk1-era IMU probing). Any other variant (e.g. `HAL_CHIBIOS_ARCH_<MyBoard>`) is dead: nothing reads it, and it just bloats every binary the board produces. Do not add it; remove it from existing boards if you touch them.
 
 **Dead defines vs. inconsistent defines.** If a define appears in both `hwdef.dat` and `hwdef-bl.dat` with different spellings (e.g. `HAL_CHIBIOS_ARCH_FOO` vs `HAL_CHIBIOS_ARCH_FOO_REV2`), check whether *anything outside the board's own hwdef tree* reads it (`grep -r <NAME> libraries/ Tools/`). If the answer is zero hits, **delete both** rather than aligning the spelling — the spelling doesn't matter because nothing reads it. Only recommend "make them consistent" when the define is actually consumed somewhere.
+
+**Defines nothing reads.** A `define` whose name appears in no source file has no effect, and the board silently behaves as if it were absent. Such defines are usually a missing `_DEFAULT` suffix (`HAL_FRAME_TYPE`, `HAL_BATT_MONITOR`, `RELAY2_PIN` are all in tree), a wrong driver name, or a plausible invention from a Betaflight port (`HAL_BUZZER_ACTIVE_LOW`, `HAL_PINIO_COUNT`). Grep for the name before adding it; `/hwdef-check` flags any it finds.
 
 **General rule:** Before adding a `define`, check if it's already the default in:
 *   `libraries/AP_HAL/board/chibios.h`
@@ -927,7 +937,7 @@ DMA channel allocation is dynamic. To verify all critical peripherals got a DMA 
 1.  Run `./waf configure --board <BoardName>`.
 2.  Open the generated header: `build/<BoardName>/hwdef.h`.
 3.  Search for the string `//` (comments) next to line definitions or `HAL_..._DMA_STREAM`.
-4.  Look for warnings like `// No DMA stream found` or `// SHARED`.
+4.  Look for the resolver's note `// Note: The following peripherals can't be resolved for DMA: [...]`, its only report of a peripheral it found no stream for, and for `// shared` on the stream defines. `NODMA`-tagged peripherals are never requested, so they do not appear in the note.
 
 ### 13.3. F4/F7 MCU Specifics
 F4 and F7 MCUs have rigid DMA maps compared to the flexible DMAMUX on H7. Conflicts are common.
