@@ -70,8 +70,8 @@ If the user's `origin` doesn't point at the PR's target repo (typical when `orig
 - runs static hwdef.dat checks (32-bit system timer, default-vs-PWM conflict, bootloader timer disagreement, redundant defines, defines nothing reads, `DEFAULT_SERIALn_PROTOCOL` for a port SERIAL_ORDER does not have, `defaults.parm` `SERVOn_FUNCTION` on a missing output or an LED timer with no DMA, H7 384 KB reserve with end-of-flash storage, SERIAL_ORDER natural order, CS/DRDY pin labels, hi-res IMU sampling, BIDIR placement, H7 bi-directional DShot expectation)
 - resolves `include` directives, so variant targets (`-bdshot`) and families keeping their content in a shared `hwdef.inc` are actually checked, and inherited bootloaders/board IDs are not reported as missing
 - runs `./waf configure --board <Board>` (slow — ~30-60s; submodules are already in place from the parent checkout)
-- parses `build/<Board>/hwdef.h` for `NO DMA` and `SHARED` annotations
-- checks commit structure (expects separate `AP_Bootloader:`, `bootloaders:`, `hwdef:` commits)
+- parses `build/<Board>/hwdef.h` for peripherals the DMA resolver left without a stream (its `can't be resolved for DMA` note) and for shared streams
+- checks commit structure (expects separate `AP_Bootloader:`, `bootloaders:`, `hwdef:` commits; no `AP_Bootloader:` when the board ID is already on the base branch, no `bootloaders:` for a PR of variants)
 
 Capture the helper's output verbatim — it goes into the comment under "Must-fix / Should-fix" as needed.
 

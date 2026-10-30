@@ -804,21 +804,60 @@ def check_hwdef_patterns(board):
     return issues
 
 
-def check_commits(base, board=None):
+def board_id_on_base(base, token):
+    """True if board_types.txt on `base` already has this APJ_BOARD_ID."""
+    proc = run(["git", "show", f"{base}:{BOARD_TYPES}"])
+    if proc.returncode != 0:
+        return False
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and (parts[0] == token or (token.isdigit() and parts[1] == token)):
+            return True
+    return False
+
+
+def required_commit_prefixes(base, boards):
+    """Commit prefixes a PR adding `boards` should carry.
+
+    The `AP_Bootloader:` commit only registers the board ID, so it is not
+    expected when every ID is already on `base` (reserved ahead of the board,
+    as for #34826 and #34831) or inherited from a parent. A variant reuses its
+    parent's bootloader, so a PR of variants alone needs no `bootloaders:`.
+    """
+    required = list(REQUIRED_COMMIT_PREFIXES)
+    if not boards:
+        return required
+    if all(variant_parent(b) for b in boards):
+        required.remove("bootloaders")
+    ids_on_base = True
+    for b in boards:
+        m = re.search(r"^APJ_BOARD_ID\s+(\S+)",
+                      resolve_hwdef(HWDEF_DIR / b / "hwdef.dat"), re.MULTILINE)
+        if m:
+            ids_on_base &= board_id_on_base(base, m.group(1))
+        else:
+            ids_on_base &= variant_parent(b) is not None
+    if ids_on_base:
+        required.remove("AP_Bootloader")
+    return required
+
+
+def check_commits(base, boards=None):
     out = git("log", "--pretty=%s", f"{base}..HEAD")
-    subjects = [l for l in out.splitlines() if l.strip()]
+    subjects = [s for s in out.splitlines() if s.strip()]
     issues = []
     prefixes = []
     for s in subjects:
         m = re.match(r"^([A-Za-z][A-Za-z0-9_]*)\s*:", s)
         prefixes.append(m.group(1) if m else None)
 
+    required = required_commit_prefixes(base, boards)
     seen = {p for p in prefixes if p}
-    missing = [p for p in REQUIRED_COMMIT_PREFIXES if p not in seen]
+    missing = [p for p in required if p not in seen]
     if missing:
         issues.append(
             "Commit structure: a new-board PR is expected to ship as separate "
-            f"per-subsystem commits prefixed `{'`, `'.join(REQUIRED_COMMIT_PREFIXES)}` "
+            f"per-subsystem commits prefixed `{'`, `'.join(required)}` "
             f"(missing: `{'`, `'.join(missing)}`). Observed subjects: "
             + "; ".join(f"`{s}`" for s in subjects)
         )
@@ -834,32 +873,48 @@ def check_commits(base, board=None):
 
 # ---------- DMA parsing (post-configure) ----------
 
-DMA_NO_RE = re.compile(r"//.*\bNO\s*DMA\b", re.IGNORECASE)
 DMA_SHARE_RE = re.compile(r"//.*\bSHARED\b", re.IGNORECASE)
-# Lines listing peripheral DMA, e.g. "// USART1_RX  DMA1 stream 5  channel 4"
-DMA_LIST_RE = re.compile(r"//\s*([A-Z][A-Z0-9_]+(?:_(?:TX|RX))?)\s+(.*)$")
-
-CRITICAL_PERIPHS_RE = re.compile(
-    r"^(USART\d+_RX|UART\d+_RX|TIM\d+_(UP|CH\d+)|SDMMC\d+)$"
-)
+# dma_resolver.py's only report of a peripheral it found no stream for:
+# "// Note: The following peripherals can't be resolved for DMA: ['TIM4_UP']".
+# NODMA-tagged peripherals are never requested, so they do not appear here.
+DMA_UNRESOLVED_RE = re.compile(r"can't be resolved for DMA:\s*\[([^\]]*)\]")
 
 
 def parse_dma_section(hwdef_h):
-    """Extract the peripheral DMA comment block from build/<Board>/hwdef.h."""
+    """Return (unresolved, shared) from build/<Board>/hwdef.h.
+
+    `unresolved` lists the peripherals the DMA resolver asked for but could
+    not give a stream; `shared` holds the `#define` lines of shared streams.
+    """
     if not hwdef_h.exists():
         return None, [f"`{hwdef_h}` missing — was `./waf configure` run?"]
-    lines = hwdef_h.read_text(errors="replace").splitlines()
+    text = hwdef_h.read_text(errors="replace")
 
-    no_dma = []
+    unresolved = []
+    for m in DMA_UNRESOLVED_RE.finditer(text):
+        unresolved += re.findall(r"'([A-Za-z0-9_]+)'", m.group(1))
     shared = []
-    for i, line in enumerate(lines):
-        if DMA_NO_RE.search(line):
-            no_dma.append(line.strip())
-        elif DMA_SHARE_RE.search(line) and line.lstrip().startswith("#define"):
+    for line in text.splitlines():
+        if DMA_SHARE_RE.search(line) and line.lstrip().startswith("#define"):
             # Only #define lines are real allocations; the block header
             # "// Mask of DMA streams which are shared" is not an entry.
             shared.append(line.strip())
-    return (no_dma, shared), []
+    return (unresolved, shared), []
+
+
+def unresolved_dma_effect(periph):
+    """Say what losing DMA costs a peripheral, or None when it is usually fine."""
+    m = re.match(r"^TIM(\d+)_UP$", periph)
+    if m:
+        return (f"DShot and LED output on TIM{m.group(1)}'s PWM outputs fall back "
+                f"to PWM (\"failed, no DMA\" in RCOutput.cpp)")
+    if re.match(r"^TIM\d+_CH\d+$", periph):
+        return "bi-directional DShot input capture on that channel has no DMA"
+    if re.match(r"^U(?:S)?ART\d+_RX$", periph):
+        return "must not be RC input (CRSF/ELRS, SBUS) or a high-rate GPS"
+    if periph.startswith("SPI"):
+        return "check what is on that bus; an IMU needs DMA"
+    return None
 
 
 def check_dma(board):
@@ -867,27 +922,22 @@ def check_dma(board):
     parsed, errors = parse_dma_section(hwdef_h)
     if errors:
         return errors
-    no_dma, shared = parsed
+    unresolved, shared = parsed
 
     issues = []
-    if no_dma:
-        crit = [l for l in no_dma if any(
-            re.search(p, l) for p in (
-                r"\bUSART\d+_RX\b", r"\bUART\d+_RX\b",
-                r"\bSDMMC", r"\bTIM\d+_CH\d+\b",
-            )
-        )]
+    if unresolved:
+        crit = [(p, unresolved_dma_effect(p)) for p in unresolved
+                if unresolved_dma_effect(p)]
         if crit:
-            issues.append("Critical peripherals running without DMA — verify each is not RC input, GPS at high baud, HD VTX, SDMMC, or a DShot motor timer:")
-            for l in crit[:30]:
-                issues.append(f"  - {l}")
-        non_crit = [l for l in no_dma if l not in crit]
-        if non_crit:
-            issues.append(f"Additional peripherals without DMA ({len(non_crit)} — usually acceptable for telemetry / I2C / NODMA-tagged ports):")
-            for l in non_crit[:10]:
-                issues.append(f"  - {l}")
-            if len(non_crit) > 10:
-                issues.append(f"  ... and {len(non_crit) - 10} more")
+            issues.append("The DMA resolver found no stream for these (`can't be "
+                          "resolved for DMA` in hwdef.h). Free one with `NODMA` on a "
+                          "slow port or `DMA_PRIORITY`, and check the result:")
+            for p, why in crit:
+                issues.append(f"  - `{p}`: {why}")
+        rest = [p for p in unresolved if not unresolved_dma_effect(p)]
+        if rest:
+            issues.append("Also left without DMA, usually acceptable (UART TX, I2C, "
+                          "ADC): " + ", ".join(f"`{p}`" for p in rest))
     if shared:
         issues.append(f"Peripherals sharing DMA streams ({len(shared)}) — review for contention on time-critical paths:")
         for l in shared[:20]:
@@ -952,7 +1002,8 @@ def cmd_dma(args):
 
 
 def cmd_commits(args):
-    section("Commit structure", check_commits(args.base, args.board))
+    boards = [args.board] if args.board else detect_new_boards(args.base)
+    section("Commit structure", check_commits(args.base, boards))
 
 
 # ---------- in-place PR checkout state machine ----------
@@ -1113,7 +1164,7 @@ def cmd_all(args):
     print(f"Base: `{args.base}`")
     print()
 
-    section("Commit structure", check_commits(args.base))
+    section("Commit structure", check_commits(args.base, boards))
 
     for board in boards:
         print(f"## Board: `{board}`")
