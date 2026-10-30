@@ -70,7 +70,7 @@ If the user's `origin` doesn't point at the PR's target repo (typical when `orig
 - detects the new board(s) added in the PR
 - checks required files (hwdef.dat, hwdef-bl.dat, README.md, bootloader bin+hex)
 - checks `APJ_BOARD_ID` registration + uniqueness in `Tools/AP_Bootloader/board_types.txt`
-- runs static hwdef.dat checks (32-bit system timer, default-vs-PWM conflict, bootloader timer disagreement, redundant defines, SERIAL_ORDER natural order, CS/DRDY pin labels, hi-res IMU sampling, BIDIR placement, H7 bi-directional DShot expectation)
+- runs static hwdef.dat checks (32-bit system timer, default-vs-PWM conflict, bootloader timer disagreement, redundant defines, defines nothing reads, `DEFAULT_SERIALn_PROTOCOL` for a port SERIAL_ORDER does not have, `defaults.parm` `SERVOn_FUNCTION` on a missing output or an LED timer with no DMA, H7 384 KB reserve with end-of-flash storage, SERIAL_ORDER natural order, CS/DRDY pin labels, hi-res IMU sampling, BIDIR placement, H7 bi-directional DShot expectation)
 - resolves `include` directives, so variant targets (`-bdshot`) and families keeping their content in a shared `hwdef.inc` are actually checked, and inherited bootloaders/board IDs are not reported as missing
 - runs `./waf configure --board <Board>` (slow — ~30-60s; submodules are already in place from the parent checkout)
 - parses `build/<Board>/hwdef.h` for `NO DMA` and `SHARED` annotations
@@ -105,6 +105,8 @@ Apply, at minimum:
 - With no schematic, do not guess or infer from the absence of `PULLUP`. Ask the author to confirm which buses have external pull-ups, and note that ~30 boards in-tree set `PULLUP` precisely because they lack them.
 
 The helper covers the system-timer rules (§7.2) including the F4/F7-default-TIM2 vs H7-default-TIM5 distinction, the hi-res IMU note (§7.4), and BIDIR placement plus the H7 bi-directional DShot expectation (§3.5, §3.6), so don't second-guess it on those axes. It only reports a bootloader timer *disagreement* — an `hwdef-bl.dat` that omits `STM32_ST_USE_TIMER` is normal and correct, so never ask for one to be added. Its hi-res finding is advisory by design — the mask indexes *runtime* IMU instances (assigned by probe order), not hwdef line numbers, so a board listing many candidate chips for different populations cannot be bit-checked statically.
+
+An unread-define finding means neither a source file nor another line of the same hwdef names the define, so it has no effect. Usually it is a missing `_DEFAULT` suffix (`HAL_FRAME_TYPE`, `RELAY2_PIN`), a wrong driver name (`AP_BARO_DPS310_ENABLED` for `AP_BARO_DPS280_ENABLED`) or an invented define (`HAL_BUZZER_ACTIVE_LOW`). Say which, and what the author probably meant.
 
 Don't enumerate every section of the playbook in the comment; only raise the issues you actually find.
 

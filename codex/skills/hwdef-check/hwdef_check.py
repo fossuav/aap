@@ -81,6 +81,14 @@ DEFAULT_SYSTEM_TIMER = {
     "H7": "5",
 }
 
+# Source files a hwdef `define` can be read from. hwdef .dat/.inc files are
+# left out on purpose: another board defining the same name is not a reader.
+SOURCE_GLOBS = ("*.h", "*.c", "*.cpp", "*.hpp", "*.py", "*.mk", "*.ld", "wscript")
+
+# SERVOn_FUNCTION values that drive an LED strip (SRV_Channel.h: NeoPixel1-4,
+# ProfiLED1-3 and the ProfiLED clock). These outputs need the timer's UP DMA.
+LED_SERVO_FUNCTIONS = {120, 121, 122, 123, 129, 130, 131, 132}
+
 
 # ---------- shell helpers ----------
 
@@ -482,6 +490,169 @@ def check_bdshot_target(board, hwdef_text):
     ]
 
 
+DEFINE_RE = re.compile(r"^\s*define\s+([A-Za-z_]\w*)")
+
+
+def names_read_by_source(names):
+    """Return the subset of `names` that some source file mentions as a word.
+
+    Returns None when the search itself fails, so callers report nothing
+    rather than calling every define unread.
+    """
+    if not names:
+        return set()
+    pattern = "(" + "|".join(re.escape(n) for n in sorted(names)) + ")"
+    proc = run(["git", "grep", "--recurse-submodules", "-I", "-h", "-o", "-w",
+                "-E", pattern, "--", *SOURCE_GLOBS])
+    if proc.returncode not in (0, 1):
+        return None
+    return set(proc.stdout.split())
+
+
+def check_unread_defines(files):
+    """Flag `define NAME` lines that nothing reads.
+
+    `files` is a list of ``(label, own_text, resolved_text)``. A name counts as
+    read if a source file mentions it, or if another line of the same hwdef
+    uses it (an IMU line naming a DRDY define, say). Anything else has no
+    effect: a misspelling, a missing `_DEFAULT` suffix, or an invented define
+    such as `HAL_BUZZER_ACTIVE_LOW` (PR #34844).
+    """
+    candidates = []
+    for label, own_text, resolved in files:
+        for lineno, line in enumerate(own_text.splitlines(), 1):
+            m = DEFINE_RE.match(line)
+            if not m:
+                continue
+            name = m.group(1)
+            word = re.compile(rf"\b{re.escape(name)}\b")
+            own_def = re.compile(rf"^\s*(?:define|undef)\s+{re.escape(name)}\b")
+            others = [ln for ln in resolved.splitlines()
+                      if word.search(ln) and not own_def.match(ln)]
+            if not others:
+                candidates.append((label, lineno, name))
+    read = names_read_by_source({name for _, _, name in candidates})
+    if read is None:
+        return []
+    issues = []
+    for label, lineno, name in candidates:
+        if name not in read:
+            issues.append(
+                f"`define {name}` ({label}:{lineno}) is read by nothing in the "
+                f"source, so it has no effect: a misspelling, a missing "
+                f"`_DEFAULT` suffix, or a define that does not exist."
+            )
+    return issues
+
+
+SERIAL_DEFAULT_RE = re.compile(r"^\s*define\s+DEFAULT_SERIAL(\d+)_PROTOCOL\b", re.MULTILINE)
+
+
+def check_serial_defaults(text):
+    """Flag DEFAULT_SERIALn_PROTOCOL defines that set nothing.
+
+    A SERIALn past the end of SERIAL_ORDER, or one that is EMPTY, has no port
+    to configure. This is how an index error from a non-natural SERIAL_ORDER
+    shows up (PR #34844 set SERIAL8 on a board whose order stops at SERIAL7).
+    Matching a define to the UART pin block above it was tried and dropped:
+    most boards group their defines after the last UART, so it misfires.
+    """
+    m = re.search(r"^SERIAL_ORDER\s+(.+)$", text, re.MULTILINE)
+    if not m:
+        return []
+    entries = m.group(1).split("#")[0].split()
+    issues = []
+    for dm in SERIAL_DEFAULT_RE.finditer(text):
+        n = int(dm.group(1))
+        if n >= len(entries):
+            issues.append(
+                f"`DEFAULT_SERIAL{n}_PROTOCOL` sets nothing: SERIAL_ORDER only "
+                f"has SERIAL0-SERIAL{len(entries) - 1}."
+            )
+        elif entries[n] == "EMPTY":
+            issues.append(
+                f"`DEFAULT_SERIAL{n}_PROTOCOL` sets nothing: SERIAL{n} is EMPTY "
+                f"in SERIAL_ORDER."
+            )
+    return issues
+
+
+def parm_servo_functions(board):
+    """Return {n: function} for SERVOn_FUNCTION lines in the board's defaults.parm."""
+    parm = HWDEF_DIR / board / "defaults.parm"
+    if not parm.exists():
+        return {}
+    out = {}
+    for line in parm.read_text(errors="replace").splitlines():
+        m = re.match(r"^\s*SERVO(\d+)_FUNCTION[\s,=]+(-?\d+)", line)
+        if m:
+            out[int(m.group(1))] = int(m.group(2))
+    return out
+
+
+def check_servo_outputs(board, text):
+    """Check defaults.parm SERVOn_FUNCTION lines against the PWM outputs.
+
+    A function set on an output the hwdef never defines does nothing (PR
+    #34844's LED pad had no PWM(n)). An LED function needs its timer's UP DMA,
+    which the generator drops when every PWM pin on that timer is NODMA; the
+    output then falls back to PWM ("failed, no DMA" in RCOutput.cpp).
+    """
+    funcs = parm_servo_functions(board)
+    if not funcs:
+        return []
+    chans = pwm_channels(text)
+    by_pwm = {c["pwm"]: c for c in chans}
+    # With an IOMCU, SERVO1-8 are its outputs and hwdef PWM(n) is SERVO(n+8).
+    offset = 8 if re.search(r"^\s*IOMCU_UART\b", text, re.MULTILINE) else 0
+    nodma_timers = set()
+    for t in {c["timer"] for c in chans}:
+        lines = [ln for ln in text.splitlines()
+                 if re.match(rf"^\s*P\S+\s+{t}_CH\d+N?\s+{t}\b.*\bPWM\(", ln)]
+        if lines and all(re.search(r"\bNODMA\b", re.sub(r"#.*", "", ln)) for ln in lines):
+            nodma_timers.add(t)
+    issues = []
+    for n, func in sorted(funcs.items()):
+        if func == 0 or (offset and n <= 8):
+            continue
+        c = by_pwm.get(n - offset)
+        if c is None:
+            issues.append(
+                f"defaults.parm sets `SERVO{n}_FUNCTION {func}`, but the hwdef "
+                f"has no `PWM({n - offset})` -- that output does not exist."
+            )
+        elif func in LED_SERVO_FUNCTIONS and c["timer"] in nodma_timers:
+            issues.append(
+                f"`SERVO{n}_FUNCTION {func}` drives an LED strip from "
+                f"`{c['timer']}`, but every PWM pin on that timer is `NODMA`, so "
+                f"it gets no UP DMA and the LED output falls back to PWM."
+            )
+    return issues
+
+
+def check_storage_layout(text):
+    """H7 `FLASH_RESERVE_START_KB 384` exists to hold storage in sectors 1-2.
+
+    With storage at the end of flash as well, sectors 1-2 sit unused and the
+    app loses 256 KB; the bootloader built from it also caps firmware at the
+    smaller size (PR #34844). No in-tree board does this.
+    """
+    if parse_mcu_family(text) != "H7":
+        return []
+    r = re.search(r"^FLASH_RESERVE_START_KB\s+(\d+)", text, re.MULTILINE)
+    p = re.search(r"^STORAGE_FLASH_PAGE\s+(\d+)", text, re.MULTILINE)
+    if not (r and p) or int(r.group(1)) != 384 or int(p.group(1)) < 3:
+        return []
+    return [
+        f"`FLASH_RESERVE_START_KB 384` reserves sectors 1-2 for storage, but "
+        f"`STORAGE_FLASH_PAGE {p.group(1)}` puts storage at the end of flash, "
+        f"so sectors 1-2 sit unused and the app loses 256 KB. Use "
+        f"`STORAGE_FLASH_PAGE 1` (or `FLASH_RESERVE_START_KB 128` with page 14) "
+        f"and rebuild the bootloader, which takes its size limit from the "
+        f"storage page. Moving storage after release wipes users' parameters."
+    ]
+
+
 def check_hwdef_patterns(board):
     """Static checks against hwdef.dat for things the playbook flags."""
     issues = []
@@ -500,6 +671,13 @@ def check_hwdef_patterns(board):
 
     issues.extend(check_bidir(pwm_text))
     issues.extend(check_bdshot_target(board, text))
+
+    # A variant's own defines are its own, so check those even for variants.
+    define_files = [("hwdef.dat", own_text, text)]
+    if parent is None and bl_hwdef.exists():
+        define_files.append(("hwdef-bl.dat", bl_hwdef.read_text(errors="replace"),
+                             resolve_hwdef(bl_hwdef)))
+    issues.extend(check_unread_defines(define_files))
 
     if parent is not None:
         # Everything below belongs to `parent`; checking it here would just
@@ -599,6 +777,10 @@ def check_hwdef_patterns(board):
                 "number. Confirm the README's labelling matches the chosen "
                 "convention (§7.3)."
             )
+
+    issues.extend(check_serial_defaults(text))
+    issues.extend(check_servo_outputs(board, text))
+    issues.extend(check_storage_layout(text))
 
     # High-resolution IMU sampling (hwdef AGENTS.override.md §7.4).
     # HAL_INS_HIGHRES_SAMPLE is a per-instance bitmask over the IMU lines, and
