@@ -139,6 +139,13 @@ Status:  proposed 2026-10-29 from TD25; needs confirmation of the wording.
 
 ## Confirmed
 
+- **ARCH-22** "A parameter index any released build used is never given to
+  another parameter" - confirmed 2026-10-31 from SFD-O4 log66, in the root
+  playbook after ARCH-6, with the project conventions' `AP_GROUPINFO` line
+  pointing to it (1.7.58). The fork's own fix put VALT_POS_EXPO back on its
+  June index, var_info2 30, moved TKOFF_CPU_AVG/PEAK to 41/42, and marked
+  29 and 31.
+
 - **ARCH-17 refined** 2026-10-18 from the user: Replay, built as its own
   vehicle type, may follow the logged vehicle class (`dal.get_vehicle_class()`,
   compiled only under `APM_BUILD_Replay`) so that code compiled out of a

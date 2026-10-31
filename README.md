@@ -42,6 +42,7 @@ Proposed rules that are still waiting for confirmation, and rejected ones with t
 | [ARCH-17](rules/ARCH-17.md) | Libraries carry no vehicle-specific code; the vehicle moderates them | 2026-10-16 |
 | [ARCH-18](rules/ARCH-18.md) | Data crosses from a driver's thread to the main loop only at the frontend's copy | 2026-10-16 |
 | [ARCH-19](rules/ARCH-19.md) | New behaviour is opt-in, and lands as the last and smallest commits of a PR | 2026-10-16 |
+| [ARCH-22](rules/ARCH-22.md) | A parameter index any released build used is never given to another parameter | 2026-10-31 |
 <!-- end of rules index -->
 
 ---

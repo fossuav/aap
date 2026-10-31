@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.52
+**Playbook version:** 1.3.53
 
 ## Available Skills
 
@@ -263,6 +263,10 @@ loc.offset(offset_ned.x, offset_ned.y);
 **Do Not Break What Users Already Have** (ARCH-6, confirmed 2026-10-14):
 - Existing configurations, ground stations, log consumers and scripts keep working across an update. A change to user-visible behaviour, a default or a parameter's meaning is stated, migrated and released with notes, and old tools stay supported until they are deprecated. Changed log numbering broke QGC in #14299.
 
+**A Parameter Index Any Released Build Used Is Never Given to Another Parameter** (ARCH-22, confirmed 2026-10-31):
+- AP_Param finds a stored value by table, index and storage type, not by name, so a value saved under one parameter loads into whichever parameter of the same type later takes its index. A parameter that moves or is removed leaves a `// N was NAME` marker at its old index, and a new parameter takes an index no released build used, judged against those builds' tables rather than today's source. A fork that renumbers its own parameters across rebases keeps the same record for its own releases.
+- The SmallFastDrone fork's June 4.7.0 builds had VALT_POS_EXPO at ParametersG2::var_info2 index 30, and a rebase moved it to 29 with no marker. A later commit gave 30 to TKOFF_CPU_AVG, also a float, and SFD-O4 booted with it at 3 against a default of 95 and held every takeoff as CPU overload.
+
 **New Behaviour Is Opt-In, and Lands as the Last and Smallest Commits of a PR** (ARCH-19, confirmed 2026-10-16):
 - A change to what a vehicle does is off by default - behind a parameter, an option bit or a feature define - so no one's aircraft behaves differently after an update they did not ask for. The exceptions are a fix for an actual bug, and a change a maintainer agrees should be on by default; the PR says which.
 - Within a PR the structure comes first: refactoring and plumbing in commits that change no behaviour, shown where possible to leave the compiler output unchanged (`Tools/scripts/size_compare_branches.py`, or `--consistent-builds` builds hashed per commit), then the behaviour change last, as a small surgical set of commits a reviewer can read on its own. A refactor mixed into a functional change hides what actually changed and makes both harder to review. On the RP2350 branch (#32995) MatekH743 copter stayed binary-identical through the first 45 commits, and the six that changed STM32 output came after them, each saying so.
@@ -392,7 +396,7 @@ class Parent {
 
 **Project conventions** (from upstream `AGENTS.md`, which CI and maintainers hold to):
 - Compare floats with `is_zero()`, `is_positive()`, `is_negative()` and `is_equal()`, not `==` or `> 0`.
-- Never change an existing `AP_GROUPINFO` index: it is baked into every user's stored parameters.
+- Never change an existing `AP_GROUPINFO` index: it is baked into every user's stored parameters. Nor give one a released build used to another parameter (ARCH-22).
 - Do not modify submodules under `modules/`; they are separate upstream projects.
 - No platform-specific code in shared libraries; go through `AP_HAL`.
 - Do not remove or weaken an existing test without a documented reason.
