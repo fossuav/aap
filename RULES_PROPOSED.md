@@ -137,38 +137,14 @@ Check:   for every mask on a Kalman gain, how the covariance is updated for
          stays positive definite through it.
 Status:  proposed 2026-10-29 from TD25; needs confirmation of the wording.
 
-### ARCH-23: A new parameter has to earn its flash, and a feature that costs significant flash sits behind its own define
-
-Every parameter is paid for on every board that carries the code, whether
-or not anyone sets it: a table entry is 16 bytes plus its name in flash on
-a 32-bit board, every ground station downloads it at every connect, and it
-is one more thing a user has to understand. Add one only when a constant, a
-default worked out automatically, an existing parameter or a bit in an
-existing `_OPTIONS` bitmask cannot carry the choice, and prefer the option
-bit. A feature that costs a significant amount of flash goes behind its own
-enable define (ARCH-4), with its parameters inside the same guard, and is off
-by default unless most users of the vehicles that build it need it, so the
-boards that do not want it pay nothing. The PR states the flash cost and
-which parameters it adds.
-
-Example: peterbarker, #12810: "We shouldn't really add too many parameters
-         if there is a sensible default. There are issues having too many
-         parameters (vehicle connect times etc)"; lthall, #27068: "All these
-         things eat into flash space, support time and developer time";
-         tridge repeatedly asks for an `_OPTIONS` bit instead (#21780,
-         #23237, #31177). On the SFD fork #34543 added the OSD's EKF lane
-         items and their EKFn_EN parameters to every OSD build; AP-Review
-         asked for a define, and they now compile out upstream and are on
-         only in SFD.
-Check:   for each new parameter, what would fail if it were a constant, an
-         automatic default or a bit in an existing option bitmask; for each
-         new feature, its flash cost on a small board stated in the PR, and
-         whether one define compiles out the feature and its parameters.
-Status:  proposed 2026-11-02 from the user; needs confirmation of the
-         wording and of what counts as significant (about 1 KB on a 1 MB
-         board is suggested).
-
 ## Confirmed
+
+- **ARCH-23** "A new parameter has to earn its flash, and a feature costing
+  1 KB or more sits behind its own define" - confirmed 2026-11-02 from the
+  user, with 1 KB on a 1 MB board as the threshold, in the root playbook
+  after ARCH-4, which it extends (1.7.59). Prompted by #34543's EKF lane OSD
+  items (1,036 bytes on JHEM_JHEF405 with optical flow), now behind
+  `AP_OSD_EKF_LANES_ENABLED`, off upstream and on in SFD.
 
 - **ARCH-22** "A parameter index any released build used is never given to
   another parameter" - confirmed 2026-10-31 from SFD-O4 log66, in the root

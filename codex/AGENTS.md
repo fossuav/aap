@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.53
+**Playbook version:** 1.3.54
 
 ## Available Skills
 
@@ -213,6 +213,7 @@ The root playbook carries the general rules. Where a subsystem has its own playb
 - Build options are defined in `Tools/scripts/build_options.py` (400+ options). Use `/build-options` to search them.
 - Features can be enabled/disabled via `hwdef.dat` files using `define` directives.
 - A feature not every vehicle needs costs nothing to the users who do not use it (ARCH-4, confirmed 2026-10-14): it has its own enable define, defaulted in the library's `_config.h` and listed in `build_options.py`, is off where flash is tight, and compiles out completely, with guards around whole functions and `case`s rather than inside them. The PR states its flash cost on a small board.
+- A new parameter has to earn its flash, and a feature costing 1 KB or more sits behind its own define (ARCH-23, confirmed 2026-11-02): every parameter is paid for on every board that carries its code - 16 bytes of table plus its name in flash on a 32-bit board, a longer download at every ground station connect, and one more setting a user has to understand. Add one only when a constant, a default worked out automatically, an existing parameter or a bit in an existing `_OPTIONS` bitmask cannot carry the choice, and prefer the option bit. A feature that costs about 1 KB or more on a 1 MB board goes behind its own enable define (ARCH-4) with its parameters inside the same guard, off by default unless most users of the vehicles that build it need it, and the PR states its flash cost and the parameters it adds. peterbarker, #12810: "We shouldn't really add too many parameters if there is a sensible default"; #34543's EKF lane OSD items, about 1 KB with optical flow, compile out upstream and are on only in the SFD fork.
 
 **Named Constructor Pattern:**
 - Core classes like `Location` use named constructors for clarity and type safety:
