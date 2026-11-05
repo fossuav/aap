@@ -139,6 +139,13 @@ Status:  proposed 2026-10-29 from TD25; needs confirmation of the wording.
 
 ## Confirmed
 
+- **ARCH-24** "A threshold in flight code has a reason a reviewer can
+  check" - confirmed 2026-11-05 from the user, with log evidence across
+  scenarios accepted as a reason, parameters last, and every surviving
+  threshold a named constant, in the root playbook after ARCH-8, whose
+  reuse it applies to constants (1.7.60). Prompted by peterbarker's "0.25?"
+  and "0.3?" on #34457's AGL KF coast stop and floor hold.
+
 - **ARCH-23** "A new parameter has to earn its flash, and a feature costing
   1 KB or more sits behind its own define" - confirmed 2026-11-02 from the
   user, with 1 KB on a 1 MB board as the threshold, in the root playbook

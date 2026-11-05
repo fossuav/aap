@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.54
+**Playbook version:** 1.3.55
 
 ## Available Skills
 
@@ -277,6 +277,10 @@ loc.offset(offset_ned.x, offset_ned.y);
 
 **Reuse Before You Write** (ARCH-8, confirmed 2026-10-14):
 - Extend or factor the existing implementation, through a common base class or shared library, rather than copying it or adding a second one.
+
+**A Threshold in Flight Code Has a Reason a Reviewer Can Check** (ARCH-24, confirmed 2026-11-05):
+- A constant that gates behaviour - a speed, a height, a time, a ratio - comes with its reason. The best reason is a derivation from what it tests (a sensor's noise, a filter's own variance, a time constant), or an existing check that tests the same thing, whose constant it reuses by name rather than copies. A plain number is also fine when it fixes a real problem, real-world logs across a range of scenarios (airframes, conditions, flights that should and should not trigger it) show the value is reasonable with margin on both sides, and no user would plausibly want to change it. Reviewers dislike new parameters, so a parameter is the last resort, for a value that genuinely differs between vehicles, and it has to earn its place (ARCH-23). A number that only falls between the cases one airframe's logs happened to contain has none of these reasons.
+- A threshold that passes is still never a bare number in a condition: it is a named constant (`static constexpr`, or a define where the file uses them) whose name says what it limits, with a unit suffix, and whose comment gives the reason, so a reviewer can find every use and question it in one place. peterbarker asked "0.25?" and "0.3?" of #34457's AGL KF coast stop and floor hold, each set between values measured on one airframe; they are now named, two times follow the main filter's own range finder timings by name, and the rest carry their margins from 34 flights of one airframe and 23 of another.
 
 **Do Not Add Code Before It Is Used, and Remove What Your Change Leaves Unused** (ARCH-14, confirmed 2026-10-16):
 - Code that nothing calls costs flash on every board and review time, and rots, since nothing exercises it. A PR adds methods, members, parameters and options only when something in it uses them (rmackay9, #11795: "a golden rule in AP that we don't add things before they are used"); a helper first used by a later PR belongs in that PR, or that PR stacks on this one.
