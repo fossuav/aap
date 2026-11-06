@@ -163,6 +163,32 @@ Check:   for each term in a feed-forward, name the physical effect it
          near zero in steady motion and through a stop.
 Status:  proposed 2026-11-06 from #33318; needs confirmation of the wording.
 
+### ARCH-26: An estimate fused into another filter is not an independent measurement
+
+A filter's output carries errors that persist from one step to the next: a
+bias it is still learning, a lag, a model error. Fused into a second filter
+every step with its own variance as the noise, it counts as a stream of
+independent observations, so the second filter becomes far more confident
+than the information justifies, and that confidence shuts out the sensors
+that could have caught the error. Fuse a filtered estimate at the rate new
+information enters it, or inflate its noise for the correlation, and compare
+the receiving filter's claimed uncertainty with its real error.
+
+Example: SFD-O4 log81 (2026-11-06). #33478 fuses the AGL KF's vertical
+         velocity into EKF3 as velD every step. In an ALT_HOLD hover the AGL
+         KF velocity was 0.03-0.05 m/s off while its accel-bias state chased
+         IMUs cooling 12 degC; the flow core's height std was 0.084 m against
+         0.233 m without the fusion, so the baro (1 m noise) barely corrected
+         it, the height stood still and the vehicle climbed 0.5 m in 37 s.
+         Replay with the fusion off: 0.04 m
+         (`ardupilot-pr-analysis/33478/README.md`).
+Check:   where one estimator's output is fused into another, at what rate
+         new information enters the first, whether the noise allows for its
+         errors persisting between samples, and, in a log, whether the
+         receiving filter's variance matches its error against an
+         independent reference.
+Status:  proposed 2026-11-06 from log81; needs confirmation of the wording.
+
 ## Confirmed
 
 - **ARCH-24** "A threshold in flight code has a reason a reviewer can
