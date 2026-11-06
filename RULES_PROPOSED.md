@@ -137,6 +137,32 @@ Check:   for every mask on a Kalman gain, how the covariance is updated for
          stays positive definite through it.
 Status:  proposed 2026-10-29 from TD25; needs confirmation of the wording.
 
+### ARCH-25: A feed-forward term models the vehicle, not a setting that shapes the command
+
+A feed-forward supplies what the vehicle needs to follow its command: the
+acceleration the plan asks for, and what it takes to overcome a force the
+vehicle feels. Each term comes from an estimate of the vehicle, never from a
+parameter whose job is to shape the command (a speed limit, a time constant,
+an expo), which is set for how the command should feel rather than for what
+the airframe does. Whatever the two disagree by is left to an integrator,
+which carries it through every transient.
+
+Example: Loiter's drag model, g tan(LOIT_ANG_MAX) v / LOIT_SPEED_MS, both
+         decays the desired velocity and, in master's feed-forward, stands
+         for the airframe's drag; #33318 takes it out, which assumes no drag.
+         In SITL each version's velocity integrator carried the mismatch
+         through a stop: master braked early and rolled back where the model
+         was above the airframe's drag, #33318 ran 0.5 m past and slid back
+         where it matched. Feeding the airframe's own drag forward separately
+         stopped within 0.14 m (2026-11-06,
+         `ardupilot-pr-analysis/33318/README.md`).
+Check:   for each term in a feed-forward, name the physical effect it
+         compensates and where its value comes from; a term computed from a
+         shaping parameter, or a shaping term reused as a physical one, is
+         the defect. In a log the integrator of a correct feed-forward sits
+         near zero in steady motion and through a stop.
+Status:  proposed 2026-11-06 from #33318; needs confirmation of the wording.
+
 ## Confirmed
 
 - **ARCH-24** "A threshold in flight code has a reason a reviewer can
