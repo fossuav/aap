@@ -107,6 +107,8 @@ The install script places the following files:
 | `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
 | `.claude/githooks/pre-push` | Git-level hook (via `core.hooksPath`) — refuses any push without a grant, and always refuses force-pushing or deleting `master`/`main`. Git runs it itself, so wrapping `git push` in a script does not evade it |
 
+The installer never writes `CLAUDE_local.md`. A repository or fork that needs rules of its own commits one at its root (Codex reads `AGENTS_local.md` or `CLAUDE_local.md`), and the playbook has the agent read it before any task. It survives `/aap-update`, which replaces `CLAUDE.md`.
+
 ### Skills (Slash Commands)
 
 Skills are invoked as `/command` in Claude Code. They pre-authorize necessary tools so common operations run without repeated permission prompts.

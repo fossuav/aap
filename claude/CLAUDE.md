@@ -2,7 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.60
+**Playbook version:** 1.7.61
+
+## Repository-Local Rules
+
+Before starting any task, look for `CLAUDE_local.md` at the repository root and read it if it is there. It carries the rules this playbook cannot, because they hold for one repository or fork only: its own processes, the repositories and records that sit beside it, and what may and may not be published from them. It adds to this playbook, and it is tracked in the repository, so it travels with every clone; this playbook is installed and replaced by `/aap-update`, so rules for one repository never go here. A worktree of a branch without the file reads it from the primary checkout.
 
 ## Available Skills
 

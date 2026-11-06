@@ -2,7 +2,11 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.55
+**Playbook version:** 1.3.56
+
+## Repository-Local Rules
+
+Before starting any task, look for `AGENTS_local.md` at the repository root, or `CLAUDE_local.md` if that is the one the repository has, and read it if it is there. It carries the rules this playbook cannot, because they hold for one repository or fork only: its own processes, the repositories and records that sit beside it, and what may and may not be published from them. It adds to this playbook, and it is tracked in the repository, so it travels with every clone; this playbook is installed and replaced by the installer, so rules for one repository never go here. A worktree of a branch without the file reads it from the primary checkout.
 
 ## Available Skills
 
