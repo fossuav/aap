@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.56
+**Playbook version:** 1.3.57
 
 ## Repository-Local Rules
 
@@ -465,7 +465,7 @@ When modifying existing files:
 ## Commit Conventions
 
 - **Atomic Commits:** Each commit represents a single logical change
-- **What CI enforces:** `Tools/scripts/check_branch_conventions.py` is the check CI runs: a `Subsystem:` prefix from `Tools/scripts/allowed_subsystems.py`, every file in a commit inside that one subsystem, no merge commits and no `fixup!` commits. Run it before pushing. `git subsystems-split` (`Tools/gittools/git-subsystems-split`, `-n` for a dry run) splits a multi-subsystem commit or relabels a wrong prefix across a stack.
+- **What CI enforces:** `Tools/scripts/check_branch_conventions.py` is the check CI runs: a `Subsystem:` prefix from `Tools/scripts/allowed_subsystems.py`, every file in a commit inside that one subsystem, no merge commits and no `fixup!` commits. Run it before pushing: `python3 Tools/scripts/check_branch_conventions.py`, with `--base-branch upstream/master` when `origin` is your fork, since it defaults to the merge base with `origin/master`. `git subsystems-split` (`Tools/gittools/git-subsystems-split`, `-n` for a dry run) splits a multi-subsystem commit or relabels a wrong prefix across a stack.
 - **Each Commit Must Compile:** Every commit must leave the codebase in a buildable state. Order changes so dependencies are added before code that uses them.
 - **Structure before behaviour:** refactoring commits that change no behaviour go first, each saying whether it changes the compiler output, and the behaviour change goes last in as few commits as it needs (ARCH-19).
 - **Checkpoint Commits:** During development, create checkpoint commits when reaching milestones to avoid losing work. These can be squashed or cleaned up later before final PR submission. Good checkpoint opportunities:

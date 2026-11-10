@@ -253,6 +253,29 @@ _INTERPRETERS = {
 
 _SCRIPT_CHECKS = None  # set in main() to avoid a forward reference
 
+# Repository scripts that print guarded commands as advice but never run them:
+# check_branch_conventions.py tells you to use 'git rebase -i' to fix a commit.
+# Their text is not scanned while they match the committed version, so editing
+# one does not reopen the wrapper route.
+_TRUSTED_SCRIPTS = {
+    "Tools/scripts/check_branch_conventions.py",
+}
+
+
+def _is_trusted_script(path):
+    """True for a listed repository script with no local changes."""
+    path = os.path.realpath(path)
+    if not any(path.endswith("/" + t) for t in _TRUSTED_SCRIPTS):
+        return False
+    # git prints nothing only for a tracked, unmodified file: untracked shows
+    # "??", ignored "!!", and staged or unstaged edits their status.
+    try:
+        r = subprocess.run(["git", "status", "--porcelain", "--ignored", "--", path],
+                           capture_output=True, text=True, cwd=os.path.dirname(path))
+    except OSError:
+        return False
+    return r.returncode == 0 and not r.stdout
+
 
 def check_script_contents(command):
     """Recurse into a script file passed to an interpreter and check its text.
@@ -272,7 +295,7 @@ def check_script_contents(command):
         for candidate in tokens[i + 1:]:
             if candidate.startswith("-"):
                 continue
-            if not os.path.isfile(candidate):
+            if not os.path.isfile(candidate) or _is_trusted_script(candidate):
                 break
             try:
                 if os.path.getsize(candidate) > 256 * 1024:

@@ -155,7 +155,7 @@ Hooks automatically enforce key CLAUDE.md rules that Claude might otherwise igno
 
 | Hook | Event | Enforces |
 |------|-------|----------|
-| `pre_bash_check.py` | PreToolUse (Bash) | No `git clean`, no Claude co-author in commits, commit messages must have subsystem prefix. Gates `push`/`rebase`/`reset`/`amend` on a `/prepare-for-push` grant, blocks `--no-verify` and `core.hooksPath` tampering, and scans scripts passed to an interpreter so a guarded command cannot hide in a wrapper |
+| `pre_bash_check.py` | PreToolUse (Bash) | No `git clean`, no Claude co-author in commits, commit messages must have subsystem prefix. Gates `push`/`rebase`/`reset`/`amend` on a `/prepare-for-push` grant, blocks `--no-verify` and `core.hooksPath` tampering, and scans scripts passed to an interpreter so a guarded command cannot hide in a wrapper. Upstream scripts that only print such commands as advice (`Tools/scripts/check_branch_conventions.py`) are skipped while unmodified |
 | `post_edit_check.py` | PostToolUse (Edit/Write) | No `printf()` in C++ flight code (use `gcs().send_text()`) |
 | `githooks/pre-push` | git `pre-push` | Refuses any push not covered by an unexpired, branch- and remote-scoped grant. Always refuses force-pushing or deleting `master`/`main` |
 

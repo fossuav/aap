@@ -15,6 +15,7 @@
       "Glob",
       "Bash(./waf:*)",
       "Bash(python3 Tools/autotest/autotest.py:*)",
+      "Bash(python3 Tools/scripts/check_branch_conventions.py:*)",
       "Bash(Tools/autotest/sim_vehicle.py:*)",
       "Bash(python3 .claude/skills/autotest/run_autotest.py:*)",
       "Bash(python3 .claude/skills/autotest/autotest_results.py:*)",
