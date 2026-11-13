@@ -31,6 +31,7 @@
       "Bash(python3 .claude/skills/log-analyze/rate_band.py:*)",
       "Bash(python3 .claude/skills/log-analyze/batch_fft.py:*)",
       "Bash(python3 .claude/skills/log-analyze/baro_health.py:*)",
+      "Bash(python3 .claude/skills/log-analyze/replay_sweep.py:*)",
       "Bash(python3 .claude/skills/log-analyze/replay_fleet.py:*)",
       "Bash(python3 .claude/skills/pr-checks/ci_failures.py:*)",
       "Bash(python3 .claude/skills/pr-review/pr_review.py:*)",
