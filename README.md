@@ -97,6 +97,7 @@ The install script places the following files:
 | `.claude/skills/log-analyze/batch_fft.py` | ISBH/ISBD batch-sampler spectrum per IMU, pre- and post-filter, in physical units, used by `/log-analyze` |
 | `.claude/skills/log-analyze/baro_health.py` | Baro against EKF through spool-up, lift-off and hover, vibration/clipping and vertical-loop state -- is the altitude chain usable? used by `/log-analyze` |
 | `.claude/skills/log-analyze/replay_sweep.py` | Replays real flight logs through the current build and reports resets and peak excursion per re-run core, with a before/after compare, used by `/log-analyze` |
+| `.claude/skills/log-analyze/replay_fleet.py` | Finds every replayable log under a set of roots, replays them all through two builds in parallel and reports which moved, by how much, the time the flow disagreed with the state, the velocity error to GPS and the recovery time after a named statustext, used by `/log-analyze` |
 | `.claude/skills/autotest/autotest_env.py` | Per-clone autotest environment shared by the two scripts below — own log tree, own port slot, so two clones can run autotests at once |
 | `.claude/skills/autotest/autotest_results.py` | Autotest result parser used by `/autotest` to summarise pass/fail and extract failure context |
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout, lock pre-check and per-clone isolation |

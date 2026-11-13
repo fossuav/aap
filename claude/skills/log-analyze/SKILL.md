@@ -264,6 +264,60 @@ are 24 files called `log7.bin` on the primary machine - so an ambiguous name is
 refused rather than guessed, and `ardupilot-pr-analysis/find_log.py` resolves it
 against a fingerprint.
 
+## What else did it move? (`replay_fleet.py`)
+
+`replay_sweep.py` checks the flight a change was written for. Before an
+unflown EKF change ships, replay every replayable log you have through the
+build without it and the build with it. A fix can pass its own test, its own
+flight and a review, and still cost another airframe seconds of bad velocity
+on a flight nobody thought to replay. On SmallFastDrone's refresh16 a PR's
+review fix (drop a pending flow velocity set once ordinary fusion has passed
+both axes) did exactly that: 336 of 360 logs replayed identically, and in
+one of the 24 that moved, a throw quad's, throws took 2.81, 3.28 and 8.68 s
+to come within 1 m/s of GPS against 2.01, 0.60 and 1.16 s without it.
+
+```bash
+S=.claude/skills/log-analyze/replay_fleet.py
+python3 $S find /path/to/logs /path/to/more > fleet.txt     # logs that log RFRH frames
+python3 $S cache fleet.txt ~/replay-cache/fleet > local.txt # off the 9p mount, once
+./waf replay && cp build/sitl/tool/Replay /tmp/Replay.before
+# ... make the change, then the same for /tmp/Replay.after: each build replaces the binary
+python3 $S run /tmp/Replay.before local.txt out/before      # --jobs N, default half the cores
+python3 $S run /tmp/Replay.after local.txt out/after
+python3 $S compare out/before out/after                     # --detail lists EKF messages
+python3 $S recover out/before out/after --after "EKF Source Set 2"
+```
+
+- `run` replays with `--force-ekf3` (`--no-force-ekf3` keeps the log's own
+  choice) in a scratch directory per log. It keeps the re-run cores'
+  (`C>=100`) `XKF1` and `XKF5` rows, `GPS`, `MSG` and the EKF3 lines Replay
+  printed in `OUTDIR/NNNN.pkl`, and deletes the BIN, so 360 logs take about
+  400 MB rather than tens of GB. It resumes where it stopped, and refuses an
+  `OUTDIR` holding a sweep of another binary, argument set or list. `compare`
+  warns when both runs used the same binary, which is what a forgotten copy
+  between builds looks like.
+- `compare` counts the logs that replayed identically: every re-run `XKF1`
+  row and every EKF3 message the same. For each log that moved it reports:
+  - when it first moved;
+  - the largest velocity, position and yaw difference per core;
+  - how long the flow disagreed with the state by more than `--limit` m/s
+    (`XKF5` `FIX`/`FIY`, logged in mrad/s, times `HAGL`, above 0.3 m);
+  - the velocity error against a 3D-fix GPS.
+
+  The flow measure needs no GPS, so it judges flow-only flights too. The
+  report ends with the flow time summed over all the logs that moved.
+- `recover` times how long each re-run core takes, from each occurrence of
+  a statustext, to come within `--within` m/s of GPS and stay there for
+  `--hold` s. Use it for a source switch, a throw, or any event the vehicle
+  announces. Pass three runs (old, new, and new without the suspect commit)
+  to pin a regression on one commit.
+
+The numbers say what moved, not whether it got worse. Once their cores
+diverge, flow-only flights move both ways from one build to the next, and a
+total can hide one flight that got much worse. Read the per-log lines, and
+A/B a suspect commit by building without it, as the refresh16 regression
+was.
+
 ## Tuning: is it noise, damping, or gain? (`gyro_fft.py`, `rate_response.py`, `filter_phase.py`, `rate_band.py`, `batch_fft.py`)
 
 The first three answer the question a tuning session actually turns on: **is the vehicle noisy,
