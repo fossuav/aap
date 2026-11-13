@@ -128,43 +128,69 @@ def cmd_cache(args):
 
 # ---------------------------------------------------------------- run
 
+class Fmt:
+    """A FMT record, with a struct for each number of leading fields a record has room for."""
+
+    def __init__(self, length, name, fmt, cols):
+        self.length, self.name, self.fmt, self.cols = length, name, fmt, cols
+        self.structs = {}
+
+    def prefix(self, size):
+        """struct for the leading fields that fit in size payload bytes, and their count"""
+        if size not in self.structs:
+            k = 0
+            while k < len(self.fmt) and struct.calcsize('<' + ''.join(FMTCH[c] for c in self.fmt[:k + 1])) <= size:
+                k += 1
+            self.structs[size] = (struct.Struct('<' + ''.join(FMTCH[c] for c in self.fmt[:k])), k)
+        return self.structs[size]
+
+
 def parse_bin(path):
-    """The WANT messages from a DataFlash log as row dicts, with the type's own scaling."""
+    """The WANT messages from a DataFlash log as row dicts, with the type's own scaling.
+
+    Replay copies the source log's FMT records, then writes the cores it re-runs in the build's
+    own format under the same ids. Where the build added fields to a message the record runs past
+    the FMT's length, and where it removed some it stops short: 4.7.2's XKF5 has a float more than
+    4.7.0's, and a master Replay of a 4.7 log writes XKF4 and XKFA shorter. Stepping by the FMT's
+    length then lands inside the next record and skipped it, the replayed XKF1 among them. So a
+    record that is not followed by a header is taken to run to the next one, and only the fields
+    that fit in it are read: the leading fields, which keep their place as fields are added.
+    """
     data = open(path, 'rb').read()
-    fmts = {FMT_ID: (FMT_LEN, None, None, None)}
+    fmts = {}
     out = {w: [] for w in WANT}
     i, n = 0, len(data)
     while i + 3 <= n:
-        f = fmts.get(data[i + 2]) if data[i] == 0xA3 and data[i + 1] == 0x95 else None
-        if f is None:
+        mid = data[i + 2] if data[i] == 0xA3 and data[i + 1] == 0x95 else None
+        length = FMT_LEN if mid == FMT_ID else (fmts[mid].length if mid in fmts else None)
+        if length is None:
             j = data.find(HEAD, i + 1)
             if j < 0:
                 break
             i = j
             continue
-        length = f[0]
-        if i + length > n:
-            break
-        if data[i + 2] == FMT_ID:
-            t, ln = data[i + 3], data[i + 4]
-            name = data[i + 5:i + 9].rstrip(b'\0').decode('ascii', 'replace')
-            fmt = data[i + 9:i + 25].rstrip(b'\0').decode('ascii', 'replace')
-            cols = data[i + 25:i + 89].rstrip(b'\0').decode('ascii', 'replace').split(',')
-            st = None
-            if name in out and 'a' not in fmt:
-                try:
-                    st = struct.Struct('<' + ''.join(FMTCH[c] for c in fmt))
-                except KeyError:
-                    pass
-            fmts[t] = (ln, name, (fmt, cols), st)
-        elif f[3] is not None:
-            fmt, cols = f[2]
-            row = dict(zip(cols, f[3].unpack_from(data, i + 3)))
-            for k, c in zip(cols, fmt):
+        end = i + length
+        if end + 2 <= n and data[end:end + 2] != HEAD:
+            j = data.find(HEAD, i + 3)
+            end = n if j < 0 else j
+        if mid == FMT_ID:
+            if end - i >= FMT_LEN:
+                fmt = data[i + 9:i + 25].rstrip(b'\0').decode('ascii', 'replace')
+                name = data[i + 5:i + 9].rstrip(b'\0').decode('ascii', 'replace')
+                if name in out and all(c in FMTCH and c != 'a' for c in fmt):
+                    cols = data[i + 25:i + 89].rstrip(b'\0').decode('ascii', 'replace').split(',')
+                    fmts[data[i + 3]] = Fmt(data[i + 4], name, fmt, cols)
+                else:
+                    fmts[data[i + 3]] = Fmt(data[i + 4], None, '', [])
+        elif fmts[mid].name is not None:
+            f = fmts[mid]
+            st, k = f.prefix(end - i - 3)
+            row = dict(zip(f.cols[:k], st.unpack_from(data, i + 3)))
+            for col, c in zip(f.cols[:k], f.fmt[:k]):
                 if c in SCALE:
-                    row[k] *= SCALE[c]
-            out[f[1]].append(row)
-        i += length
+                    row[col] *= SCALE[c]
+            out[f.name].append(row)
+        i = end
     for name in ('XKF1', 'XKF5'):
         out[name] = [r for r in out[name] if r.get('C', 0) >= REPLAY_CORE_OFFSET]
     return out
