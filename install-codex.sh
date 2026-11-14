@@ -136,6 +136,13 @@ for file in SKILL.md pr_review.py; do
 done
 chmod +x .codex/skills/pr-review/pr_review.py
 
+# cleanup skill (has the survey/apply helper for scratch worktrees and branches)
+mkdir -p .codex/skills/cleanup
+for file in SKILL.md cleanup.py; do
+    install_file "$SKILLS_URL/cleanup/$file" ".codex/skills/cleanup/$file"
+done
+chmod +x .codex/skills/cleanup/cleanup.py
+
 echo ""
 echo "Installation complete!"
 echo ""
@@ -168,6 +175,7 @@ echo "  - /lua-crsf        - Write CRSF transmitter menu scripts"
 echo "  - /lua-vehicle     - Lua vehicle control and movement commands"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
 echo "  - /pr-checks      - Download a PR's failing CI checks and identify failing tests"
+echo "  - /cleanup        - Remove scratch worktrees and branches, saving anything they hold"
 echo "  - /aap-update     - Check for and install playbook updates"
 echo ""
 echo "To uninstall, run:"

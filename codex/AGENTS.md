@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.59
+**Playbook version:** 1.3.60
 
 ## Repository-Local Rules
 
@@ -32,6 +32,7 @@ If skills are installed (`.codex/skills/`), prefer using them over manual comman
 | `/log-analyze <logfile>` | Analyzing DataFlash .bin flight logs |
 | `/pr-checks [PR]` | Downloading a PR's failing CI checks and identifying the failing tests/build errors |
 | `/pr-review [PR]` | Reviewing **your own** PR before a maintainer does - CI gates, parallel review, cold second pass, then fixing what it finds |
+| `/cleanup [--sweep]` | Removing the scratch worktrees and branches a session made, after saving anything only they hold; run it before ending a session that made them |
 | `/aap-update` | Checking the local playbook version against GitHub and updating |
 
 ## Tooling
@@ -542,6 +543,7 @@ When modifying existing files:
 - If git clean is absolutely necessary, first backup untracked files to a safe location
 - **NEVER run `git add -A` or `git add .`**, including when scoped to a directory - they stage untracked files, which here include the installed playbooks and local notes. Anything swept in becomes tracked, so a later checkout of a commit without it **deletes it from the working tree**, and `git status` then looks clean because the file is gone rather than modified. That is how three playbook files were lost on 2026-09-02. Stage the exact paths the commit is meant to contain (`git add path/one path/two`); use `git add -u` when you really do mean every tracked file you changed.
 - Prefer `git checkout` or `git restore` to discard changes to tracked files
+- **Remove a scratch worktree with `/cleanup` (or `git worktree remove`), never `rm -rf`**, and before ending a session that made worktrees or branches. Deleting the directory leaves `.git/worktrees/<name>` behind, with its own clone of every submodule (about 0.2 GB each). One machine accumulated 207 forgotten worktrees and 280 GB that way.
 - **Verify rebased commits before force pushing:** After rebasing or squashing, verify the final tree content matches the original by comparing relevant files:
   ```bash
   # Compare specific files between original and rebased commits

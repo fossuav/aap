@@ -238,6 +238,7 @@ The install script places the following files:
 | `.codex/skills/autotest/run_autotest.py` | Timed autotest runner used by the autotest skill — wall-clock timeout, lock pre-check and per-clone isolation |
 | `.codex/skills/hwdef-check/hwdef_check.py` | Helper used by the hwdef review skill |
 | `.codex/skills/pr-checks/ci_failures.py` | Helper used by the PR checks skill |
+| `.codex/skills/cleanup/cleanup.py` | Helper used by the cleanup skill to survey scratch worktrees and branches and remove an approved plan after saving what only they hold |
 
 Codex installs no Claude-style permissions or hooks; command approval remains controlled by the Codex environment.
 
