@@ -25,7 +25,9 @@ no review holds a change against it. The process is in the root playbook,
 A rule is a general principle that a maintainer would agree with on reading
 it, with no knowledge of the incident that exposed it. The incident is its
 example, not its subject. If the rule only makes sense with the incident
-attached, it is a note for the analysis record, not a rule.
+attached, it is a note for the analysis record, not a rule. Keep it to the
+length of the confirmed rules, 25 to 60 words; the detail of the incident
+belongs in the analysis record too.
 
 ```
 ### ARCH-n: <the principle, in one plain sentence>
@@ -39,158 +41,95 @@ Status:  proposed <date>
 
 ## Proposed
 
-Second batch (2026-10-16). ARCH-11, 14 and 16 are the architecture themes
-of the 2026-10-14 mining not used in the first batch, with the ones the
-playbooks already cover left out (control and filter changes need evidence,
-EKF changes need scrutiny, hwdef and scripting conventions, which belong to
-their own playbooks). ARCH-17 and ARCH-18 come from this week's PR work, and ARCH-19 (confirmed)
-from the user.
-"Seen in" counts distinct PRs in the mining.
+Each waits for the user to confirm its wording; ARCH-11 is parked.
 
-### ARCH-11: A pre-arm check catches what would silently go wrong, says exactly what, and changes nothing
+### ARCH-11: A pre-arm check catches what would silently go wrong, says what, and changes nothing
 
-A configuration that would misbehave without telling anyone - a failsafe
-whose data source is missing, an output used by two functions - fails
-pre-arm, in the library that owns the setting, with a message that names
-the cause rather than "unhealthy". The check asks what the vehicle actually
-uses (the AHRS's sources, not whether a GPS is configured), so it never
-locks out a vehicle that has no such sensor, and it only reads: anything
-that must happen at arming belongs in arm(). A setting that is merely
-unusual is not a pre-arm failure; each check costs flash and support time
-and needs evidence that it catches something real.
+A configuration that would misbehave silently fails pre-arm, in the
+library that owns the setting, with a message naming the cause. The check
+asks what the vehicle actually uses, so a vehicle without the sensor can
+still arm, and it only reads: anything done at arming belongs in arm().
 
-Example: tridge on #20856 (fail arming when the RPM failsafe's ESC telemetry
-         is missing); rmackay9 and peterbarker on #31177 (ask the AHRS
-         whether GPS is in use; the state change belongs in arm()); lthall
-         on #27068 (no pre-arm checks for sensible settings).
-Check:   for each new check - what silently fails without it, where its
-         setting lives, whether a vehicle without the sensor can still arm,
-         and whether the check writes anything.
+Example: rmackay9 and peterbarker on #31177: ask the AHRS whether GPS is
+         in use, and change state in arm().
+Check:   what silently fails without each new check, and whether it
+         writes anything.
 Seen in: 12 PRs, all four reviewers.
-Status:  parked 2026-10-16. The user is not sure what there is good consensus
-         on for pre-arm checks yet (Leonard and Tridge pull in different
-         directions on checks for settings and on option bits to disable them).
+Status:  parked 2026-10-16: no clear consensus yet; lthall and tridge
+         differ on checks for settings and on option bits to disable them.
 
 ### ARCH-3a: A layer reports the structure its users configure
 
-A refinement of ARCH-3 (lower layers detect, higher layers decide; callers
-go through a layer's interface). Where a configuration makes a backend's
-structure visible to the user - one EKF core per source set with
-`EK3_SRC_OPTIONS` bit 3 - the layer above reports that structure in the
-user's terms rather than hiding it behind a single generic answer. What
-stays forbidden is reaching past the layer, not the layer exposing what the
-user configured.
+Callers still go through the layer (ARCH-3), but where a configuration
+makes a backend's structure visible to the user, the layer reports it in
+the user's terms rather than hiding it behind one generic answer.
 
-Example: #34543's per-core OSD items; peterbarker on #34630 (2026-10-06):
-         "Our abstraction is AHRS. Just looking through that abstraction
-         layer into the EKF isn't really appropriate." The user: AHRS cannot
-         be required to be entirely generic when that leaves a real user
-         unable to see the standby source set's estimate before switching
-         to it. AP_AHRS's set_posvelyaw_source_set() and
-         get_posvelyaw_source_set() already pass straight to EKF3.
-Check:   the caller uses the layer's interface; anything backend-specific
-         it exposes corresponds to something the user configures, and is
-         named in those terms.
-Status:  proposed 2026-10-16 from the user's position on #34543; needs
-         confirmation of the wording.
+Example: #34543's OSD shows the standby source set's estimate before a
+         switch, with one EKF core per source set (`EK3_SRC_OPTIONS` bit 3).
+Check:   anything backend-specific the layer exposes matches something the
+         user configures, and is named in those terms.
+Status:  proposed 2026-10-16 from the user's position on #34543, against
+         peterbarker's on #34630: "Our abstraction is AHRS."
 
 ### ARCH-20: A flag a mode holds true must still be true when the mode ends
 
-Where a validity flag is held true by a mode rather than by its own evidence,
-the evidence it would otherwise need is not refreshed for as long as the mode
-runs. When the mode ends the flag falls back on that evidence, now stale, and
-drops in the same cycle, taking everything that depends on it. Either keep the
-evidence current while the mode holds the flag, or hand over fresh evidence as
-the mode ends.
+While a mode holds a validity flag true, the evidence the flag otherwise
+needs goes stale, so the flag drops the moment the mode ends. Keep the
+evidence current while the mode runs, or refresh it as the mode ends.
 
-Example: SFD-O4 log54 (2026-10-22). EKF3's `gndOffsetValid` is `ground
-         measured within 5 s || range finder is the height source`; the
-         terrain estimator does not run on range finder height, so after a
-         low hover its timestamp was 55 s old. At touchdown the range went out
-         of range low, the height source fell back to baro, and the ground
-         offset, the flow lane's relative position and then the EKF failsafe
-         all went in turn. Confirmed by Replay.
-Check:   for each `evidence || mode` validity, what the evidence reads at the
-         moment the mode ends, and whether anything kept it current while
-         the mode ran.
-Status:  proposed 2026-10-22 from log54; needs confirmation of the wording.
+Example: SFD-O4 log54. `gndOffsetValid` is "ground measured within 5 s, or
+         range finder is the height source"; after a low hover the
+         measurement was 55 s old, and the switch to baro at touchdown
+         dropped the flow lane and raised the EKF failsafe. Confirmed by
+         Replay.
+Check:   for each `evidence || mode` validity, what the evidence reads when
+         the mode ends.
+Status:  proposed 2026-10-22 from log54.
 
 ### ARCH-21: A state kept out of a filter update keeps its covariance consistent
 
-When a fusion stops one state learning from an observation, usually by
-zeroing that state's Kalman gain, the covariance update has to match the
-gain actually applied. The short form `P = P - K*H*P` holds only for the
-optimal gain: with an entry of K forced to zero it corrects that state's
-column but not its row, symmetrising afterwards keeps half the correction,
-and the matrix can stop being positive definite. The filter's guard against
-negative variances then skips later fusions that touch the state, with no
-fault raised, so a sensor stops being used while the filter still reports
-it healthy. Update the masked state's covariance in Joseph form (its row
-takes its column's correction), or decorrelate the state before the gain is
-computed, as EKF3 does for states it inhibits outright.
+`P = P - K*H*P` is only right for the optimal gain. Zeroing a state's gain
+without a matching covariance update can leave P not positive definite,
+and the filter then skips fusions in silence while reporting healthy.
+Update a masked state in Joseph form, or decorrelate it before the gain is
+computed.
 
-Example: SFD TD25, 2026-10-29. #33498 masks the Z gyro bias out of optical
-         flow fusion while no yaw is fused. On a hand launch the first flow
-         fusion broke positive definiteness; EKF3 then refused 222 of 225
-         baro height fusions, its height variance grew to 860 m^2, and VALT
-         climbed while the estimate read 1.5 m/s down. Replay with a
-         Joseph-consistent update kept every fusion.
-Check:   for every mask on a Kalman gain, how the covariance is updated for
-         the masked states, and whether a test or Replay shows the matrix
-         stays positive definite through it.
-Status:  proposed 2026-10-29 from TD25; needs confirmation of the wording.
+Example: SFD TD25, #33498's flow Z gyro bias mask: EKF3 refused 222 of 225
+         baro fusions and VALT climbed; a Joseph-consistent update kept
+         every fusion in Replay.
+Check:   for every mask on a Kalman gain, how the masked state's covariance
+         is updated.
+Status:  proposed 2026-10-29 from TD25.
 
 ### ARCH-25: A feed-forward term models the vehicle, not a setting that shapes the command
 
-A feed-forward supplies what the vehicle needs to follow its command: the
-acceleration the plan asks for, and what it takes to overcome a force the
-vehicle feels. Each term comes from an estimate of the vehicle, never from a
-parameter whose job is to shape the command (a speed limit, a time constant,
-an expo), which is set for how the command should feel rather than for what
-the airframe does. Whatever the two disagree by is left to an integrator,
-which carries it through every transient.
+Each feed-forward term comes from an estimate of the vehicle, never from a
+parameter that shapes the command (a speed limit, a time constant, an
+expo). Whatever the two disagree by is left to an integrator, which
+carries it through every transient.
 
-Example: Loiter's drag model, g tan(LOIT_ANG_MAX) v / LOIT_SPEED_MS, both
-         decays the desired velocity and, in master's feed-forward, stands
-         for the airframe's drag; #33318 takes it out, which assumes no drag.
-         In SITL each version's velocity integrator carried the mismatch
-         through a stop: master braked early and rolled back where the model
-         was above the airframe's drag, #33318 ran 0.5 m past and slid back
-         where it matched. Feeding the airframe's own drag forward separately
-         stopped within 0.14 m (2026-11-06,
-         `ardupilot-pr-analysis/33318/README.md`).
-Check:   for each term in a feed-forward, name the physical effect it
-         compensates and where its value comes from; a term computed from a
-         shaping parameter, or a shaping term reused as a physical one, is
-         the defect. In a log the integrator of a correct feed-forward sits
-         near zero in steady motion and through a stop.
-Status:  proposed 2026-11-06 from #33318; needs confirmation of the wording.
+Example: #33318. Loiter's drag model, built from LOIT_ANG_MAX and
+         LOIT_SPEED_MS, stood for airframe drag in master's feed-forward;
+         in SITL master braked early, #33318 ran 0.5 m past, and feeding
+         the airframe's own drag stopped within 0.14 m.
+Check:   the physical effect each feed-forward term compensates, and where
+         its value comes from.
+Status:  proposed 2026-11-06 from #33318.
 
 ### ARCH-26: An estimate fused into another filter is not an independent measurement
 
-A filter's output carries errors that persist from one step to the next: a
-bias it is still learning, a lag, a model error. Fused into a second filter
-every step with its own variance as the noise, it counts as a stream of
-independent observations, so the second filter becomes far more confident
-than the information justifies, and that confidence shuts out the sensors
-that could have caught the error. Fuse a filtered estimate at the rate new
-information enters it, or inflate its noise for the correlation, and compare
-the receiving filter's claimed uncertainty with its real error.
+A filter's errors persist from step to step, so fusing its output every
+step as if independent makes the receiving filter overconfident and shuts
+out the sensors that could correct it. Fuse at the rate new information
+enters, or inflate the noise for the correlation.
 
-Example: SFD-O4 log81 (2026-11-06). #33478 fuses the AGL KF's vertical
-         velocity into EKF3 as velD every step. In an ALT_HOLD hover the AGL
-         KF velocity was 0.03-0.05 m/s off while its accel-bias state chased
-         IMUs cooling 12 degC; the flow core's height std was 0.084 m against
-         0.233 m without the fusion, so the baro (1 m noise) barely corrected
-         it, the height stood still and the vehicle climbed 0.5 m in 37 s.
-         Replay with the fusion off: 0.04 m
-         (`ardupilot-pr-analysis/33478/README.md`).
-Check:   where one estimator's output is fused into another, at what rate
-         new information enters the first, whether the noise allows for its
-         errors persisting between samples, and, in a log, whether the
-         receiving filter's variance matches its error against an
-         independent reference.
-Status:  proposed 2026-11-06 from log81; needs confirmation of the wording.
+Example: SFD-O4 log81, #33478: fusing the AGL KF's vertical velocity every
+         step cut the flow core's height std from 0.233 m to 0.084 m, the
+         baro barely corrected it, and the vehicle climbed 0.5 m in 37 s;
+         0.04 m with the fusion off in Replay.
+Check:   whether the receiving filter's variance matches its error against
+         an independent reference.
+Status:  proposed 2026-11-06 from log81.
 
 ### Style batch (2026-11-14)
 
