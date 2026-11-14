@@ -16,6 +16,12 @@ no review holds a change against it. The process is in the root playbook,
   the next session does not propose it again.
 - A rule that holds only on a fork's own branches goes in that fork's
   repository, not here.
+- Rules about how code is written rather than how it fits together are
+  numbered STYLE-n and, once confirmed, go in the root playbook's Code
+  Style section with a `(STYLE-n, confirmed <date>):` marker. They take
+  the same format and the same confirmation. `rules/generate.py` finds
+  only ARCH markers today, so it learns the STYLE prefix with the first
+  confirmed STYLE rule.
 
 ## What a rule looks like
 
@@ -188,6 +194,313 @@ Check:   where one estimator's output is fused into another, at what rate
          receiving filter's variance matches its error against an
          independent reference.
 Status:  proposed 2026-11-06 from log81; needs confirmation of the wording.
+
+### Style batch (2026-11-14)
+
+Every theme the 2026-10-14 mining classed as style, one rule each, in the
+order of `score.py`'s weighted score. "Seen in" counts distinct PRs in
+`ardupilot-pr-analysis/rules-mining/data/ranked.txt`; the quotes are from
+`principles_all.json`. Several themes are partly in the root playbook
+already, and each says what it adds. Three points need the user's call:
+the deg/s suffix (STYLE-3), underscores on member names (STYLE-1), and
+whether STYLE-11 and STYLE-12 are worth rules of their own or should fold
+into STYLE-10 and STYLE-8.
+
+### STYLE-1: A name says what the thing is or does, in words the codebase already uses
+
+A name is often the only documentation a reader looks at, so it has to stay
+true in every case the code reaches: a function that does what its name
+says only most of the time, a "reset" that may not reset or an "ensure"
+that can fail, misleads. Name a boolean for the positive condition, use
+the term the codebase already has for a concept rather than a new one,
+make sibling functions say how they differ, and name a generic building
+block for what it is rather than the first problem it solved. A rename
+that makes a name less true is worse than none, and a rename does not
+share a commit with a change of logic. Method names never start with an
+underscore.
+
+Example: rmackay9 on #33498: "Instead of a double negative why don't we
+         rename it to yawFusedRecently()"; on #32472: "might as well stick
+         with the word takeoff instead of introducing a new word,
+         liftoff"; peterbarker on #31177: "you are not doing what the
+         function name says most of the time".
+Check:   for each new or renamed identifier, whether it holds on every
+         path including failure, whether a boolean is positive, whether
+         the concept already has a name, and whether a reader could tell
+         it from its siblings.
+Seen in: 30 PRs, all four reviewers.
+Overlaps: the playbook's Naming Conventions (unit suffixes, enum class,
+         parameter names) and ARCH-16's position and location terms.
+Open:    underscores on members. lthall on #11795: "our standard is to put
+         an underscore before variables like this"; rmackay9 on #32472:
+         "these days we don't normally put underscores in front of
+         internal variables". The libraries' headers are split about one
+         in three with an underscore. Proposed: new code follows the file
+         it is in.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording and the member-name point.
+
+### STYLE-2: A comment stays true, and says what the code cannot
+
+The playbook's Comments section already asks for why rather than what,
+short comments, and a description above every method in both files. What
+reviewers add is accuracy over time: a change that makes a comment wrong
+corrects or removes it, and a comment is written generally enough that the
+next change does not make it wrong. A comment is owed wherever a reader
+cannot recover the fact from the code: a precondition (home must be set),
+why a sentinel return is valid, what a return value or out-parameter
+carries, the units and allowed values of an argument, why an enum or
+parameter value is reserved, a deliberate difference from a sibling
+library, and a workaround or warning-silencing construct that someone
+would otherwise "fix" back. Each member in a header gets a short comment
+on what it holds. A comment goes above or after the opening brace, not
+inside a condition.
+
+Example: peterbarker on #12810: "Pointless (and insufficient as it doesn't
+         mention it also handles case MIDDLE) comment"; on #24064: "This
+         deserves a comment. Otherwise we'll be bouncing PRs to turn this
+         back into a bool"; rmackay9 on #11795: "comments beside each
+         member declaration giving some idea of what these are for".
+Check:   re-read every comment the diff touches or sits beside against the
+         code after the change; for each new member, precondition,
+         sentinel or workaround, find the line that explains it.
+Seen in: 28 PRs, all four reviewers.
+Overlaps: Comments and Documentation; this adds accuracy, members,
+         preconditions, sentinels and workarounds.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-3: A type fits the values it holds, and its name carries their unit
+
+Integers are fixed-width (`int16_t`, `uint8_t`), not plain `int`, and wide
+enough for what the feature allows now and real hardware produces,
+negative values included. A channel mask is 32-bit like the existing ones;
+an enum stored compactly gives its underlying type; an argument that takes
+one of a set of values takes the enum, whose values are opaque names, not
+numbers. A size or count is written with `sizeof` and a named constant,
+not a literal explained in a comment, and a container reports sizes in
+elements, not bytes. Maths stays single precision: `float` literals carry
+`f`, and a call such as `fabsF` is checked against its argument's real
+type. A bit test that yields a boolean compares with `!= 0`. Related
+constants use one unit.
+
+Example: rmackay9 on #11795: "we don't normally use int.. more often
+         int16_t or int8_t"; tridge on #16725: "make it a float, we do have
+         ESCs that go over 320A, and some can go negative"; peterbarker on
+         #31521: "Could we involve a sizeof and a constant here rather than
+         explaining in text what's going on?"
+Check:   each new variable's type against the largest and smallest value
+         it can take; each literal that is really a size or count; each
+         unit suffix.
+Seen in: 17 PRs, peterbarker, rmackay9, tridge.
+Overlaps: the playbook's unit suffixes and float literals.
+Open:    deg/s. The playbook says `_dps`; peterbarker on #25814 asked for
+         "any other dps to degs", and the code has 345 `_degs` names to
+         172 `_dps`, `_degs` being the form in AC_AttitudeControl,
+         AC_WPNav and AP_Mount. Proposed: the playbook changes to `_degs`.
+         Left out: degrees against radians in interfaces. peterbarker on
+         #28008 expected an objection to radians, but AC_AttitudeControl's
+         interface is now mostly radians, so there is no consensus to
+         write down.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording and the deg/s point.
+
+### STYLE-4: A feature macro is always defined and tested with #if, and a constant is typed
+
+A macro defined on one build path and not another can give a class a
+different shape in different files, which has crashed autopilots. So an
+ArduPilot feature or debug macro is always defined, to 0 or 1, and tested
+by value with `#if`, never by presence with `#ifdef` (the build's
+`-Werror=undef` then catches a missing definition). `#ifdef` stays for
+macros the compiler or platform defines. A default a board may override is
+wrapped in `#ifndef` in the library's config header; a value that is truly
+fixed is not, so redefining it is an error. A constant one file uses is a
+typed `static constexpr` in that file or its class, not a `#define` in a
+header everything includes, and it sits near its use: a define used once,
+far away, only makes the reader look the value up. Debug macros in headers
+carry the library's prefix, platform tests follow the forms already in use
+(`defined(STM32H7)`), and shift and mask expressions are parenthesised.
+
+Example: peterbarker on #31521: "You can end up with memory corruption,
+         I've seen autopilots crash because something was defined in one
+         path and wasn't defined in another"; on #31951: "We tie ourselves
+         up in all sorts of knots when we use #ifdef rather than #if"; on
+         #34360: "Breaking this out to a define - where the define is only
+         used in one place - just means that to know how the code behaves
+         you have to go and look up the value."
+Check:   every `#ifdef` and `defined(` in the diff names a compiler or
+         platform macro; for every `#define`, where it lives, who includes
+         it, and whether a board should be able to override it.
+Seen in: 11 PRs, peterbarker, tridge.
+Overlaps: ARCH-4 (defaults in `_config.h`) and ARCH-24 (a threshold is a
+         named constant). #34360 and ARCH-24 meet here: the named constant
+         is a `static constexpr` next to the code it gates, so the reader
+         finds the value and its reason in one place.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-5: A switch over an enum lists every value and has no default
+
+Without `default:`, adding a value to the enum breaks the build
+(`-Werror=switch`) at every switch that does not handle it, so whoever adds
+it decides its handling everywhere; a default hides the new value. Values
+that need nothing are listed as empty cases that break. A setting with
+several values, or a backend or protocol type, is handled by a switch
+rather than a chain of ifs, so unsupported values are visible and can be
+filled in later. A value cast from a parameter or the wire can match no
+case, so the code after the switch must be safe when nothing ran
+(ARCH-10).
+
+Example: peterbarker on #14257: "Adding default: means the compiler won't
+         cause them pain until they conform"; on #23019: "This should be a
+         switch statement so if we get a new protocol the user has to add
+         it in here."
+Check:   every new switch over an enum has no default and names every
+         value; where the value comes from outside, what happens when no
+         case matches.
+Seen in: 8 PRs, peterbarker only.
+Overlaps: the playbook's "use enum class".
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-6: Code does not spend flash on constructs that buy nothing
+
+The playbook already prices features (ARCH-4, ARCH-23); this is the price
+of how code is written. Bitfields for booleans save RAM but cost more
+flash than they save, and a packed struct is larger and slower code, so
+both are used only where a wire or storage format demands the layout. A
+method is virtual only if something overrides it. An object that is never
+deleted has no destructor or teardown path, a call that cannot fail
+returns nothing to check, a constant is asked of its owner rather than
+copied into RAM, and a method of a line or two is defined in the header.
+
+Example: tridge on #21038: "we should remove these as bitfields, just make
+         bool, we did this to save ram, but it costs flash, not worth it";
+         on #14257: "I don't think we should mark a structure packed unless
+         it is really needed"; peterbarker on #31521: "If we are not ever
+         deleting the manager then this is just wasted flash."
+Check:   for each new bitfield, `PACKED`, `virtual`, destructor and error
+         path, what it buys; `Tools/scripts/size_compare_branches.py` on a
+         1 MB board for what it costs.
+Seen in: 9 PRs, peterbarker, rmackay9, tridge.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-7: A member takes a non-zero default at its declaration, and a zero one not at all
+
+ArduPilot zeroes BSS and `new` zeroes the heap, so initialising a member to
+zero, false or null costs flash and says nothing. A member that needs a
+non-zero default takes it at its declaration in the header, not by
+assignment in the constructor body; a value that depends on constructor
+arguments goes in the initialiser list. A class that will be declared on
+the stack is the exception, since nothing zeroes it. A table of constant
+values is `const`, with designated initialisers.
+
+Example: tridge on #13741: "init of vars to false (zero) just uses flash
+         space for no reason, all class vars start as zero in ArduPilot";
+         peterbarker on #12810: "Use in-header initialisation rather than
+         assigning in constructor."
+Check:   every new initialiser is non-zero or on a stack-allocated class;
+         no constructor body assigns a constant.
+Seen in: 7 PRs, peterbarker, rmackay9, tridge.
+Overlaps: the Memory section already forbids defensive zero initialisers;
+         this adds where a non-zero default goes, and could be a line added
+         to that bullet rather than a rule of its own.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-8: An interface is as narrow as its callers need
+
+Members are private unless another class needs them, and that class gets
+an accessor rather than wider visibility. A method that changes no state
+is `const`, and one that does is not. An input that cannot be null is a
+reference, `const` unless it is written, not a pointer. A method returns a
+value only if a caller can do something with it.
+
+Example: peterbarker on #14203: "Please check visibility on members on
+         this class. Pretty sure some of them can be private."; on #32202:
+         "What can the caller sensibly do with this return value?"
+Check:   for each new public member or method, which caller needs it; for
+         each pointer argument, whether null is valid; for each return
+         value, whether a caller uses it.
+Seen in: 6 PRs, peterbarker only.
+Overlaps: ARCH-1 (shared state is published through const accessors).
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-9: Time is compared as time elapsed since a stored start
+
+`AP_HAL::millis()` and `micros()` are 32-bit and wrap, `micros()` every
+71.6 minutes. In unsigned arithmetic `now - start > period` stays right
+across the wrap; `start + period < now` does not, and a deadline stored as
+a future time can stop an update for a whole wrap. So store when something
+happened, not when it should next happen, and name the timestamp for the
+event with its unit (`last_warning_ms`). A timeout computed from data is
+clamped with `MIN()` against a known small value. Timing-sensitive maths,
+such as extrapolation, uses `micros()`, since whole milliseconds add noise.
+Autotest Python subtracts times the same way.
+
+Example: peterbarker on #31521: "This is adding timestamps and comparing
+         against now - this is a frequent source of bugs at uint32_t wrap
+         time"; tridge on #14257: "now - _last_uart_start_time_ms > 1000U
+         ... it makes a difference at the wrap point".
+Check:   no timestamp in the diff has a duration added to it before a
+         comparison, and no two absolute times are compared directly.
+Seen in: 7 PRs, peterbarker, tridge.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-10: Guard conditions return early, one reason each
+
+Nested if/else hides which condition decides the outcome; a run of early
+returns, one per condition, shows each one and how they interact. Status
+logic with several states reads best as early returns or a switch, so each
+transition is explicit. A condition that a later one already implies is
+removed.
+
+Example: peterbarker on #12810: "Change this to an early-return. It's a
+         pattern we use elsewhere."; on #32393: "reformulating like this
+         makes it quite clear that disabling the RPM check also disables
+         the CPU check, which is not-so-good."
+Check:   the nesting depth of new code, and whether each return has one
+         reason.
+Seen in: 5 PRs, lthall, peterbarker, rmackay9.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-11: A condition that is repeated or hard to read becomes a named predicate
+
+A test made in more than one place, or one that is easy to get wrong,
+becomes a `const` method returning bool, named for what it decides, with
+early returns inside saying why. The callers then read as the decision,
+and a fix lands once.
+
+Example: peterbarker on #34209: "a bool is_xy_bias_observable() const
+         {...} with this logic would probably make things clearer"; tridge
+         on #26118: "lets break that out into a boolean
+         is_protocol_enabled(...)".
+Check:   no compound condition appears twice in the diff.
+Seen in: 3 PRs, peterbarker, tridge.
+Open:    could fold into STYLE-10 as its last sentence.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
+
+### STYLE-12: No default argument that only one caller uses, or that every caller should choose
+
+A default argument with a single caller is noise: that caller can pass the
+value. Where the value is a choice with consequences, every caller makes
+it explicitly, so a new caller cannot inherit it by accident.
+
+Example: peterbarker on #34292: "Looks like there's only one caller - so
+         we really don't need the default in here."; rmackay9 on #28825:
+         "it might be safer to remove the default from the argument and
+         force the caller to make a choice".
+Check:   for each new default argument, how many callers rely on it and
+         whether any of them should have chosen.
+Seen in: 2 PRs, peterbarker, rmackay9.
+Open:    could fold into STYLE-8 as its last sentence.
+Status:  proposed 2026-11-14 from the mining; needs confirmation of the
+         wording.
 
 ## Confirmed
 
