@@ -49,7 +49,7 @@ From `AP_NavEKF3_core.h`:
 - Sensor data, per-instance sensor properties, vehicle flags and any value vehicle code sets that changes the EKF's behaviour reach it through the DAL, or Replay diverges from the flight. Compile-time constants and parameters need not, but a parameter cached into a member the EKF reads does.
 
 **Data That Changes Rarely Gets a Replay Message of Its Own** (REPLAY-4, confirmed 2026-11-14):
-- A replay message is rewritten whole whenever any of its fields changes, so data that changes far less often than the message it would join - a calibration limit, a configured value - goes in its own message, written only when it changes, rather than costing log space in every frame.
+- A replay message is rewritten whole whenever any of its fields changes, so data that changes far less often than the message it would join - a calibration limit, a configured value - goes in its own message, written when it changes and at the start of each log, rather than costing log space in every frame.
 
 ### Why the DAL Exists
 
@@ -86,7 +86,7 @@ Then obey the on-disk format rules, REPLAY-1, 2 and 4 above. They are silent whe
 
 **`log_RFRN`'s flag byte is full.** Its two retired bits, `unused` (once `get_compass_is_null`) and `ahrs_airspeed_sensor_enabled_unused`, stay retired (REPLAY-2), so a new flag starts a second flags byte at the end, as #35105's `Flags2` does.
 
-**A new message is for data on its own schedule (REPLAY-4).** `WRITE_REPLAY_BLOCK_IFCHANGED` rewrites the whole message when any byte changes, so data that rarely changes costs log space every frame if it rides in a message that changes every frame. tridge had `RISJ` split out of `RISI` for that on #32399. An older log has no such message and replays with the member at whatever it was initialised to, so seed it with the legacy value when 0 is not the old behaviour.
+**A new message is for data on its own schedule (REPLAY-4).** `WRITE_REPLAY_BLOCK_IFCHANGED` rewrites the whole message when any byte changes, so data that rarely changes costs log space every frame if it rides in a message that changes every frame. tridge had `RISJ` split out of `RISI` for that on #32399. An older log has no such message and replays with the member at whatever it was initialised to, so seed it with the legacy value when 0 is not the old behaviour. Each log needs its own copy: `start_frame()` sets `force_write` when logging starts, so a message written inside it reaches every log, but one written from elsewhere, such as a sensor callback, must resend itself (ROFM's `rofm_resend` on the SFD branch). On master `WriteLogMessage` also drops a block written before logging starts without marking it for retry, so it can be missing from the second log of a power cycle (SFD fixed in `93c8153549`). A field in a message that changes every frame (REPLAY-1) has neither problem.
 
 **Put the new ID at the end of `LOG_IDS_FROM_DAL`, never in the middle.** tridge's rule on PR #34292, given as "to preserve existing replay logs". Keep `LOG_STRUCTURE_FROM_DAL` in the same order as the ID list.
 

@@ -54,7 +54,11 @@ None at present.
   #32399, and REPLAY-1 points to it. The section's "Never grow an existing
   DAL struct" and "Add a new message instead" paragraphs, which said the
   opposite and predated Replay's short-record copy, were rewritten to
-  match, as was the line calling RFRN's retired bit reusable.
+  match, as was the line calling RFRN's retired bit reusable. Corrected
+  the same day: REPLAY-4 first said "written only when it changes"; a
+  message written outside `start_frame()` is then missing from the next
+  log of the power cycle (#32471's and #34292's records), so it now says
+  "when it changes and at the start of each log".
 
 - **LOG-1 to LOG-6**, the logging and GCS batch from the review mining -
   confirmed 2026-11-14 from the user with the LOG prefix, without their

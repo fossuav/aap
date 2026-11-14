@@ -2,6 +2,6 @@
 
 # REPLAY-4: Data that changes rarely gets a replay message of its own
 
-- A replay message is rewritten whole whenever any of its fields changes, so data that changes far less often than the message it would join - a calibration limit, a configured value - goes in its own message, written only when it changes, rather than costing log space in every frame.
+- A replay message is rewritten whole whenever any of its fields changes, so data that changes far less often than the message it would join - a calibration limit, a configured value - goes in its own message, written when it changes and at the start of each log, rather than costing log space in every frame.
 
 Confirmed 2026-11-14. Part of the AP_NavEKF3 playbook, under [Data Abstraction Layer (DAL) and EKF Replay](../claude/libraries/AP_NavEKF3/CLAUDE.md#data-abstraction-layer-dal-and-ekf-replay). [All rules](../README.md#architectural-rules)
