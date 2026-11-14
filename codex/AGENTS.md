@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.61
+**Playbook version:** 1.3.62
 
 ## Repository-Local Rules
 
@@ -476,6 +476,26 @@ uint32_t val = (payload[1] << 8) | payload[0];
 - If your PR description, commit message, or a comment treats a value as valid (e.g. "0 is valid for pit mode"), the code path must handle that value without crashing.
 - Domain math (`log`, `log10f`, `sqrt`, `acos`, `asin`, division) has restricted inputs. Before adding such a call, identify every value that can reach it, especially the edge cases your own design admits.
 - Reviewers will read the prose and the diff together. A description that promises behaviour the code does not deliver wastes their time and yours.
+
+### Logging and GCS Messages
+
+**A Log Message's Layout Is a Contract With Every Tool That Reads It** (LOG-1, confirmed 2026-11-14):
+- New fields and messages go at the end, so existing logs and Replay keep working. Names are short and stable, an encoding does not vary with configuration, and every new message is documented. A new field or message covers a use the existing ones do not: no near-duplicate of a message, no value that never changes.
+
+**GCS Text Is Rare, Rate-Limited, and Tells the User What to Do** (LOG-2, confirmed 2026-11-14):
+- A message goes through `GCS_SEND_TEXT`, at most once per interval, and says what to do about it. Nothing repeats while the user deliberately holds against a limit or duplicates what the GCS already shows from telemetry, and a condition critical enough to warn about may belong in a pre-arm check instead.
+
+**A Library Logs Its Own Data, Under Its Own Log Bit** (LOG-3, confirmed 2026-11-14):
+- A controller or sensor library writes the messages that describe it, with its own enable bit and rate, rather than leaving the vehicle or another library to log it.
+
+**Logging Costs Bandwidth, and a Change Says How Much It Adds** (LOG-4, confirmed 2026-11-14):
+- Log bandwidth and card space do not grow. A change that adds or enlarges messages states the increase, and logs only what is in use: nothing for cores or lanes that are not running the feature.
+
+**Log Time Never Goes Backwards, and Data Sampled Earlier Says When** (LOG-5, confirmed 2026-11-14):
+- TimeUS is when the message was written and stays monotonic, so messages can be compared. Data sampled at another time carries its own sample-time field, so analysis and Replay can line it up.
+
+**A Failure the User Must Act On Reaches Them Where They Will See It** (LOG-6, confirmed 2026-11-14):
+- A configured backend that fails to start says so rather than failing silently. An error before the GCS is up cannot use STATUSTEXT, and one that stops the boot looks like a bricked board, so the channel suits when it fires. Nothing alarming is reported for a feature the user has not configured.
 
 ### Comments and Documentation
 
