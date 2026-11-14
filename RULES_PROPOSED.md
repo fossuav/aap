@@ -43,7 +43,62 @@ Status:  proposed <date>
 
 ## Proposed
 
-None at present.
+### Replay batch (2026-11-14)
+
+From the user, with rmackay9's #35077 and #35105 and master's replay
+messages as the evidence. The prefix REPLAY-n is a proposal; confirmed,
+they would open the EKF3 playbook's DAL and Replay section and replace its
+"Never grow an existing DAL struct" paragraph, which says the opposite of
+REPLAY-1 and predates Replay's short-record copy (master `9610cb59b7`,
+SFD `c0f7f576e7`).
+
+### REPLAY-1: New replay data extends the message it travels with
+
+Append new data to the end of the existing DAL message, not a new one.
+The structs are not packed, so explicit `unused` bytes
+fill any alignment gap and keep the layout matching the format string.
+Zero must give the old behaviour, since Replay zero-fills what an older
+log lacks. A new message is for data written on its own schedule.
+
+Example: rmackay9's #35077 appends three unused bytes and FLOW_ALT_MIN's
+         float to ROFH, and #35105 adds a Flags2 byte to RFRN.
+Check:   the struct's offsets against its format string, and what the new
+         field's zero does when an older log is replayed.
+Seen in: 2 PRs, rmackay9. The schedule exception is tridge's on #32399:
+         rarely changing data in its own message "would save a lot of log
+         space".
+Status:  proposed 2026-11-14 from the user. Relies on Replay's
+         short-record copy, so a backport to a branch without it takes
+         that fix too.
+
+### REPLAY-2: A retired replay field keeps its place, and its meaning is never reused
+
+A field the EKF no longer reads stays in its struct, renamed `unused`, so
+later fields keep their offsets. It is never given a new meaning, because
+older logs still carry the old one.
+
+Example: peterbarker's `8ad9ae2314` kept ahrs_airspeed_sensor_enabled in
+         RFRN as `_unused`, and #35105 added Flags2 rather than reuse it.
+Check:   no field removed from a DAL struct, and no unused field or bit
+         reassigned.
+Seen in: master's RFRN, with two retired bits; rmackay9's #35105.
+Status:  proposed 2026-11-14. The replay counterpart of ARCH-22.
+
+### REPLAY-3: Everything the EKF reads at run time comes through the DAL
+
+Sensor data, per-instance sensor properties, vehicle flags and any value
+vehicle code sets that changes the EKF's behaviour reach it through the
+DAL, or Replay diverges from the flight. Compile-time constants and
+parameters need not, but a parameter cached into a member the EKF reads
+does.
+
+Example: peterbarker on #32399: a new per-IMU value is plumbed through the
+         replay logging so Replay stays correct.
+Check:   every new read in EKF code goes through `dal.`, and every new
+         vehicle-to-EKF value through AHRS and the DAL.
+Seen in: 1 PR in the mining; the EKF3 playbook's "What MUST Go Through the
+         DAL" says it at length already.
+Status:  proposed 2026-11-14. Gives that section a rule number.
 
 ## Confirmed
 
