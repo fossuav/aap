@@ -4,6 +4,7 @@
 
 - A library reports what it sees and the vehicle decides what to do about it, since different vehicles need different responses: motor failure detection belongs in AP_Motors, the response in the vehicle (rmackay9, [#20856](https://github.com/ArduPilot/ardupilot/pull/20856)).
 - Callers go through a layer's interface (AHRS rather than an EKF backend, AP_HAL rather than a platform), never into its internals, and lower layers never call up. Asking the EKF where its data comes from is a layering violation (peterbarker, [#31177](https://github.com/ArduPilot/ardupilot/pull/31177)).
+- Where a configuration makes a backend's structure visible to the user, the layer reports that structure in the user's terms rather than hiding it behind one generic answer; what stays forbidden is reaching past the layer.
 - Generic behaviour lives in a shared library usable by every vehicle, not in one vehicle's directory.
 
 Confirmed 2026-10-14. Part of the root playbook, under [Architectural Principles](../claude/CLAUDE.md#architectural-principles). [All architectural rules](../README.md#architectural-rules)

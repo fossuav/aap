@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.68
+**Playbook version:** 1.7.69
 
 ## Repository-Local Rules
 
@@ -259,15 +259,22 @@ loc.offset(offset_ned.x, offset_ned.y);
 - Code that needs a capability - a position, a healthy sensor, a link - tests for that capability directly, not for a proxy such as a failsafe having cleared. A proxy holds only until someone changes what it means.
 - Where code acts on a proxy, ask what it actually needs and whether there is a direct test for it. #34696's restore needed a position and waited for the EKF failsafe to clear; once #32514 let the failsafe clear without a position, the restore was refused.
 
+**A Flag a Mode Holds True Must Still Be True When the Mode Ends** (ARCH-20, confirmed 2026-11-14):
+- While a mode holds a validity flag true, the evidence the flag otherwise needs goes stale, so the flag drops the moment the mode ends. Keep the evidence current while the mode runs, or refresh it as the mode ends.
+
 **Lower Layers Detect, Higher Layers Decide** (ARCH-3, confirmed 2026-10-14):
 - A library reports what it sees and the vehicle decides what to do about it, since different vehicles need different responses: motor failure detection belongs in AP_Motors, the response in the vehicle (rmackay9, #20856).
 - Callers go through a layer's interface (AHRS rather than an EKF backend, AP_HAL rather than a platform), never into its internals, and lower layers never call up. Asking the EKF where its data comes from is a layering violation (peterbarker, #31177).
+- Where a configuration makes a backend's structure visible to the user, the layer reports that structure in the user's terms rather than hiding it behind one generic answer; what stays forbidden is reaching past the layer.
 - Generic behaviour lives in a shared library usable by every vehicle, not in one vehicle's directory.
 
 **Safety Logic Is Judged by What It Does When It Is Wrong** (ARCH-5, confirmed 2026-10-14):
 - A failsafe triggers when the vehicle loses something its current flight depends on, and what it then does is a separate, configurable decision.
 - Improve an existing failsafe rather than adding an overlapping one, and never let one feature disable or bypass another's protection (rmackay9, #34210).
 - Anything that can disarm, land or change mode in flight is designed for the case where it fires wrongly as much as for the case where it is right: landing detector false positives disarm vehicles in flight (rmackay9, #20929).
+
+**A Pre-Arm Check Catches What Would Silently Go Wrong, Says What, and Changes Nothing** (ARCH-11, confirmed 2026-11-14):
+- A configuration that would misbehave silently fails pre-arm, in the library that owns the setting, with a message naming the cause. The check asks what the vehicle actually uses, so a vehicle without the sensor can still arm, and it only reads: anything done at arming belongs in `arm()`.
 
 **Do Not Break What Users Already Have** (ARCH-6, confirmed 2026-10-14):
 - Existing configurations, ground stations, log consumers and scripts keep working across an update. A change to user-visible behaviour, a default or a parameter's meaning is stated, migrated and released with notes, and old tools stay supported until they are deprecated. Changed log numbering broke QGC in #14299.
@@ -289,6 +296,9 @@ loc.offset(offset_ned.x, offset_ned.y);
 **A Threshold in Flight Code Has a Reason a Reviewer Can Check** (ARCH-24, confirmed 2026-11-05):
 - A constant that gates behaviour - a speed, a height, a time, a ratio - comes with its reason. The best reason is a derivation from what it tests (a sensor's noise, a filter's own variance, a time constant), or an existing check that tests the same thing, whose constant it reuses by name rather than copies. A plain number is also fine when it fixes a real problem, real-world logs across a range of scenarios (airframes, conditions, flights that should and should not trigger it) show the value is reasonable with margin on both sides, and no user would plausibly want to change it. Reviewers dislike new parameters, so a parameter is the last resort, for a value that genuinely differs between vehicles, and it has to earn its place (ARCH-23). A number that only falls between the cases one airframe's logs happened to contain has none of these reasons.
 - A threshold that passes is still never a bare number in a condition: it is a named constant (`static constexpr`, or a define where the file uses them) whose name says what it limits, with a unit suffix, and whose comment gives the reason, so a reviewer can find every use and question it in one place. peterbarker asked "0.25?" and "0.3?" of #34457's AGL KF coast stop and floor hold, each set between values measured on one airframe; they are now named, two times follow the main filter's own range finder timings by name, and the rest carry their margins from 34 flights of one airframe and 23 of another.
+
+**A Feed-Forward Term Models the Vehicle, Not a Setting That Shapes the Command** (ARCH-25, confirmed 2026-11-14):
+- Each feed-forward term comes from an estimate of the vehicle, never from a parameter that shapes the command (a speed limit, a time constant, an expo). Whatever the two disagree by is left to an integrator, which carries it through every transient.
 
 **Do Not Add Code Before It Is Used, and Remove What Your Change Leaves Unused** (ARCH-14, confirmed 2026-10-16):
 - Code that nothing calls costs flash on every board and review time, and rots, since nothing exercises it. A PR adds methods, members, parameters and options only when something in it uses them (rmackay9, #11795: "a golden rule in AP that we don't add things before they are used"); a helper first used by a later PR belongs in that PR, or that PR stacks on this one.

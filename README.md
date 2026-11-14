@@ -363,17 +363,17 @@ aap/
 ├── install-gemini.sh                # Install Gemini playbooks to ArduPilot
 ├── uninstall-gemini.sh              # Remove Gemini playbooks from ArduPilot
 ├── RULES_PROPOSED.md                # Architectural rules awaiting confirmation (not installed)
-├── rules/                           # One page per confirmed architectural rule (not installed)
-│   ├── ARCH-<n>.md                  # Generated from the rule's text in claude/CLAUDE.md
+├── rules/                           # One page per confirmed rule (not installed)
+│   ├── ARCH-<n>.md, STYLE-<n>.md    # Generated from the rule's text in the playbooks
 │   └── generate.py                  # Writes the pages and the README index; --check finds stale ones
 └── README.md
 ```
 
 ## **Architectural Rules**
 
-These are assumptions ArduPilot's maintainers hold about how the code fits together - what shared state promises, which layer decides, what a library may know about the vehicle - that no single diff shows. Each is a general principle, with the review or bug that exposed it as its example, and each was confirmed on its own before it went into the playbooks, which hold generated code and reviews to it. Every rule has its own page, so a review or a PR can link to the one it means.
+These are assumptions ArduPilot's maintainers hold about how the code fits together - what shared state promises, which layer decides, what a library may know about the vehicle - that no single diff shows. Each is a general principle, confirmed on its own before it went into the playbooks, which hold generated code and reviews to it; the earlier ones carry the review or bug that exposed them as an example. Every rule has its own page, so a review or a PR can link to the one it means.
 
-The STYLE rules after them are about how code is written. They come from the same mining of maintainers' review comments, and carry no example.
+The STYLE rules after them are about how code is written. They come from the same mining of maintainers' review comments.
 
 Proposed rules that are still waiting for confirmation, and rejected ones with the reason, are in [RULES_PROPOSED.md](RULES_PROPOSED.md).
 
@@ -390,6 +390,7 @@ Proposed rules that are still waiting for confirmation, and rejected ones with t
 | [ARCH-8](rules/ARCH-8.md) | Reuse before you write | 2026-10-14 |
 | [ARCH-9](rules/ARCH-9.md) | The main loop never waits | 2026-10-14 |
 | [ARCH-10](rules/ARCH-10.md) | Nothing from outside is trusted | 2026-10-14 |
+| [ARCH-11](rules/ARCH-11.md) | A pre-arm check catches what would silently go wrong, says what, and changes nothing | 2026-11-14 |
 | [ARCH-12](rules/ARCH-12.md) | Memory is paid for only where it is used | 2026-10-16 |
 | [ARCH-13](rules/ARCH-13.md) | A driver change holds for every variant and failure it can meet | 2026-10-16 |
 | [ARCH-14](rules/ARCH-14.md) | Do not add code before it is used, and remove what your change leaves unused | 2026-10-16 |
@@ -398,9 +399,13 @@ Proposed rules that are still waiting for confirmation, and rejected ones with t
 | [ARCH-17](rules/ARCH-17.md) | Libraries carry no vehicle-specific code; the vehicle moderates them | 2026-10-16 |
 | [ARCH-18](rules/ARCH-18.md) | Data crosses from a driver's thread to the main loop only at the frontend's copy | 2026-10-16 |
 | [ARCH-19](rules/ARCH-19.md) | New behaviour is opt-in, and lands as the last and smallest commits of a PR | 2026-10-16 |
+| [ARCH-20](rules/ARCH-20.md) | A flag a mode holds true must still be true when the mode ends | 2026-11-14 |
+| [ARCH-21](rules/ARCH-21.md) | A state kept out of a filter update keeps its covariance consistent | 2026-11-14 |
 | [ARCH-22](rules/ARCH-22.md) | A parameter index any released build used is never given to another parameter | 2026-10-31 |
 | [ARCH-23](rules/ARCH-23.md) | A new parameter has to earn its flash, and a feature costing 1 KB or more sits behind its own define | 2026-11-02 |
 | [ARCH-24](rules/ARCH-24.md) | A threshold in flight code has a reason a reviewer can check | 2026-11-05 |
+| [ARCH-25](rules/ARCH-25.md) | A feed-forward term models the vehicle, not a setting that shapes the command | 2026-11-14 |
+| [ARCH-26](rules/ARCH-26.md) | An estimate fused into another filter is not an independent measurement | 2026-11-14 |
 | [STYLE-1](rules/STYLE-1.md) | A name says what the thing is or does | 2026-11-14 |
 | [STYLE-2](rules/STYLE-2.md) | A comment stays true, and says what the code cannot | 2026-11-14 |
 | [STYLE-3](rules/STYLE-3.md) | A type fits the values it holds | 2026-11-14 |

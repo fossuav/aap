@@ -29,6 +29,14 @@ From `AP_NavEKF3_core.h`:
 - `AP_NavEKF3_VehicleStatus.cpp` - Vehicle state detection (onGround, etc.)
 - `LogStructure.h` - Log message definitions
 
+## Filter Rules
+
+**A State Kept Out of a Filter Update Keeps Its Covariance Consistent** (ARCH-21, confirmed 2026-11-14):
+- `P = P - K*H*P` is only right for the optimal gain. Zeroing a state's gain without a matching covariance update can leave P not positive definite, and the filter then skips fusions in silence while reporting healthy. Update a masked state in Joseph form, or decorrelate it before the gain is computed.
+
+**An Estimate Fused Into Another Filter Is Not an Independent Measurement** (ARCH-26, confirmed 2026-11-14):
+- A filter's errors persist from step to step, so fusing its output every step as if independent makes the receiving filter overconfident and shuts out the sensors that could correct it. Fuse at the rate new information enters, or inflate the noise for the correlation.
+
 ## Data Abstraction Layer (DAL) and EKF Replay
 
 ### Why the DAL Exists
@@ -418,7 +426,7 @@ When a mask has to err, err towards inhibiting. Any real yaw fusion learns state
 
 ### K-only mask vs full inhibition
 
-A K-only mask (zero `Kfusion[12]`) leaves P[12][12] and its cross-covariances alive, so the covariance update has to match the gain actually applied. The short form `P - KHP` holds the masked state's correction in its column only, and `FinishFusion()`'s averaging with the transpose (`ForceSymmetry()` on 4.7) applies half of it. This file used to call that second order. It is not: on a hand launch (SFD TD25, 2026-10-29) the first flow fusion, 3 cm above the hand with the filter unaided and P[12][12] still at its initial value, cut the velocity variance 60-fold while keeping most of its cross-covariance with state 12, and P stopped being positive definite (velN against Z gyro bias, correlation squared 1.06, then hundreds on other pairs). The guard against negative variances then refused 669 fusions before landing when master's EKF replayed the log, and on the SFD beta every baro height fusion, so VALT flew a free-running height while the filter reported healthy. The follow-up to #33498 gives each masked state's row of KHP its column, which is the Joseph form for the gain used. The AID_NONE `poorObservability` mask in `FuseVelPosNED` has the same flaw and is unchanged. It is the wind-truth failure of commit e004e792ff by another route; ARCH-21 (proposed) is the general rule.
+A K-only mask (zero `Kfusion[12]`) leaves P[12][12] and its cross-covariances alive, so the covariance update has to match the gain actually applied. The short form `P - KHP` holds the masked state's correction in its column only, and `FinishFusion()`'s averaging with the transpose (`ForceSymmetry()` on 4.7) applies half of it. This file used to call that second order. It is not: on a hand launch (SFD TD25, 2026-10-29) the first flow fusion, 3 cm above the hand with the filter unaided and P[12][12] still at its initial value, cut the velocity variance 60-fold while keeping most of its cross-covariance with state 12, and P stopped being positive definite (velN against Z gyro bias, correlation squared 1.06, then hundreds on other pairs). The guard against negative variances then refused 669 fusions before landing when master's EKF replayed the log, and on the SFD beta every baro height fusion, so VALT flew a free-running height while the filter reported healthy. The follow-up to #33498 gives each masked state's row of KHP its column, which is the Joseph form for the gain used. The AID_NONE `poorObservability` mask in `FuseVelPosNED` has the same flaw and is unchanged. It is the wind-truth failure of commit e004e792ff by another route; ARCH-21 is the general rule.
 
 SITL has not reproduced it on master: the STATIC ground yaw fusion shrinks P[12][12] before a test can arm, and entering AID_RELATIVE resets the velocity covariance, so the first flow fusion meets no correlation. The trigger needs all three of a large P[12][12] (armed within seconds of the EKF starting), unaided velocity correlated with yaw (moved by hand), and a very precise first flow sample (low range).
 
