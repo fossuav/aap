@@ -41,7 +41,102 @@ Status:  proposed <date>
 
 ## Proposed
 
-None at present.
+### Logging and GCS batch (2026-11-14)
+
+Every logging_gcs theme of the review mining, rescanned 2026-11-14. The
+prefix LOG-n is a proposal; ARCH-n would do as well, since a log format is
+a contract with its readers. Once confirmed they would form a "Logging and
+GCS Messages" section of the root playbook. "Seen in" counts distinct PRs
+in `ardupilot-pr-analysis/rules-mining/data/ranked.txt`.
+
+### LOG-1: A log message's layout is a contract with every tool that reads it
+
+New fields and messages go at the end, so existing logs and Replay keep
+working. Names are short and stable, an encoding does not vary with
+configuration, and every new message is documented. A new field or message
+covers a use the existing ones do not: no near-duplicate of a message, no
+value that never changes.
+
+Example: tridge on #34292: "please add to end of list, not middle, to
+         preserve existing replay logs".
+Check:   where each new field or message goes, its documentation, and
+         which existing message already carries the data.
+Seen in: 13 PRs, all four reviewers.
+Status:  proposed 2026-11-14. Extends ARCH-6's log consumers.
+
+### LOG-2: GCS text is rare, rate-limited, and tells the user what to do
+
+A message goes through `GCS_SEND_TEXT`, at most once per interval, and
+says what to do about it. Nothing repeats while the user deliberately
+holds against a limit or duplicates what the GCS already shows from
+telemetry, and a condition critical enough to warn about may belong in a
+pre-arm check instead.
+
+Example: rmackay9 on #28737: "It should probably be a warning and only be
+         sent at most every 30sec."
+Check:   how often each new message can fire in flight, and what the user
+         does on seeing it.
+Seen in: 11 PRs, all four reviewers.
+Status:  proposed 2026-11-14.
+
+### LOG-3: A library logs its own data, under its own log bit
+
+A controller or sensor library writes the messages that describe it, with
+its own enable bit and rate, rather than leaving the vehicle or another
+library to log it.
+
+Example: peterbarker on #30841: "My preference would be for a logging
+         interval as a parameter in the library and leave the vehicles out
+         of it entirely."
+Check:   which library owns the data each new message logs, and whether
+         vehicle code takes part.
+Seen in: 6 PRs, lthall, peterbarker, tridge.
+Status:  proposed 2026-11-14. The rate is the library's, not necessarily a
+         new parameter (ARCH-23).
+
+### LOG-4: Logging costs bandwidth, and a change says how much it adds
+
+Log bandwidth and card space do not grow. A change that adds or enlarges
+messages states the increase, and logs only what is in use: nothing for
+cores or lanes that are not running the feature.
+
+Example: peterbarker on #34363: "Log bandwidth is something that doesn't
+         grow."
+Check:   bytes per second added at the default log settings.
+Seen in: 4 PRs, peterbarker only.
+Open:    could fold into LOG-1.
+Status:  proposed 2026-11-14.
+
+### LOG-5: Log time never goes backwards, and data sampled earlier says when
+
+TimeUS is when the message was written and stays monotonic, so messages
+can be compared. Data sampled at another time carries its own sample-time
+field, so analysis and Replay can line it up.
+
+Example: peterbarker on #28005: "it allowed time to go backwards in logs,
+         and *that* was painful when you were trying to compare messages".
+Check:   for each new message, what TimeUS means and whether the data
+         needs its own sample time.
+Seen in: 3 PRs, lthall, peterbarker, rmackay9.
+Open:    lthall on #28005 would rather TimeUS be the time the data was
+         valid; this draft keeps TimeUS monotonic and adds the sample time
+         as a field, as peterbarker asked on #33585.
+Status:  proposed 2026-11-14.
+
+### LOG-6: A failure the user must act on reaches them where they will see it
+
+A configured backend that fails to start says so rather than failing
+silently. An error before the GCS is up cannot use STATUSTEXT, and one
+that stops the boot looks like a bricked board, so the channel suits when
+it fires. Nothing alarming is reported for a feature the user has not
+configured.
+
+Example: tridge on #20856: "need to ensure we don't log scary errors if
+         the user has not configured ESC telemetry".
+Check:   trigger each new error path and look at what a ground station
+         user sees.
+Seen in: 5 PRs, peterbarker, rmackay9, tridge.
+Status:  proposed 2026-11-14. Shares ARCH-15's line on startup faults.
 
 ## Confirmed
 
