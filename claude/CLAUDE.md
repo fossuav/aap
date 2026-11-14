@@ -348,7 +348,7 @@ if (condition) foo();
 - Suffix variables/functions with units:
   - Distance: `_m` (meters), `_cm` (centimeters), `_mm` (millimeters)
   - Angles: `_rad` (radians), `_deg` (degrees), `_cdeg` (centidegrees)
-  - Rates: `_rads` (rad/s), `_degs` (deg/s), `_mss` (m/s²)
+  - Rates: `_rads` (rad/s), `_dps` (deg/s), `_mss` (m/s²)
   - Speed: `_ms` (m/s), `_cms` (cm/s)
   - Time: `_ms` (milliseconds), `_us` (microseconds)
 - Parameters: uppercase with underscores, most important word first (e.g., `RTL_ALT_MIN`)

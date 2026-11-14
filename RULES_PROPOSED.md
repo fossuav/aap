@@ -136,10 +136,11 @@ Status:  proposed 2026-11-06 from log81.
 - **STYLE-1 to STYLE-12**, the style batch from the review mining -
   confirmed 2026-11-14 from the user, in the root playbook's Code Style
   section before Style Verification, without their examples (1.7.67). The
-  open points went as proposed: members follow the file's underscore
-  convention, deg/s is `_degs` (the Naming Conventions line changed with
-  it), and STYLE-7, 11 and 12 stay rules of their own. At the user's
-  request STYLE-9 points to `AP_HAL::timeout_expired()` and
+  open points: members follow the file's underscore convention, and
+  STYLE-7, 11 and 12 stay rules of their own. deg/s stays `_dps`, against
+  the proposal: `_degs` reads as degrees (the user), and the code bears
+  that out, with `yaw_rate_degs` a rate but `roll_degs` an angle. At the
+  user's request STYLE-9 points to `AP_HAL::timeout_expired()` and
   `timeout_remaining()`.
 
 - **ARCH-24** "A threshold in flight code has a reason a reviewer can
