@@ -36,6 +36,8 @@
       "Bash(python3 .claude/skills/pr-checks/ci_failures.py:*)",
       "Bash(python3 .claude/skills/pr-review/pr_review.py:*)",
       "Bash(python3 .claude/skills/hwdef-check/hwdef_check.py:*)",
+      "Bash(python3 .claude/skills/cleanup/cleanup.py survey:*)",
+      "Bash(python3 .claude/skills/cleanup/cleanup.py branches:*)",
       "Bash(astyle:*)",
       "Bash(luacheck:*)",
       "Bash(git add:*)",

@@ -208,6 +208,13 @@ for file in SKILL.md pr_review.py; do
 done
 chmod +x .claude/skills/pr-review/pr_review.py
 
+# cleanup skill (has the survey/apply helper for scratch worktrees and branches)
+mkdir -p .claude/skills/cleanup
+for file in SKILL.md cleanup.py; do
+    install_file "$SKILLS_URL/cleanup/$file" ".claude/skills/cleanup/$file"
+done
+chmod +x .claude/skills/cleanup/cleanup.py
+
 # prepare-for-push skill (has the authorisation minter used by the git pre-push hook)
 mkdir -p .claude/skills/prepare-for-push
 for file in SKILL.md grant_push.py; do
@@ -290,6 +297,7 @@ echo "  - /lua-vehicle     - Lua vehicle control and movement commands"
 echo "  - /log-analyze    - Analyze DataFlash .bin log files"
 echo "  - /pr-checks      - Download a PR's failing CI checks and identify failing tests"
 echo "  - /pr-review      - Review your own PR before a maintainer does, and fix it"
+echo "  - /cleanup        - Remove scratch worktrees and branches, saving anything they hold"
 echo "  - /aap-update     - Check for and install playbook updates"
 echo "  - /prepare-for-push - Authorise Claude to push named branches (you invoke this)"
 echo ""

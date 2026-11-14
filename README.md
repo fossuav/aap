@@ -117,6 +117,7 @@ The install script places the following files:
 | `.claude/skills/autotest/run_autotest.py` | Timed autotest runner used by `/autotest` — wraps `autotest.py` with a wall-clock timeout, lock pre-check and per-clone isolation |
 | `.claude/skills/hwdef-check/hwdef_check.py` | Helper used by `/hwdef-check` to run DMA, board-ID, file-presence, BIDIR/bdshot, and commit-structure checks on a new-board PR |
 | `.claude/skills/pr-checks/ci_failures.py` | Helper used by `/pr-checks` to download a PR's failed CI job logs and extract the failing tests/build errors |
+| `.claude/skills/cleanup/cleanup.py` | Helper used by `/cleanup`: surveys scratch worktrees and branches, works out what removing each would lose, and removes an approved plan after saving that. Only its read-only `survey` and `branches` are pre-approved; `apply` asks every time |
 | `.claude/skills/prepare-for-push/grant_push.py` | Mints the short-lived push authorisation the git pre-push hook requires — run for you when *you* type `/prepare-for-push`, never on Claude's initiative |
 | `.claude/hooks/pre_bash_check.py` | PreToolUse hook — enforces git commit and safety rules, gates push/rebase/reset/amend on an authorisation token, and scans scripts passed to an interpreter so a guarded command cannot be hidden in a wrapper |
 | `.claude/hooks/post_edit_check.py` | PostToolUse hook — checks C++ edits for common violations |
@@ -157,6 +158,7 @@ Skills are invoked as `/command` in Claude Code. They pre-authorize necessary to
 | `/sitl <vehicle> [options]` | Launch interactive SITL simulator |
 | `/swd-debug` | Flash and debug a board over SWD with OpenOCD and GDB when USB/serial is dead |
 | `/pr-review [PR] [--quick]` | Review your own PR the way a maintainer will, then fix what it finds - CI gates, parallel review, Codex cross-check, bounded fix loop; `--quick` for a push that answers review findings |
+| `/cleanup [--sweep]` | Remove the scratch worktrees (with their build trees, submodule clones and autotest logs) and branches a session left, after saving any changes, untracked files or commits only they hold; keeps anything in use, and deletes nothing until you agree to the list |
 
 **Authorisation skill** (you invoke this — Claude cannot):
 
