@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.66
+**Playbook version:** 1.7.67
 
 ## Repository-Local Rules
 
@@ -348,7 +348,7 @@ if (condition) foo();
 - Suffix variables/functions with units:
   - Distance: `_m` (meters), `_cm` (centimeters), `_mm` (millimeters)
   - Angles: `_rad` (radians), `_deg` (degrees), `_cdeg` (centidegrees)
-  - Rates: `_rads` (rad/s), `_dps` (deg/s), `_mss` (m/s²)
+  - Rates: `_rads` (rad/s), `_degs` (deg/s), `_mss` (m/s²)
   - Speed: `_ms` (m/s), `_cms` (cm/s)
   - Time: `_ms` (milliseconds), `_us` (microseconds)
 - Parameters: uppercase with underscores, most important word first (e.g., `RTL_ALT_MIN`)
@@ -356,6 +356,42 @@ if (condition) foo();
 **Literals and Math:**
 - Use `1.0f` for float literals, not `1.0`
 - Prefer multiplication over division: `foo_cm * 0.01f` not `foo_cm / 100.0f`
+
+**A Name Says What the Thing Is or Does** (STYLE-1, confirmed 2026-11-14):
+- A name holds on every path, failure included. Name a boolean for the positive condition, use the term the codebase already has for a concept, and make siblings say how they differ. A rename is its own commit. Method names never start with an underscore; members follow the file they are in.
+
+**A Comment Stays True, and Says What the Code Cannot** (STYLE-2, confirmed 2026-11-14):
+- A change that makes a comment wrong fixes it. Comment what a reader cannot recover from the code: a precondition, a sentinel return, units and allowed values, a reserved value, a workaround someone would otherwise undo. Each member in a header gets a short comment.
+
+**A Type Fits the Values It Holds** (STYLE-3, confirmed 2026-11-14):
+- Use fixed-width integers sized for every value the feature and real hardware produce, negatives included. Pass an enum rather than a raw integer, and write a size with `sizeof` and a named constant, not a literal explained in a comment.
+
+**A Feature Macro Is Always Defined and Tested With #if** (STYLE-4, confirmed 2026-11-14):
+- A macro defined on one build path and not another gives a class a different shape in different files. Define feature and debug macros to 0 or 1 and test them with `#if`, where `-Werror=undef` catches a missing one; `#ifdef` is for compiler and platform macros. A constant one file uses is a `static constexpr` beside its use, not a `#define` in a shared header.
+
+**A Switch Over an Enum Lists Every Value and Has No Default** (STYLE-5, confirmed 2026-11-14):
+- Without `default:`, a new enum value fails the build (`-Werror=switch`) wherever it is not handled. List values that need nothing as empty cases. A value cast from a parameter or the wire can match no case, so the code after the switch must cope (ARCH-10).
+
+**Code Does Not Spend Flash on Constructs That Buy Nothing** (STYLE-6, confirmed 2026-11-14):
+- Bitfields and packed structs cost more flash than the RAM they save; use them only where a wire or storage format needs the layout. No `virtual` without an override, no destructor for an object never deleted, no error return from a call that cannot fail.
+
+**A Member's Default Goes at Its Declaration, and a Zero Default Not at All** (STYLE-7, confirmed 2026-11-14):
+- ArduPilot zeroes class memory, so a zero initialiser only costs flash. A non-zero default goes at the declaration, not in the constructor body. A class declared on the stack is the exception.
+
+**An Interface Is as Narrow as Its Callers Need** (STYLE-8, confirmed 2026-11-14):
+- Members are private unless a caller needs them, and then it gets an accessor. A method that changes nothing is `const`, an input that cannot be null is a reference, and a method returns a value only if a caller can act on it.
+
+**Time Is Compared as Time Elapsed Since a Stored Start** (STYLE-9, confirmed 2026-11-14):
+- Test a timeout with `AP_HAL::timeout_expired(start, now, timeout)`, or `AP_HAL::timeout_remaining()` for what is left: both stay right across the 32-bit wrap of `millis()` and `micros()`, and refuse mixed or signed time types at compile time. Store when something happened, not when it should next happen, and never add a duration to a timestamp to compare it with now.
+
+**Guard Conditions Return Early, One Reason Each** (STYLE-10, confirmed 2026-11-14):
+- Early returns show which condition decides and how the conditions interact; nesting hides both.
+
+**A Repeated or Tricky Condition Becomes a Named Predicate** (STYLE-11, confirmed 2026-11-14):
+- A test made in more than one place, or easy to get wrong, becomes a `const` bool method named for what it decides, so a fix lands once.
+
+**No Default Argument for a Single Caller, or for a Choice Every Caller Should Make** (STYLE-12, confirmed 2026-11-14):
+- A single caller can pass the value, and a choice with consequences is made by each caller, so a new one cannot inherit it by accident.
 
 **Style Verification:** Use `/style-check` for automated checking of modified files.
 - Check for trailing whitespace before finalizing changes: `git diff --check HEAD`

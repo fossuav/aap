@@ -18,7 +18,7 @@ no review holds a change against it. The process is in the root playbook,
   repository, not here.
 - Style rules are numbered STYLE-n and, once confirmed, go in the root
   playbook's Code Style section with a `(STYLE-n, confirmed <date>):`
-  marker; `rules/generate.py` learns the prefix with the first one.
+  marker, without their example; `rules/generate.py` finds both prefixes.
 
 ## What a rule looks like
 
@@ -131,172 +131,16 @@ Check:   whether the receiving filter's variance matches its error against
          an independent reference.
 Status:  proposed 2026-11-06 from log81.
 
-### Style batch (2026-11-14)
-
-Every style theme from the 2026-10-14 mining, by weighted score. "Seen in"
-counts distinct PRs in `ardupilot-pr-analysis/rules-mining/data/ranked.txt`.
-
-### STYLE-1: A name says what the thing is or does
-
-A name holds on every path, failure included. Name a boolean for the
-positive condition, use the term the codebase already has for a concept,
-and make siblings say how they differ. A rename is its own commit. Method
-names never start with an underscore.
-
-Example: rmackay9 on #33498: "Instead of a double negative why don't we
-         rename it to yawFusedRecently()".
-Check:   each new or renamed name against every path that reaches it.
-Seen in: 30 PRs, all four reviewers.
-Open:    underscores on members. lthall (#11795) for, rmackay9 (#32472)
-         against; about a third of header members have one. Proposed:
-         follow the file.
-Status:  proposed 2026-11-14.
-
-### STYLE-2: A comment stays true, and says what the code cannot
-
-A change that makes a comment wrong fixes it. Comment what a reader cannot
-recover from the code: a precondition, a sentinel return, units and allowed
-values, a reserved value, a workaround someone would otherwise undo. Each
-member in a header gets a short comment.
-
-Example: peterbarker on #24064: "This deserves a comment. Otherwise we'll
-         be bouncing PRs to turn this back into a bool".
-Check:   every comment beside the diff still reads true after it.
-Seen in: 28 PRs, all four reviewers.
-Status:  proposed 2026-11-14. Adds to the playbook's Comments section.
-
-### STYLE-3: A type fits the values it holds
-
-Use fixed-width integers sized for every value the feature and real
-hardware produce, negatives included. Pass an enum rather than a raw
-integer, and write a size with `sizeof` and a named constant, not a
-literal explained in a comment.
-
-Example: tridge on #16725: "make it a float, we do have ESCs that go over
-         320A, and some can go negative".
-Check:   each new type against the largest and smallest value it takes.
-Seen in: 17 PRs, peterbarker, rmackay9, tridge.
-Open:    deg/s. The playbook says `_dps`; peterbarker (#25814) asks for
-         `_degs`, and the code has 345 `_degs` to 172 `_dps`. Proposed:
-         `_degs`.
-Status:  proposed 2026-11-14.
-
-### STYLE-4: A feature macro is always defined and tested with #if
-
-A macro defined on one build path and not another gives a class a
-different shape in different files. Define feature and debug macros to 0
-or 1 and test them with `#if`; `#ifdef` is for compiler and platform
-macros. A constant one file uses is a `static constexpr` beside its use,
-not a `#define` in a shared header.
-
-Example: peterbarker on #31521: "I've seen autopilots crash because
-         something was defined in one path and wasn't defined in another".
-Check:   every `#ifdef` in the diff names a compiler or platform macro.
-Seen in: 11 PRs, peterbarker, tridge.
-Status:  proposed 2026-11-14. `-Werror=undef` already rejects an undefined
-         macro in `#if`.
-
-### STYLE-5: A switch over an enum lists every value and has no default
-
-Without `default:`, a new enum value fails the build (`-Werror=switch`)
-wherever it is not handled. List values that need nothing as empty cases.
-A value cast from a parameter or the wire can match no case, so the code
-after the switch must cope (ARCH-10).
-
-Example: peterbarker on #14257: "Adding default: means the compiler won't
-         cause them pain until they conform".
-Check:   no `default:` in a new switch over an enum.
-Seen in: 8 PRs, peterbarker only.
-Status:  proposed 2026-11-14.
-
-### STYLE-6: Code does not spend flash on constructs that buy nothing
-
-Bitfields and packed structs cost more flash than the RAM they save; use
-them only where a wire or storage format needs the layout. No `virtual`
-without an override, no destructor for an object never deleted, no error
-return from a call that cannot fail.
-
-Example: tridge on #21038: "we did this to save ram, but it costs flash,
-         not worth it".
-Check:   what each new bitfield, `PACKED`, `virtual`, destructor and error
-         path buys.
-Seen in: 9 PRs, peterbarker, rmackay9, tridge.
-Status:  proposed 2026-11-14.
-
-### STYLE-7: A member's default goes at its declaration, and a zero default not at all
-
-ArduPilot zeroes class memory, so a zero initialiser only costs flash. A
-non-zero default goes at the declaration, not in the constructor body. A
-class declared on the stack is the exception.
-
-Example: tridge on #13741: "init of vars to false (zero) just uses flash
-         space for no reason".
-Check:   every new member initialiser is non-zero.
-Seen in: 7 PRs, peterbarker, rmackay9, tridge.
-Open:    could be one line in the playbook's Memory section instead.
-Status:  proposed 2026-11-14.
-
-### STYLE-8: An interface is as narrow as its callers need
-
-Members are private unless a caller needs them, and then it gets an
-accessor. A method that changes nothing is `const`, an input that cannot be
-null is a reference, and a method returns a value only if a caller can act
-on it.
-
-Example: peterbarker on #32202: "What can the caller sensibly do with this
-         return value?"
-Check:   which caller needs each new public member and return value.
-Seen in: 6 PRs, peterbarker only.
-Status:  proposed 2026-11-14.
-
-### STYLE-9: Time is compared as time elapsed since a stored start
-
-`now - start > period` survives the 32-bit wrap of `millis()` and
-`micros()`; `start + period < now` does not. Store when something
-happened, not when it should next happen.
-
-Example: peterbarker on #31521: "adding timestamps and comparing against
-         now - this is a frequent source of bugs at uint32_t wrap time".
-Check:   no duration is added to a timestamp before a comparison.
-Seen in: 7 PRs, peterbarker, tridge.
-Status:  proposed 2026-11-14.
-
-### STYLE-10: Guard conditions return early, one reason each
-
-Early returns show which condition decides and how the conditions
-interact; nesting hides both.
-
-Example: peterbarker on #32393: "reformulating like this makes it quite
-         clear that disabling the RPM check also disables the CPU check".
-Check:   each return in new code has one reason.
-Seen in: 5 PRs, lthall, peterbarker, rmackay9.
-Status:  proposed 2026-11-14.
-
-### STYLE-11: A repeated or tricky condition becomes a named predicate
-
-A test made in more than one place, or easy to get wrong, becomes a
-`const` bool method named for what it decides, so a fix lands once.
-
-Example: peterbarker on #34209: "a bool is_xy_bias_observable() const
-         {...} with this logic would probably make things clearer".
-Check:   no compound condition appears twice.
-Seen in: 3 PRs, peterbarker, tridge.
-Open:    could fold into STYLE-10.
-Status:  proposed 2026-11-14.
-
-### STYLE-12: No default argument for a single caller, or for a choice every caller should make
-
-A single caller can pass the value, and a choice with consequences is made
-by each caller, so a new one cannot inherit it by accident.
-
-Example: rmackay9 on #28825: "it might be safer to remove the default from
-         the argument and force the caller to make a choice".
-Check:   who relies on each new default argument.
-Seen in: 2 PRs, peterbarker, rmackay9.
-Open:    could fold into STYLE-8.
-Status:  proposed 2026-11-14.
-
 ## Confirmed
+
+- **STYLE-1 to STYLE-12**, the style batch from the review mining -
+  confirmed 2026-11-14 from the user, in the root playbook's Code Style
+  section before Style Verification, without their examples (1.7.67). The
+  open points went as proposed: members follow the file's underscore
+  convention, deg/s is `_degs` (the Naming Conventions line changed with
+  it), and STYLE-7, 11 and 12 stay rules of their own. At the user's
+  request STYLE-9 points to `AP_HAL::timeout_expired()` and
+  `timeout_remaining()`.
 
 - **ARCH-24** "A threshold in flight code has a reason a reviewer can
   check" - confirmed 2026-11-05 from the user, with log evidence across
