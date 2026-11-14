@@ -11,7 +11,7 @@ Four usage modes are supported:
 3. **Gemini CLI** - Google's CLI tool for interactive development with Gemini
 4. **Chat-based LLMs** - Traditional prompt-based code generation with any LLM
 
-The playbooks contain rules and constraints that ensure generated code is safe, testable, and consistent with ArduPilot development standards. The architectural, style and logging rules they hold code to are listed under [Architectural Rules](#architectural-rules).
+The playbooks contain rules and constraints that ensure generated code is safe, testable, and consistent with ArduPilot development standards. The architectural, style, logging and replay rules they hold code to are listed under [Architectural Rules](#architectural-rules).
 
 ---
 
@@ -364,7 +364,7 @@ aap/
 ├── uninstall-gemini.sh              # Remove Gemini playbooks from ArduPilot
 ├── RULES_PROPOSED.md                # Architectural rules awaiting confirmation (not installed)
 ├── rules/                           # One page per confirmed rule (not installed)
-│   ├── ARCH-, STYLE-, LOG-<n>.md    # Generated from the rule's text in the playbooks
+│   ├── <PREFIX>-<n>.md              # ARCH, STYLE, LOG, REPLAY; generated from the playbooks
 │   └── generate.py                  # Writes the pages and the README index; --check finds stale ones
 └── README.md
 ```
@@ -373,7 +373,7 @@ aap/
 
 These are assumptions ArduPilot's maintainers hold about how the code fits together - what shared state promises, which layer decides, what a library may know about the vehicle - that no single diff shows. Each is a general principle, confirmed on its own before it went into the playbooks, which hold generated code and reviews to it; the earlier ones carry the review or bug that exposed them as an example. Every rule has its own page, so a review or a PR can link to the one it means.
 
-The STYLE rules after them are about how code is written, and the LOG rules about logs and messages to the ground station. Both come from the same mining of maintainers' review comments.
+The STYLE rules after them are about how code is written, the LOG rules about logs and messages to the ground station, and the REPLAY rules about the data EKF Replay depends on. The STYLE and LOG rules come from the same mining of maintainers' review comments.
 
 Proposed rules that are still waiting for confirmation, and rejected ones with the reason, are in [RULES_PROPOSED.md](RULES_PROPOSED.md).
 
@@ -424,6 +424,10 @@ Proposed rules that are still waiting for confirmation, and rejected ones with t
 | [LOG-4](rules/LOG-4.md) | Logging costs bandwidth, and a change says how much it adds | 2026-11-14 |
 | [LOG-5](rules/LOG-5.md) | Log time never goes backwards, and data sampled earlier says when | 2026-11-14 |
 | [LOG-6](rules/LOG-6.md) | A failure the user must act on reaches them where they will see it | 2026-11-14 |
+| [REPLAY-1](rules/REPLAY-1.md) | New replay data extends the message it travels with | 2026-11-14 |
+| [REPLAY-2](rules/REPLAY-2.md) | A retired replay field keeps its place, and its meaning is never reused | 2026-11-14 |
+| [REPLAY-3](rules/REPLAY-3.md) | Everything the EKF reads at run time comes through the DAL | 2026-11-14 |
+| [REPLAY-4](rules/REPLAY-4.md) | Data that changes rarely gets a replay message of its own | 2026-11-14 |
 <!-- end of rules index -->
 
 ---

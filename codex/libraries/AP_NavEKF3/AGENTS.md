@@ -39,6 +39,18 @@ From `AP_NavEKF3_core.h`:
 
 ## Data Abstraction Layer (DAL) and EKF Replay
 
+**New Replay Data Extends the Message It Travels With** (REPLAY-1, confirmed 2026-11-14):
+- Append new data to the end of the existing DAL message, not a new one. The structs are not packed, so explicit `unused` bytes fill any alignment gap and keep the layout matching the format string. Zero must give the old behaviour, since Replay zero-fills what an older log lacks. A new message is for data written on its own schedule (REPLAY-4).
+
+**A Retired Replay Field Keeps Its Place, and Its Meaning Is Never Reused** (REPLAY-2, confirmed 2026-11-14):
+- A field the EKF no longer reads stays in its struct, renamed `unused`, so later fields keep their offsets. It is never given a new meaning, because older logs still carry the old one.
+
+**Everything the EKF Reads at Run Time Comes Through the DAL** (REPLAY-3, confirmed 2026-11-14):
+- Sensor data, per-instance sensor properties, vehicle flags and any value vehicle code sets that changes the EKF's behaviour reach it through the DAL, or Replay diverges from the flight. Compile-time constants and parameters need not, but a parameter cached into a member the EKF reads does.
+
+**Data That Changes Rarely Gets a Replay Message of Its Own** (REPLAY-4, confirmed 2026-11-14):
+- A replay message is rewritten whole whenever any of its fields changes, so data that changes far less often than the message it would join - a calibration limit, a configured value - goes in its own message, written only when it changes, rather than costing log space in every frame.
+
 ### Why the DAL Exists
 
 The EKF does NOT read sensors directly. All sensor data and external state enters the EKF through the DAL (`libraries/AP_DAL/`). When `LOG_REPLAY=1`, the DAL logs every input to the EKF into the onboard log. The Replay tool re-feeds this logged data to reproduce the exact EKF behavior.
@@ -68,13 +80,13 @@ Route the value to the right message first:
 2. **Global flags/state** → the `log_RFRN` bitfield, populated in `AP_DAL::start_frame()` from AHRS, accessor on `AP_DAL`
 3. **Per-GPS instance data** → `log_RGPI`/`log_RGPJ`, same pattern
 
-Then obey the on-disk format rules below. Both are silent when broken: the build succeeds, the EKF flies, and only Replay of a log recorded *before* the change gives wrong answers.
+Then obey the on-disk format rules, REPLAY-1, 2 and 4 above. They are silent when broken: the build succeeds, the EKF flies, and only Replay of a log recorded *before* the change gives wrong answers.
 
-**Never grow an existing DAL struct.** `AP_LoggerFileReader::update()` sizes its buffer from the format stored in the log, while `MSG_CREATE` copies `offsetof(log_X, _end)` bytes into the compiled struct. Before master's `9610cb59b7` (2026-10-06; not on 4.7 or the SFD branches) the copy ran past a shorter record, so every field after the insertion point read adjacent stack. Measured on a real log after `log_ROFH` grew from 40 bytes to 44: flow quality read a constant 89 where the true per-sample values were 70-102, and the new float read -1.15e14 (gcc: "reading 41 bytes from a region of size 37"); zero-initialising `msg` did not help, because the memcpy overwrote it. Since `9610cb59b7`, `copy_message()` zeroes the struct, copies the shorter of the two lengths and warns once, so nothing reads past the record, but the rule stands. A field inserted mid-struct shifts every later field, so an old log hands them the wrong bytes. An appended field replays as 0, which is rarely neutral (that commit's own example: a missing RSLL timestamp makes the position look 5 s old). And a field after a struct's last byte-sized member brings padding: these structs are not PACKED, so the format/`RLOG_SIZE` match breaks. Add a new message instead, as #34292 did with ROFM beside ROFH.
+**Extend the message the data travels with (REPLAY-1).** `MSG_CREATE` zeroes the struct and copies no more than the record on disk carries (master `9610cb59b7`, SFD `c0f7f576e7`), so a record from before a struct grew replays with the new field at 0. Before that copy Replay read past the shorter record: after `log_ROFH` grew from 40 bytes to 44, a real log's flow quality read a constant 89 where the true values were 70-102. A branch without the copy takes it before any struct grows; until 2026-11-14 this playbook said never to grow one, for that reason. Append, never insert: an inserted field shifts every later one. These structs are not PACKED, so a field after a byte-sized member needs explicit `unused` bytes up to its alignment, or the format string and `RLOG_SIZE` stop matching the layout; rmackay9's #35077 puts three before ROFH's new float. Choose the field so 0 gives the old behaviour, or make the reader treat 0 as "not logged": a missing RSLL timestamp read as 0 makes the position look 5 s old.
 
-This covers the `log_RFRN` bitfield too. All eight bits are taken - `unused` at bit 1, once `get_compass_is_null`, is the only reusable one - so a ninth flag grows the struct.
+**`log_RFRN`'s flag byte is full.** Its two retired bits, `unused` (once `get_compass_is_null`) and `ahrs_airspeed_sensor_enabled_unused`, stay retired (REPLAY-2), so a new flag starts a second flags byte at the end, as #35105's `Flags2` does.
 
-**Add a new message instead.** `RISJ` was split out of `RISI` for exactly this reason, and `ROFM` was added beside `ROFH` for the optical flow focus height. A log recorded before the change simply has no such message and replays with the field at whatever the struct was initialised to, so seed the member with the *legacy* value when 0 is not the old behaviour.
+**A new message is for data on its own schedule (REPLAY-4).** `WRITE_REPLAY_BLOCK_IFCHANGED` rewrites the whole message when any byte changes, so data that rarely changes costs log space every frame if it rides in a message that changes every frame. tridge had `RISJ` split out of `RISI` for that on #32399. An older log has no such message and replays with the member at whatever it was initialised to, so seed it with the legacy value when 0 is not the old behaviour.
 
 **Put the new ID at the end of `LOG_IDS_FROM_DAL`, never in the middle.** tridge's rule on PR #34292, given as "to preserve existing replay logs". Keep `LOG_STRUCTURE_FROM_DAL` in the same order as the ID list.
 
