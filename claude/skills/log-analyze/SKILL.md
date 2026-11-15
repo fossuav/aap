@@ -207,10 +207,17 @@ What it separates, which a CTUN plot does not:
 - **Free-air thrust error:** a baro-EKF offset that scales with throttle away from the
   ground; fit it with `baro_thst_cal.py` (previous section).
 - **Vibration-limited vertical loop:** VIBE above ~30 m/s2 or a climbing clip count with PIDA
-  Act std >> Tar std means the accel feedback is noise, and PSC_D_ACC_P/I will have been cut
-  to keep the throttle quiet (neros: 0.01/0.02 against a 0.155 hover). Nothing is tunable
-  vertically until the vibration is fixed; `batch_fft.py --type accel` shows where it is
-  (neros: 40 m/s2 RMS at the 133 Hz motor fundamental).
+  Act std >> Tar std means the accel feedback is noise, and PSC_D_ACC_P/I may have been cut
+  to keep the throttle quiet. Nothing is tunable vertically until the vibration is fixed;
+  `batch_fft.py --type accel` shows where it is (neros: 40 m/s2 RMS at the 133 Hz motor
+  fundamental).
+- **The vertical gains against the rule of thumb:** P ~ 0.1 x MOT_THST_HOVER and I ~ 2x P on
+  4.7, where PSC_ACCZ_P/I became PSC_D_ACC_P/I scaled by 0.1; on 4.6 the same rule reads P ~
+  MOT_THST_HOVER. The tool flags P below 0.3x the rule. Until 2026-11-15 it compared the 4.7
+  name against the 4.6 rule, which reads every 4.7 vehicle 10x low: a six-airframe 4.7 fleet
+  at 0.019-0.025 against hovers of 0.13-0.16 was flagged "strangled" on every log, and the
+  neros's 0.01/0.02 against a 0.155 hover, quoted here as the detuned example, is 0.65x the
+  rule. It was cut from the 0.05/0.1 defaults, which suit a hover near 0.5.
 - **What the EKF is surviving on:** GPS VZ aiding (EK3_SRC1_VELZ=3) carries an outdoor hover
   through baro bounces; indoors or without a fix the same setup falls over.
 

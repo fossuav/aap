@@ -28,8 +28,8 @@ How to read it (numbers from real airframes):
     territory; baro_thst_cal.py fits it from a fixed-vehicle ramp.
   * VIBE above ~30 m/s2 or a rising clip count with PIDA Act std >> Tar std: the accel
     feedback is noise and someone will have strangled PSC_D_ACC_P/I to keep the throttle
-    quiet (rule of thumb P ~ MOT_THST_HOVER, I ~ 2x). Fix vibration first; there is
-    nothing to tune vertically until then.
+    quiet (rule of thumb P ~ 0.1 x MOT_THST_HOVER, I ~ 2x; PSC_ACCZ_P/I on 4.6 and earlier
+    are 10x those). Fix vibration first; there is nothing to tune vertically until then.
   * XKF4.SH climbing / height source flipping: the EKF is rejecting the baro; look at
     what it falls back on (GPS VZ aiding hides a lot outdoors and nothing indoors).
 
@@ -221,11 +221,15 @@ def hover_block(D, parms, h0, h1):
     elif len(a) > 10:
         print(f'    PIDA: Tar std {a[:, 1].std():.2f} Act std {a[:, 2].std():.2f} | P std {a[:, 3].std():.4f} '
               f'I mean {a[:, 4].mean():+.4f} D std {a[:, 5].std():.4f} FF mean {a[:, 6].mean():+.4f}')
-        accp = parms.get('PSC_D_ACC_P', parms.get('PSC_ACCZ_P'))
+        # 4.7 renamed PSC_ACCZ_P to PSC_D_ACC_P and scaled it by 0.1, so the rule scales too
+        if 'PSC_D_ACC_P' in parms:
+            accp_name, accp, rule_scale = 'PSC_D_ACC_P', parms['PSC_D_ACC_P'], 0.1
+        else:
+            accp_name, accp, rule_scale = 'PSC_ACCZ_P', parms.get('PSC_ACCZ_P'), 1.0
         if accp is not None and parms.get('MOT_THST_HOVER'):
-            note = '   <- strangled' if accp < 0.3 * parms['MOT_THST_HOVER'] else ''
-            print(f'    PSC accel P {accp:.3f} against hover-throttle rule of thumb '
-                  f'~{parms["MOT_THST_HOVER"]:.3f}{note}')
+            rule = rule_scale * parms['MOT_THST_HOVER']
+            note = '   <- strangled' if accp < 0.3 * rule else ''
+            print(f'    {accp_name} {accp:.3f} against hover-throttle rule of thumb ~{rule:.3f}{note}')
 
 
 def table(D, t0, t1):
