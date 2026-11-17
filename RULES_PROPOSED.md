@@ -44,7 +44,18 @@ Status:  proposed <date>
 
 ## Proposed
 
-None at present.
+### ARCH-27: An event that changes filter state is logged where Replay will apply it in flight order
+
+Replay reproduces a flight only if each input reaches the filter at the
+same point in its update sequence as in flight. A call from outside the
+update that can change states or covariances - an origin or position set,
+a reset, a source switch - ends the pending DAL frame before it is logged.
+
+Example: gps-denied-ardupilot 2026-11-17: log_SetOriginLLH3() did not end
+         the frame, so replays diverged from the origin set onwards.
+Check:   each DAL log_* call made outside UpdateFilter() from an entry point
+         that can change states ends the frame first.
+Status:  proposed 2026-11-17 from the gps-denied review
 
 ## Confirmed
 
