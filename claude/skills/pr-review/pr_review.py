@@ -35,6 +35,7 @@ it writes outside its own scratch directory is the state file under .git/.
 
 import argparse
 import difflib
+import importlib.util
 import json
 import os
 import re
@@ -570,6 +571,9 @@ def check_non_ascii(scope):
     return out
 
 
+BARE_PRINTF = re.compile(r"(?<![\w>.])printf\s*\(")
+
+
 def check_printf(scope):
     out = []
     for path, lineno, text in added_lines(scope["rev_range"]):
@@ -580,7 +584,8 @@ def check_printf(scope):
         stripped = text.strip()
         if stripped.startswith(("//", "*", "/*")):
             continue
-        if "printf(" not in stripped:
+        # a bare printf(); snprintf() and friends only format into a buffer
+        if not BARE_PRINTF.search(stripped):
             continue
         if "console->printf" in stripped or "DEV_PRINTF" in stripped:
             continue
@@ -644,6 +649,63 @@ def leftover_subjects(c):
     return hits
 
 
+_CI_SUBSYSTEMS = None
+
+
+def ci_subsystems():
+    """CI's own subsystem rules - Tools/scripts/allowed_subsystems.py in the
+    checkout under review - or None when the checkout has none.
+
+    check_branch_conventions.py rejects a prefix that file does not allow,
+    whatever upstream history says: "scripts:" on Tools/scripts/ passed the
+    history test below and still failed CI.
+    """
+    global _CI_SUBSYSTEMS
+    if _CI_SUBSYSTEMS is None:
+        _CI_SUBSYSTEMS = False
+        path = os.path.join(REPO_ROOT, "Tools", "scripts", "allowed_subsystems.py")
+        if os.path.exists(path):
+            try:
+                spec = importlib.util.spec_from_file_location("ci_allowed_subsystems", path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _CI_SUBSYSTEMS = mod.AllowedSubsystems()
+            except Exception:
+                _CI_SUBSYSTEMS = False
+    return _CI_SUBSYSTEMS or None
+
+
+def ci_prefix_findings(prefix, files, ref, subject):
+    """check_branch_conventions.py's prefix rules: CI allows the prefix, and
+    every file the commit touches belongs to it."""
+    ci = ci_subsystems()
+    owners = {f: ci.subsystems_for_path(f) for f in files}
+    # a commit that creates a library may use its name before the list has it
+    if prefix not in ci.allowed_subsystems() and not any(prefix in o for o in owners.values()):
+        return [finding(
+            "commit-prefix", "must-fix",
+            "prefix '%s:' is not in CI's allowed list (Tools/scripts/allowed_subsystems.py); "
+            "the files touched belong to: %s"
+            % (prefix, ", ".join(sorted({s for o in owners.values() for s in o}))),
+            commit=ref, detail=subject[:100],
+        )]
+    out = []
+    for f, o in owners.items():
+        if not o:
+            out.append(finding(
+                "commit-prefix", "must-fix",
+                "%s maps to no subsystem in CI's allowed_subsystems.py" % f,
+                commit=ref, detail=subject[:100],
+            ))
+        elif prefix not in o:
+            out.append(finding(
+                "commit-prefix", "must-fix",
+                "%s is not part of '%s:' for CI; it belongs to: %s" % (f, prefix, ", ".join(o)),
+                commit=ref, detail=subject[:100],
+            ))
+    return out
+
+
 def check_commits(scope):
     out = []
     commits = commit_records(scope["rev_range"])
@@ -674,7 +736,9 @@ def check_commits(scope):
                     commit=ref, detail=c["subject"][:100],
                 ))
         prefix = subject_prefix.group(1) if subject_prefix else None
-        if prefix:
+        if prefix and ci_subsystems() is not None:
+            out.extend(ci_prefix_findings(prefix, c["files"], ref, c["subject"]))
+        elif prefix:
             allowed = set()
             for f in c["files"]:
                 allowed |= acceptable_prefixes(f)

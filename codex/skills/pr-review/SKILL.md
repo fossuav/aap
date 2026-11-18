@@ -117,8 +117,8 @@ cheapest to clear first and they run in about two seconds:
 | `flake8` | changed `.py` files carrying the `AP_FLAKE8_CLEAN` marker that no longer pass flake8 - a real CI job |
 | `astyle` | reformatting on lines you added, **only** within the paths `Tools/scripts/run_astyle.py` actually enforces |
 | `non-ascii` | em-dashes, smart quotes, arrows and ellipses in added code - the clearest machine-written tell |
-| `printf` | `printf()` in flight code (`gcs().send_text()`, or `hal.console->printf()` for debug) |
-| `commits` | missing subsystem prefix, prefix that neither matches the files nor has a history upstream, a commit spanning several subsystems, merge commits, AI attribution, non-ASCII in the message, over-long subjects, and other commits' subjects left in the body by a squash (the 2026-10-08 batch shipped twelve PR branches like that; flags 5 of master's last 2000 commits, all the same pattern) |
+| `printf` | a bare `printf()` in flight code (`gcs().send_text()`, or `hal.console->printf()` for debug); `snprintf()` into a buffer, the pre-arm message idiom, is not flagged |
+| `commits` | missing subsystem prefix, a prefix CI's `Tools/scripts/allowed_subsystems.py` rejects or a file it does not put under that prefix (without that file: a prefix that neither matches the files nor has a history upstream), a commit spanning several subsystems, merge commits, AI attribution, non-ASCII in the message, over-long subjects, and other commits' subjects left in the body by a squash (the 2026-10-08 batch shipped twelve PR branches like that; flags 5 of master's last 2000 commits, all the same pattern) |
 | `params` | new `AP_GROUPINFO` entries with no `// @Param:` block, incomplete doc blocks, names over 16 characters |
 | `new-file-license` | new source files with no licence or copyright header |
 | `defensive-init` | zero-initialisers added to class members - redundant given BSS/`new`/`calloc`, and a reliable LLM-tell |
@@ -129,6 +129,15 @@ Severity is advice, not a verdict: `must-fix` blocks, `should-fix` needs a reaso
 if you leave it, `note` is context. `--skip <check>,<check>` drops individual
 checks when one is genuinely wrong for a PR - and if you skip one, say which and
 why in the report.
+
+**CI's own prefix list decides first.** When the checkout carries
+`Tools/scripts/allowed_subsystems.py`, the commit check applies the two rules
+`check_branch_conventions.py` does - CI lists the prefix, and every file the
+commit touches belongs to it - and reports a miss as must-fix. History cannot
+override it: `scripts:` on `Tools/scripts/` had upstream history behind it,
+passed the check described below, and was rejected by CI's script on the first
+branch of PR #35250. Over upstream's last 400 commits the CI rules flag none.
+The rest of this section is the fallback for a checkout without that file.
 
 **The commit-prefix check asks the repository before it complains.** When a prefix
 is not the one the playbook prescribes, the helper looks at whether the base
