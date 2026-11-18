@@ -57,6 +57,19 @@ Check:   each DAL log_* call made outside UpdateFilter() from an entry point
          that can change states ends the frame first.
 Status:  proposed 2026-11-17 from the gps-denied review
 
+### ARCH-28: An IMU stillness test cannot see constant velocity
+
+Accelerometers and gyros measure acceleration and rotation, not velocity:
+in a steady descent or at terminal velocity they read about 1 g and calm.
+A value learned or a state latched while such a test passes can be taken
+in motion, so it needs a second signal that does see motion.
+
+Example: #34292, 2026-11-18: a ground range reference learned under
+         onGroundNotMoving was learned 10 m up in a re-armed fall.
+Check:   each value learned or state latched under an IMU stillness test,
+         and what confirms the vehicle is not moving.
+Status:  proposed 2026-11-18 from the #34292 self-review
+
 ## Confirmed
 
 - **REPLAY-1 to REPLAY-4** - confirmed 2026-11-14 from the user, without their
