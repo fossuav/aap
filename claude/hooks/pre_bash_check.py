@@ -146,39 +146,45 @@ def check_commit_coauthor(command):
 
 def check_commit_prefix(command):
     """Block commits without subsystem prefix in message."""
-    if not re.search(r'\bgit\s+commit\b', command):
+    commit = re.search(r'\bgit\s+commit\b', command)
+    if not commit:
         return None
+    # only what follows "git commit" can be its message: a heredoc earlier in
+    # the command belongs to another program
+    tail = command[commit.start():]
     # Skip if no message flag (interactive or --no-edit)
-    if not re.search(r'\s-\w*m[\s"]', command):
+    if not re.search(r'\s-\w*m[\s"]', tail):
         return None
-    if re.search(r'--no-edit', command):
+    if re.search(r'--no-edit', tail):
         return None
 
     # Extract first line of commit message
     msg = None
 
-    # Try heredoc pattern: <<'EOF' or <<EOF
-    heredoc_match = re.search(
-        r"<<\s*'?EOF'?\s*\n(.*?)(?:\nEOF|\n\s*EOF)",
-        command, re.DOTALL
-    )
-    if heredoc_match:
-        lines = heredoc_match.group(1).strip().split('\n')
-        msg = lines[0].strip() if lines else None
+    # -m "message" or -m 'message' (handles -am, -cm, etc.), unless it is the
+    # $(cat <<'EOF' ...) form, whose text is in the heredoc
+    simple_match = re.search(r'-\w*m\s+"([^"]*)"', tail)
+    if not simple_match:
+        simple_match = re.search(r"-\w*m\s+'([^']*)'", tail)
+    if simple_match and not simple_match.group(1).lstrip().startswith('$('):
+        msg = simple_match.group(1).strip().split('\n')[0].strip()
     else:
-        # Try -m "message" or -m 'message' (handles -am, -cm, etc.)
-        simple_match = re.search(r'-\w*m\s+"([^"]*)"', command)
-        if not simple_match:
-            simple_match = re.search(r"-\w*m\s+'([^']*)'", command)
-        if simple_match:
-            msg = simple_match.group(1).strip().split('\n')[0].strip()
+        heredoc_match = re.search(
+            r"<<\s*'?EOF'?\s*\n(.*?)(?:\nEOF|\n\s*EOF)",
+            tail, re.DOTALL
+        )
+        if heredoc_match:
+            lines = heredoc_match.group(1).strip().split('\n')
+            msg = lines[0].strip() if lines else None
 
     if msg:
+        # git's autosquash markers keep the subject of the commit they fold into
+        subject = re.sub(r'^(?:(?:fixup|squash|amend)! )+', '', msg)
         # Valid prefix: "Word:" or "Word_Word:" at start of message
-        if not re.match(r'^[A-Za-z][A-Za-z0-9_]*:', msg):
+        if not re.match(r'^[A-Za-z][A-Za-z0-9_]*:', subject):
             return (
                 f"BLOCKED: Commit message must start with a subsystem prefix.\n"
-                f"CLAUDE.md examples: 'AP_AHRS:', 'Copter:', 'autotest:', 'scripts:'\n"
+                f"CLAUDE.md examples: 'AP_AHRS:', 'Copter:', 'autotest:', 'Tools:'\n"
                 f"Got: '{msg[:70]}'\n"
                 f"Fix the commit message to start with the appropriate subsystem prefix."
             )
