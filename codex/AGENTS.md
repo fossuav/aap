@@ -2,7 +2,7 @@
 
 This file provides guidance to Codex (openai.com/codex) when working with code in this repository.
 
-**Playbook version:** 1.3.63
+**Playbook version:** 1.3.64
 
 ## Repository-Local Rules
 
@@ -549,9 +549,9 @@ When modifying existing files:
 - **Message Prefix:** Subject line prefixed with the specific subsystem or directory name, not a generic parent directory. Use the most specific prefix that matches the changed files:
   - `libraries/` changes use the library name: `AP_AHRS:`, `AC_PosControl:`, `AP_Scripting:`
   - `ArduCopter/`, `ArduPlane/`, `Rover/` etc. use the short vehicle name: `Copter:`, `Plane:`, `Rover:`
-  - `Tools/` subdirectories use the subdirectory name as the prefix:
-    - `Tools/scripts/` uses `scripts:` (e.g., build option changes)
-    - `Tools/ardupilotwaf/` uses `ardupilotwaf:` (e.g., library list changes)
+  - `Tools/` subdirectories mostly use the subdirectory name, but `Tools/scripts/allowed_subsystems.py` decides, and CI rejects a prefix it does not list:
+    - `Tools/scripts/` uses `Tools:` (e.g., build option changes); CI rejects `scripts:`
+    - `Tools/ardupilotwaf/` uses `waf:` (e.g., library list changes); CI rejects `ardupilotwaf:`
     - `Tools/AP_Bootloader/` uses `AP_Bootloader:` (e.g., board ID additions to `board_types.txt`)
     - `Tools/bootloaders/` uses `bootloaders:` (e.g., bootloader binary additions)
     - `Tools/autotest/` uses `autotest:` for autotest changes
@@ -564,8 +564,8 @@ When modifying existing files:
     - `AP_Bootloader: add board ID for NewBoard`
     - `bootloaders: add NewBoard bootloader binaries`
     - `hwdef: add NewBoard hwdef`
-    - `scripts: add build option for new feature`
-    - `ardupilotwaf: add library to vehicle dependent list`
+    - `Tools: add build option for new feature`
+    - `waf: add library to vehicle dependent list`
 
 ## Git Safety
 
