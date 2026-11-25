@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Playbook version:** 1.7.73
+**Playbook version:** 1.7.74
 
 ## Repository-Local Rules
 
