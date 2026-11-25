@@ -70,6 +70,19 @@ Check:   each value learned or state latched under an IMU stillness test,
          and what confirms the vehicle is not moving.
 Status:  proposed 2026-11-18 from the #34292 self-review
 
+### ARCH-29: A reference learned from an estimate cannot correct that estimate
+
+Where one state is learned from another plus a measurement, switching to
+correct the second from the first carries its error across unchanged.
+Before a switch counts as a correction, it needs evidence for the shared
+offset that does not come from the estimate being corrected.
+
+Example: a flow quad's throw, 2026-11-25: the terrain state learned from a
+         wrong baro-era height; switching to range height kept the 1.7 m.
+Check:   for each reference a switch or reset adopts, what it was learned
+         from, and what independent evidence fixes their shared offset.
+Status:  proposed 2026-11-25 from a customer log's Replay A/B
+
 ## Confirmed
 
 - **REPLAY-1 to REPLAY-4** - confirmed 2026-11-14 from the user, without their
